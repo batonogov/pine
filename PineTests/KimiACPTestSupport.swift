@@ -261,10 +261,10 @@ nonisolated struct KimiFixtureFactory: AgentAdapterFactory {
     }
 
     func makeSession(_ request: AgentAdapterSessionRequest) async throws -> any AgentAdapterSession {
-        let factory = KimiACPFactory(id: id, observation: try await probe()) { _ in
+        let factory = KimiACPFactory(id: id, observation: try await probe()) { request in
             KimiACPAdmission(
                 launch: { _ in self.transport },
-                cwd: "/fixture/task",
+                cwd: request.reviewBinding?.lease.canonicalWorktree.path ?? "/fixture/task",
                 deadline: ContinuousClock.now.advanced(by: .seconds(300)),
                 action: self.options.action,
                 beforeStartWrite: {},
@@ -289,6 +289,7 @@ nonisolated struct KimiTestFixture: Sendable {
     static func make(
         options: KimiFixtureOptions = .init(),
         sessionID: String = "kimi_fixture_new",
+        reviewBinding: AgentAdapterReviewBinding? = nil,
         ingest: @escaping @Sendable (ValidatedAgentEvent) async -> AdapterIngestOutcome
     ) async throws -> KimiTestFixture {
         let transport = KimiFakeTransport(
@@ -328,7 +329,8 @@ nonisolated struct KimiTestFixture: Sendable {
             )
         )
         let session = try await registry.makeSession(
-            contract: contract, resumeFrom: nil, downstream: ingest
+            contract: contract, resumeFrom: nil, downstream: ingest,
+            reviewBinding: reviewBinding
         )
         return KimiTestFixture(
             registry: registry, session: session,

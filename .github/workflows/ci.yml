@@ -675,7 +675,7 @@ jobs:
               -only-testing:PineUITests/EditorTabNavigationTests
               -only-testing:PineUITests/DiffNavigationUITests
               -only-testing:PineUITests/AccessibilityLocalizationSmokeTests
-          # Shard 4 — Editor Chrome (35 tests)
+          # Shard 4 — Editor Chrome (36 tests)
           - shard-name: "Editor Chrome"
             test-classes: >-
               -only-testing:PineUITests/EditorWindowTests
@@ -685,6 +685,7 @@ jobs:
               -only-testing:PineUITests/SplitPaneRoutingUITests
               -only-testing:PineUITests/BlameViewTests
               -only-testing:PineUITests/ToggleCommentTests
+              -only-testing:PineUITests/OpenCodeTaskUITests
           # Shard 5 — Files & Save (37 tests, release smoke skips outside release CI)
           - shard-name: "Files & Save"
             test-classes: >-

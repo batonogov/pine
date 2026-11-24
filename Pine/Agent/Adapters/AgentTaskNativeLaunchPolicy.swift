@@ -98,6 +98,7 @@ nonisolated struct AgentTaskNativeLaunchPolicy: Equatable, Sendable {
     enum BlockedReason: Equatable, Sendable {
         case missingSelection
         case inconsistentSelection
+        case capabilityUnavailable(AgentTaskConfigurationSettingKey)
     }
     enum Eligibility: Equatable, Sendable {
         case eligible(AgentTaskNativeLaunchPolicy)
@@ -191,11 +192,23 @@ nonisolated struct AgentTaskNativeLaunchPolicy: Equatable, Sendable {
         model: AgentTaskNativeSettingSelection = AgentTaskNativeSettingSelection(),
         reasoningEffort: AgentTaskNativeSettingSelection = AgentTaskNativeSettingSelection(),
         permissions: AgentTaskNativeSettingSelection = AgentTaskNativeSettingSelection(),
+        configurationCapabilities: AgentTaskConfigurationCapabilities = .unknown,
         provenance: AgentTaskLaunchProvenance
     ) -> Eligibility {
         guard let selection else { return .blocked(.missingSelection) }
         guard isValidAbsoluteLocalExecutable(selection.selectedExecutable) else {
             return .blocked(.inconsistentSelection)
+        }
+        let requested = [
+            (AgentTaskConfigurationSettingKey.model, model),
+            (.reasoningEffort, reasoningEffort),
+            (.permissions, permissions),
+        ]
+        for (key, setting) in requested where setting.provenance == .explicit {
+            let state = configurationCapabilities[key].state
+            guard state != .unsupported && state != .unknown else {
+                return .blocked(.capabilityUnavailable(key))
+            }
         }
         return .eligible(Self(
             taskID: taskID, runID: runID, bindingID: bindingID, selection: selection,

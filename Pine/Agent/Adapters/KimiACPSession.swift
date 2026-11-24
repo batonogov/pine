@@ -125,7 +125,7 @@ nonisolated struct KimiACPPromptContent: Equatable, Sendable,
 /// One supervised `kimi acp` conversation attempt. All presentation data is
 /// transient and bounded; no transcript, token, or credential is retained.
 /// JSON-RPC IDs are request correlation, never a global lifecycle sequence.
-actor KimiACPSession: AgentAdapterSession, CustomStringConvertible,
+actor KimiACPSession: AgentAdapterReviewingSession, CustomStringConvertible,
     CustomDebugStringConvertible, CustomReflectable {
     nonisolated var description: String { "<redacted:kimi-acp-session>" }
     nonisolated var debugDescription: String { description }
@@ -246,7 +246,10 @@ actor KimiACPSession: AgentAdapterSession, CustomStringConvertible,
         guard request.contract.profile == (try Self.profile()),
               request.contract.agentID.value == "kimiCode",
               request.contract.version == PineAdapterContractVersion(major: 1, minor: 1),
-              cwd.hasPrefix("/"), !cwd.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains) else {
+              cwd.hasPrefix("/"), !cwd.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains),
+              request.reviewBinding.map({
+                  cwd == $0.lease.canonicalWorktree.path
+              }) ?? true else {
             throw AdapterSessionError.contractMismatch
         }
         self.request = request
@@ -306,6 +309,68 @@ actor KimiACPSession: AgentAdapterSession, CustomStringConvertible,
             answersAwaitingEvidence: sentResponses.count, parentOutcome: parentOutcome,
             inputFenced: inputFenced, effectiveConfig: effectiveConfig
         )
+    }
+
+    var reviewerIdentity: AgentVendorSessionIdentity {
+        get throws {
+            guard let nativeSession else { throw KimiACPWireError.invalidState }
+            return AgentVendorSessionIdentity(
+                provider: contract.agentID.value, opaqueIdentifier: nativeSession,
+                executableVersion: KimiACPExecutableIdentity.supportedVersion
+            )
+        }
+    }
+
+    /// Structured review response from this exact owned ACP session. Provider
+    /// completion remains only a review claim until the coordinator admits it.
+    func review(
+        _ review: AgentAdapterReviewRequest,
+        beforeDispatch: @escaping @Sendable () throws -> Void
+    ) async throws -> AgentAdapterReviewResult {
+        let prompt = """
+        Independently review the exact candidate without modifying it.
+        Requested outcome:\n\(review.objective)
+        Explicit criteria:\n\(review.criteria)
+        Candidate fingerprint: \(review.candidateFingerprint)
+        Check plan: \(review.checkPlanIdentity)
+        Pine-observed required checks passed for this exact candidate; execution: \
+        \(review.binding.checks.executionID.uuidString).
+        Candidate changes:\n\(review.binding.changeContext)
+        Return only JSON: {"outcome":"passed"} or \
+        {"outcome":"requestedChanges","finding":"one actionable finding"}.
+        """
+        let content = try KimiACPPromptContent(text: prompt)
+        guard try await submit(content, beforeDispatch: beforeDispatch) == .acknowledged else {
+            throw KimiACPWireError.unavailable
+        }
+        while promptID != nil {
+            try Task.checkCancellation()
+            guard ContinuousClock.now < deadline else { throw KimiACPWireError.closed }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        switch parentOutcome {
+        case .cancelled: throw CancellationError()
+        case .unverified: break
+        default: throw KimiACPWireError.invalidState
+        }
+        guard !resultTruncated else { throw KimiACPWireError.capacity }
+        let response = try JSONDecoder().decode(ReviewResponse.self, from: Data(result.utf8))
+        switch response.outcome {
+        case "passed":
+            guard response.finding == nil else { throw KimiACPWireError.invalidProtocol }
+            return AgentAdapterReviewResult(outcome: .passed, finding: nil)
+        case "requestedChanges":
+            guard let finding = response.finding, !finding.isEmpty,
+                  finding.utf8.count <= 8_192 else { throw KimiACPWireError.invalidProtocol }
+            return AgentAdapterReviewResult(outcome: .requestedChanges, finding: finding)
+        default:
+            throw KimiACPWireError.invalidProtocol
+        }
+    }
+
+    private struct ReviewResponse: Decodable {
+        let outcome: String
+        let finding: String?
     }
 
     func start() async throws {

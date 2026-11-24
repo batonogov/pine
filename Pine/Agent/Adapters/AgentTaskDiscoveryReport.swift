@@ -19,6 +19,9 @@ nonisolated struct AgentTaskDiscoveryReport: Equatable, Sendable {
     let transport: TransportObservation
     let authentication: AuthenticationObservation
     let sessionStart: SessionStartObservation
+    /// Per-setting override evidence. This is independent of readiness and of
+    /// the effective values below; an advertised option is not applied proof.
+    let configurationCapabilities: AgentTaskConfigurationCapabilities
     /// Confirmed effective model / reasoning effort / permissions, distinct
     /// from the requested values in the launch intent. Bounded: exactly
     /// these three overridable settings.
@@ -39,6 +42,7 @@ nonisolated struct AgentTaskDiscoveryReport: Equatable, Sendable {
         transport: TransportObservation,
         authentication: AuthenticationObservation,
         sessionStart: SessionStartObservation = .notAttempted,
+        configurationCapabilities: AgentTaskConfigurationCapabilities = .unknown,
         effectiveModel: AgentTaskEffectiveSettingObservation = .unknown,
         effectiveReasoningEffort: AgentTaskEffectiveSettingObservation = .unknown,
         effectivePermissions: AgentTaskEffectiveSettingObservation = .unknown,
@@ -107,6 +111,7 @@ nonisolated struct AgentTaskDiscoveryReport: Equatable, Sendable {
         self.transport = transport
         self.authentication = authentication
         self.sessionStart = sessionStart
+        self.configurationCapabilities = configurationCapabilities
         self.effectiveModel = effectiveModel
         self.effectiveReasoningEffort = effectiveReasoningEffort
         self.effectivePermissions = effectivePermissions

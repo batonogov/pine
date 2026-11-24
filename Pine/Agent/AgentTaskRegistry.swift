@@ -82,6 +82,7 @@ final class AgentTaskRegistry {
     private(set) var tasks: [AgentTask] = [] {
         didSet {
             guard oldValue != tasks else { return }
+            revalidateReviewAuthorities()
             for observer in Array(taskChangeObservers.values) {
                 observer(oldValue, tasks)
             }
@@ -239,6 +240,18 @@ final class AgentTaskRegistry {
         let grantID: UUID
         let passID: UUID
     }
+    private struct ReviewAuthority {
+        let authority: AgentTaskReviewAuthority
+        let generation: UUID
+        let passID: UUID
+        let taskID: UUID
+        let runID: UUID
+        let processGeneration: UInt64
+        let cycleID: UUID
+        let operationID: UUID
+    }
+    @ObservationIgnored
+    private var reviewAuthorities: [UUID: ReviewAuthority] = [:]
 
     init(
         persistence: any AgentTaskPersisting = AgentTaskMetadataStore(),
@@ -653,6 +666,7 @@ final class AgentTaskRegistry {
                tasks[index].checkGrant == task.checkGrant else { return false }
         if !resettingExecution, tasks[index].checkGrant != grant {
             checkRuns[taskID]?.owner.revoke()
+            revokeReviewAuthorities(taskID: taskID)
             verificationPassIDByTaskID.removeValue(forKey: taskID)
         }
         checkStateWrites.insert(taskID)
@@ -681,6 +695,45 @@ final class AgentTaskRegistry {
         return saved == .saved
             && generation == persistenceGeneration && !Task.isCancelled && !isTerminating
             && self.task(for: taskID)?.checkGrant == grant
+    }
+
+    /// Re-reads the durable selection after queued writes settle. The caller's
+    /// task value is only a routing hint; neither its cached grant nor a newly
+    /// captured in-memory value can authorize another execution attempt.
+    func persistedCheckGrantIsCurrent(
+        taskID: UUID, plan: AgentTaskCheckPlan,
+        environment: AgentTaskEnvironmentIdentity
+    ) async -> Bool {
+        guard !isTerminating, !Task.isCancelled,
+              let current = task(for: taskID),
+              current.checkGrant != nil,
+              await flushPersistence(project: current.project) == .saved,
+              !Task.isCancelled, !isTerminating else { return false }
+        // Capture the revision only after the flush; a write admitted during
+        // that suspension must not authorize itself against an older snapshot.
+        let expectedRevision = diskRevisionByProject[current.project]
+        let loaded = await persistence.load(project: current.project)
+        switch loaded.status {
+        case .loaded, .loadedWithMissingWorktrees:
+            break
+        case .missing, .rejected:
+            return false
+        }
+        guard !Task.isCancelled, !isTerminating,
+              loaded.revision == expectedRevision,
+              diskRevisionByProject[current.project] == expectedRevision,
+              let persisted = loaded.tasks.first(where: { $0.id == taskID }),
+              let persistedGrant = persisted.checkGrant,
+              let fresh = task(for: taskID),
+              let currentGrant = fresh.checkGrant,
+              persistedGrant.id == currentGrant.id else { return false }
+        // Metadata dates intentionally decode at millisecond precision. Grant
+        // identity and scope are the authority; exact Date bit patterns are not.
+        return persistedGrant.matchesScope(
+            taskID: taskID, plan: plan, environment: environment
+        ) && currentGrant.matchesScope(
+            taskID: taskID, plan: plan, environment: environment
+        )
     }
 
     func persistCheckProblem(
@@ -1022,6 +1075,63 @@ final class AgentTaskRegistry {
         tasks[index].updatedAt = max(tasks[index].updatedAt, timestamp)
         markDirty(tasks[index].project)
         return true
+    }
+
+    /// Persists a review/correction reservation before its provider effect.
+    /// The full expected value fences stale dispatchers; returned instructions
+    /// are released only after the exact updated cycle is durable.
+    @discardableResult
+    func persistReviewTransition<Result: Sendable>(
+        expected task: AgentTask,
+        allowsCancellation: Bool = false,
+        authority: AgentTaskReviewAuthority? = nil,
+        mutate: @escaping @Sendable (inout AgentTask) -> Result?
+    ) async -> Result? {
+        if allowsCancellation && Task.isCancelled {
+            return await Task { @MainActor in
+                await self.persistReviewTransition(
+                    expected: task, allowsCancellation: true,
+                    authority: authority, mutate: mutate
+                )
+            }.value
+        }
+        if let authority, (try? authority.check()) == nil { return nil }
+        guard !isTerminating, let index = taskIndex(for: task.id),
+              tasks[index] == task else { return nil }
+        var updated = task
+        guard let result = mutate(&updated),
+              let cycle = updated.reviewCycle,
+              cycle.isValid(for: updated),
+              updated.runs.last?.id == cycle.runID else { return nil }
+        guard updated != task else { return result }
+        updated.updatedAt = max(updated.updatedAt, Date())
+        authority?.beginAdmission()
+        tasks[index] = updated
+        markDirty(updated.project)
+        let saved = await flushPersistence(project: updated.project)
+        if let authority, (try? authority.check()) == nil {
+            await rollbackRevokedReviewAdmission(taskID: task.id, cycle: task.reviewCycle)
+            return nil
+        }
+        guard saved == .saved,
+              allowsCancellation || !Task.isCancelled, !isTerminating,
+              self.task(for: task.id)?.reviewCycle == cycle else { return nil }
+        return result
+    }
+
+    private func rollbackRevokedReviewAdmission(
+        taskID: UUID, cycle: AgentTaskCorrectionCycle?
+    ) async {
+        // Rollback is negative cleanup and must run even when the caller was
+        // cancelled after the first persistence publication.
+        await Task { @MainActor in
+            guard let index = self.taskIndex(for: taskID) else { return }
+            var restored = self.tasks[index]
+            restored.reviewCycle = cycle
+            self.tasks[index] = restored
+            self.markDirty(restored.project)
+            _ = await self.flushPersistence(project: restored.project)
+        }.value
     }
 
     /// Metadata creation only. Request UI supplies explicit intent; neither
@@ -1962,6 +2072,52 @@ final class AgentTaskRegistry {
         verificationPassIDByTaskID[taskID] == passID
     }
 
+    func registerReviewAuthority(
+        _ authority: AgentTaskReviewAuthority, scope requested: AgentTaskReviewScope
+    ) -> Bool {
+        let scope = ReviewAuthority(
+            authority: authority, generation: persistenceGeneration,
+            passID: requested.passID, taskID: requested.taskID, runID: requested.runID,
+            processGeneration: requested.processGeneration,
+            cycleID: requested.cycleID, operationID: requested.operationID
+        )
+        guard !Task.isCancelled, !isTerminating, reviewAuthorityIsCurrent(scope) else {
+            authority.revoke()
+            return false
+        }
+        reviewAuthorities[authority.id] = scope
+        return true
+    }
+
+    func unregisterReviewAuthority(_ authority: AgentTaskReviewAuthority) {
+        reviewAuthorities.removeValue(forKey: authority.id)
+        authority.revoke()
+    }
+
+    private func reviewAuthorityIsCurrent(_ scope: ReviewAuthority) -> Bool {
+        guard scope.generation == persistenceGeneration,
+              verificationPassIDByTaskID[scope.taskID] == scope.passID,
+              let task = task(for: scope.taskID), task.lifecycle != .dismissed,
+              let run = task.runs.last, run.id == scope.runID,
+              run.process.processGeneration == scope.processGeneration,
+              let cycle = task.reviewCycle, cycle.id == scope.cycleID,
+              cycle.pendingReviewOperation == scope.operationID
+                    || scope.authority.isAdmitting else { return false }
+        return true
+    }
+
+    private func revalidateReviewAuthorities() {
+        for scope in reviewAuthorities.values where !reviewAuthorityIsCurrent(scope) {
+            scope.authority.revoke()
+        }
+    }
+
+    private func revokeReviewAuthorities(taskID: UUID) {
+        for scope in reviewAuthorities.values where scope.taskID == taskID {
+            scope.authority.revoke()
+        }
+    }
+
     /// Marks in-flight verification for a settled successful or unverified
     /// attempt. Optional run, process, and pass fences leave replacements untouched.
     @discardableResult
@@ -1984,6 +2140,7 @@ final class AgentTaskRegistry {
         if let verificationPassID {
             if verificationPassIDByTaskID[taskID] != verificationPassID {
                 checkRuns[taskID]?.owner.revoke()
+                revokeReviewAuthorities(taskID: taskID)
             }
             verificationPassIDByTaskID[taskID] = verificationPassID
         }
@@ -2114,6 +2271,7 @@ final class AgentTaskRegistry {
             return false
         }
         if let verificationPassID {
+            revokeReviewAuthorities(taskID: taskID)
             verificationPassIDByTaskID.removeValue(forKey: taskID)
             checkRuns[taskID]?.owner.revoke()
         }
@@ -3191,6 +3349,7 @@ final class AgentTaskRegistry {
         expireClaims()
         for ownership in Array(nativeOwners.values) { invalidateNativeOwnership(ownership) }
         isTerminating = true
+        reviewAuthorities.values.forEach { $0.authority.revoke() }
         for run in checkRuns.values { run.owner.revoke() }
         worktreeSetupOperations.removeAll()
         worktreeSetups.values.forEach { retireWorktreeSetup($0) }
@@ -4237,6 +4396,7 @@ final class AgentTaskRegistry {
             abandonedPersistenceTickets.insert(persistenceTailTicket)
         }
         persistenceGeneration = UUID()
+        reviewAuthorities.values.forEach { $0.authority.revoke() }
         let published = publicationFence.advance(to: persistenceGeneration)
         for project in registeredProjects {
             if let revision = published[project.persistenceKey] {

@@ -36,3 +36,52 @@ nonisolated protocol AgentAdapterControlledSession: AgentAdapterSession {
         beforeDispatch: @escaping @Sendable () throws -> Void
     ) async throws -> AgentAdapterControlDispatch
 }
+
+/// Candidate access supplied to a reviewer at session creation and again at
+/// dispatch. The lease is runtime-only; checks are Pine observations, not a
+/// reviewer-reported success claim.
+nonisolated struct AgentAdapterReviewBinding: Sendable {
+    let lease: RecentAgentTaskFilesystemValidationLease
+    let expected: AgentVerificationIdentitySnapshot
+    let changeContext: String
+    let checks: AgentTaskCheckObservation
+
+    func validate() throws {
+        guard lease.revalidate(), changeContext.utf8.count <= 65_536,
+              checks.isJudgment, checks.requiredSucceeded,
+              checks.preCodeState == expected.code,
+              checks.postCodeState == expected.code,
+              checks.environment == expected.environment else {
+            throw AgentAdapterControlError.unsupported
+        }
+    }
+}
+
+/// Transient review I/O for a separate session. Neither value is durable
+/// evidence: the verification coordinator still fences identities and records
+/// the only reviewer-outcome fact used for Ready.
+nonisolated struct AgentAdapterReviewRequest: Sendable {
+    let objective: String
+    let criteria: String
+    let candidateFingerprint: String
+    let checkPlanIdentity: String
+    let binding: AgentAdapterReviewBinding
+}
+
+nonisolated struct AgentAdapterReviewResult: Equatable, Sendable {
+    enum Outcome: Equatable, Sendable { case passed, requestedChanges }
+    let outcome: Outcome
+    /// Ephemeral feedback for the automatic correction dispatch. Pine persists
+    /// only its bounded content hash, not reviewer transcript text.
+    let finding: String?
+}
+
+/// Optional reviewer capability. The registry forwards to the exact underlying
+/// session instead of letting an implementer manufacture reviewer evidence.
+nonisolated protocol AgentAdapterReviewingSession: AgentAdapterSession {
+    var reviewerIdentity: AgentVendorSessionIdentity { get async throws }
+    func review(
+        _ request: AgentAdapterReviewRequest,
+        beforeDispatch: @escaping @Sendable () throws -> Void
+    ) async throws -> AgentAdapterReviewResult
+}

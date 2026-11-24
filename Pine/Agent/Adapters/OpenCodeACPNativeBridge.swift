@@ -257,6 +257,7 @@ nonisolated final class OpenCodeACPNativeFactory: AgentAdapterFactory, @unchecke
     let maximumProfile: AdapterCapabilityProfile
     private let materials: OpenCodeACPNativeMaterials
     private let consumed = Mutex(false)
+    private let recordedObservation = Mutex<AdapterProbeResult?>(nil)
 
     static func descriptor(factoryID: AdapterFactoryID? = nil) throws -> AdapterDescriptor {
         try AdapterDescriptor(
@@ -290,7 +291,7 @@ nonisolated final class OpenCodeACPNativeFactory: AgentAdapterFactory, @unchecke
         try Task.checkCancellation()
         try await materials.prepareLaunch(materials.sessionDeadline)
         try Task.checkCancellation()
-        return try AdapterProbeResult(
+        let observation = try AdapterProbeResult(
             detectedVendorVersion: DetectedVendorVersion(OpenCodeACPSession.pinnedVersion),
             detectedSchema: DetectedVendorVersion("ACP 1"),
             offeredProfiles: [maximumProfile],
@@ -298,11 +299,16 @@ nonisolated final class OpenCodeACPNativeFactory: AgentAdapterFactory, @unchecke
                 minimum: Self.contractVersion, maximum: Self.contractVersion
             )
         )
+        recordedObservation.withLock { $0 = observation }
+        return observation
     }
 
     func makeSession(_ request: AgentAdapterSessionRequest) async throws -> any AgentAdapterSession {
         try Task.checkCancellation()
         guard request.resumeFrom == nil else { throw AdapterSessionError.checkpointNotSupported }
+        guard let observation = recordedObservation.withLock({ $0 }) else {
+            throw AdapterSessionError.contractMismatch
+        }
         guard consumed.withLock({ value in
             guard !value else { return false }
             value = true
@@ -344,6 +350,12 @@ nonisolated final class OpenCodeACPNativeFactory: AgentAdapterFactory, @unchecke
             cwd: materials.workingDirectory.path,
             deadline: materials.sessionDeadline,
             loadSession: materials.loadSession,
+            discovery: OpenCodeACPSession.DiscoveryInput(
+                selectedExecutable: materials.ownership.policy.selectedExecutable,
+                versionProbe: observation.detectedVendorVersion,
+                factoryAdmission: observation,
+                environmentProvenance: materials.ownership.policy.environmentProvenance
+            ),
             native: native,
             beforeStartWrite: { try materials.ownership.validate() },
             revokeOwnership: { Task { await native.invalidate() } },
@@ -387,9 +399,15 @@ final class OpenCodeACPNativeComposition {
     }
     #endif
 
-    func prepare(_ ownership: AgentTaskNativeOwnership) async {
+    func prepare(_ ownership: AgentTaskNativeOwnership) async throws -> OpenCodeACPTaskRuntime {
         let taskID = ownership.policy.taskID
-        guard !preparing.contains(taskID) else { return }
+        if preparing.contains(taskID) {
+            while preparing.contains(taskID), !Task.isCancelled {
+                await Task.yield()
+            }
+            guard let runtime = runtimes[taskID] else { throw OpenCodeACPError.unavailable }
+            return runtime
+        }
         // Claim the preparing slot before the eviction await so the guard
         // and insertion are atomic across suspensions.
         preparing.insert(taskID)
@@ -401,7 +419,7 @@ final class OpenCodeACPNativeComposition {
         if let existing = runtimes[taskID], await existing.isProviderStopped() {
             runtimes[taskID] = nil
         }
-        guard runtimes[taskID] == nil else { return }
+        if let runtime = runtimes[taskID] { return runtime }
         do {
             let working = URL(fileURLWithPath: ownership.binding.identity.canonicalWorktreePath)
             // Bounds preparation only. Session I/O keeps its own per-operation
@@ -415,8 +433,11 @@ final class OpenCodeACPNativeComposition {
                 workingDirectory: working, sessionDeadline: .opencodeACPUnbounded
             )
             _ = try await compose(materials)
+            guard let runtime = runtimes[taskID] else { throw OpenCodeACPError.unavailable }
+            return runtime
         } catch {
             tasks.invalidateNativeOwnership(ownership)
+            throw error
         }
     }
 

@@ -370,6 +370,25 @@ struct OpenCodeACPTests {
         await runtime.stop(deadline: .now.advanced(by: .seconds(1)))
     }
 
+    @Test func sessionStartProducesDiscoveryReportFromObservedOptions() async throws {
+        let fixture = try await fixture()
+        defer { fixture.transport.close() }
+        let beforeStart = await fixture.concrete.discoveryReport
+        #expect(beforeStart == nil)
+        try await fixture.session.start()
+        let afterStart = await fixture.concrete.discoveryReport
+        let report = try #require(afterStart)
+        #expect(report.executableIdentity == .resolved(URL(fileURLWithPath: "/fixture/opencode")))
+        #expect(report.sessionStart == .started)
+        #expect(report.configurationCapabilities.model.state == .probed)
+        #expect(report.configurationCapabilities.model.enumeratedOptions.map(\.nativeValue) == [
+            "fixture/model",
+        ])
+        #expect(report.configurationCapabilities.permissions.state == .unknown)
+        #expect(report.effectiveModel == .unknown)
+        await fixture.session.stop(deadline: .now.advanced(by: .seconds(1)))
+    }
+
     @Test func requestQuestionResultAndExplicitFeedbackKeepExactSession() async throws {
         let fixture = try await fixture()
         defer { fixture.transport.close() }
@@ -1004,7 +1023,9 @@ struct OpenCodeACPTests {
                         channel: child.channel, authority: request.controlAuthority,
                         revokeOwnership: {}, child: child
                     )
-                }, cwd: work.path, deadline: .now.advanced(by: .seconds(30)), loadSession: nil,
+                }, cwd: work.path, selectedExecutable: URL(fileURLWithPath: "/bin/sh"),
+                environmentProvenance: .inheritedPineProcess,
+                deadline: .now.advanced(by: .seconds(30)), loadSession: nil,
                 beforeStartWrite: {}, revokeOwnership: {}, sessionBound: { _ in },
                 promptResponded: { _ in .recorded }, sessionCreated: { recorder.set($0) }
             )
@@ -1367,6 +1388,8 @@ nonisolated private struct ACPFixtureFactory: AgentAdapterFactory {
                 transport.markLaunched()
                 return transport
             }, cwd: "/fixture/task",
+                                 selectedExecutable: URL(fileURLWithPath: "/fixture/opencode"),
+                                 environmentProvenance: .inheritedPineProcess,
                                  deadline: deadline, loadSession: loadSession,
                                  beforeStartWrite: {}, revokeOwnership: {}, sessionBound: { _ in },
                                  promptResponded: { _ in fenceResponse ? .fenced : .recorded },
@@ -1447,7 +1470,19 @@ nonisolated private final class ACPFakeTransport: OpenCodeACPTransport, Sendable
                     ])
                 ])))
             } else if method == "session/new" {
-                push(.response(id, result: .object(["sessionId": .string("ses_fixture")])))
+                push(.response(id, result: .object([
+                    "sessionId": .string("ses_fixture"),
+                    "configOptions": .array([
+                        .object([
+                            "id": .string("model"), "name": .string("Model"),
+                            "category": .string("model"), "type": .string("select"),
+                            "currentValue": .string("fixture/model"),
+                            "options": .array([
+                                .object(["value": .string("fixture/model"), "name": .string("Fixture model")]),
+                            ]),
+                        ]),
+                    ]),
+                ])))
             } else if method == "session/load" {
                 if rejectLoad {
                     push(.failure(id, code: -32602))

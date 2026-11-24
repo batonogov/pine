@@ -242,6 +242,16 @@ nonisolated enum AccessibilityID {
         "agentAttentionRow_\(id.uuidString)"
     }
 
+    // MARK: - OpenCode task
+    static let openCodeTaskToolbarButton = "openCodeTaskToolbarButton"
+    static let openCodeTaskInput = "openCodeTaskInput"
+    static let openCodeTaskSend = "openCodeTaskSend"
+    static let openCodeTaskCancel = "openCodeTaskCancel"
+    static let openCodeTaskStatus = "openCodeTaskStatus"
+    static let openCodeTaskResult = "openCodeTaskResult"
+    static let openCodeTaskQuestion = "openCodeTaskQuestion"
+    static let openCodeTaskError = "openCodeTaskError"
+
     // MARK: - Agent Inbox
     static let agentInbox = "agentInbox"
     static let agentInboxToolbarButton = "agentInboxToolbarButton"
