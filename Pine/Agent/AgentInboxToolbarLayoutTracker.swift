@@ -13,13 +13,14 @@ import SwiftUI
 /// The window's title is permanently hidden (#1643), and on macOS 26/27 a
 /// hidden title collapses the region `.primaryAction` used to anchor into:
 /// the inbox button packs into the leading cluster beside the
-/// project-switcher pill, while the `NSSearchToolbarItem` from `.searchable`
-/// keeps its trailing anchoring alone. A flexible space immediately before
-/// the button restores the trailing cluster — but no SwiftUI declaration
-/// produces one there: on a split-view toolbar `ToolbarSpacer` always sorts
-/// after `.primaryAction` items, and a `Spacer()` inside a `ToolbarItem`
-/// additionally emits a second flex before the search field, which would
-/// float the button mid-window (all verified against a live toolbar).
+/// project-switcher pill. (Before R4 removed the search field, the
+/// `NSSearchToolbarItem` from `.searchable` kept its trailing anchoring
+/// alone, which is why the pin historically anchored on it.) A flexible
+/// space immediately before the button restores the trailing cluster — but
+/// no SwiftUI declaration produces one there: on a split-view toolbar
+/// `ToolbarSpacer` always sorts after `.primaryAction` items, and a
+/// `Spacer()` inside a `ToolbarItem` additionally emits a second flex, which
+/// would float the button mid-window (all verified against a live toolbar).
 nonisolated enum AgentInboxToolbarLayout {
     /// One step towards the pinned order. Applying corrections until nil is
     /// returned normalizes every reachable state.
