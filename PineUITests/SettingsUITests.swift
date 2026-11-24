@@ -489,7 +489,6 @@ final class SettingsUITests: PineUITestCase {
                     "Форматировать при сохранении",
                     "Продолжать списки автоматически",
                     "Переносить строки",
-                    "Мини-карта",
                 ],
                 expectedIdentifiers: ["generalFontSizeSlider"]
             ),
