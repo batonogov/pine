@@ -75,10 +75,17 @@ nonisolated final class AgentTaskNativeOwnership: Sendable, CustomStringConverti
     /// `explicitRestore` marks the ownership of an explicit exact-session
     /// restore (#1811): the composition is driven by the restoring caller,
     /// never by the auto-prepare notification, so none is posted.
+    /// `restoreResponded` seeds the input state from the JOURNAL, not the
+    /// process: when the journal proves the prior owner's last submission
+    /// was responded to, this owner's first submission is a follow-up and
+    /// `authorizeSubmission` requires `.responded`. A submission is only
+    /// reachable in that state when the journal says the response was
+    /// observed, so the seed is honest in every reachable case.
     init(
         policy: AgentTaskNativeLaunchPolicy, binding: AgentTaskEnvironmentBinding,
         filesystem: RecentAgentTaskFilesystemValidationLease, bindings: any AgentTaskNativeBindingValidator,
-        environment: [String: String], explicitRestore: Bool = false
+        environment: [String: String], explicitRestore: Bool = false,
+        restoreResponded: Bool = false
     ) throws {
         guard policy.taskID == binding.taskID, policy.bindingID == binding.id,
               policy.runID == binding.reservationRunID else {
@@ -89,6 +96,9 @@ nonisolated final class AgentTaskNativeOwnership: Sendable, CustomStringConverti
         self.filesystem = filesystem
         self.bindings = bindings
         environmentDigest = try Self.digest(environment)
+        if explicitRestore, restoreResponded {
+            state.withLock { $0.initialInput = .responded }
+        }
         guard explicitRestore else {
             if policy.agentID.value == "openCode" {
                 NotificationCenter.default.post(name: .openCodeNativeOwnershipPrepared, object: self)

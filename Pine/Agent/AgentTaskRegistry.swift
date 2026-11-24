@@ -1247,12 +1247,20 @@ final class AgentTaskRegistry {
         }
         let ownership = try AgentTaskNativeOwnership(
             policy: policy, binding: binding, filesystem: filesystem, bindings: bindings,
-            environment: ProcessInfo.processInfo.environment, explicitRestore: true
+            environment: ProcessInfo.processInfo.environment, explicitRestore: true,
+            restoreResponded: checkpoint.submissions.last?.phase == .responseObserved
         )
         guard let index = taskIndex(for: task.id), var checkpoint = task.nativeDispatch else {
             throw AgentTaskNativeAdmissionError.staleOwner
         }
         checkpoint.bindingID = binding.id
+        // The journal re-enters its documented post-session phase at
+        // admission (as prepareNativeLaunch moves .reserved -> .launchIntent),
+        // so the runtime is current before the restored owner even spawns.
+        // The sessionBound rebind later is then an exact-identity no-op.
+        checkpoint.phase = AgentTaskNativeDispatch.restoreRebindPhase(
+            from: checkpoint.phase, submissions: checkpoint.submissions
+        ) ?? checkpoint.phase
         nativeOwners[task.id] = ownership
         tasks[index].nativeDispatch = checkpoint
         tasks[index].updatedAt = max(tasks[index].updatedAt, Date())

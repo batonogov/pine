@@ -238,9 +238,10 @@ struct AgentTaskNativeDispatchTests {
         #expect(AgentTaskNativeDispatch.restoreRebindPhase(
             from: unavailable.phase, submissions: unavailable.submissions
         ) == .sessionBound)
-        var withAck = try unavailable.applying(.initialInputIntent)
-        withAck = try withAck.applying(.initialInputAcknowledged(operationID: "turn_1"))
-        withAck = try withAck.applying(.unavailable)
+        var withAck = try bound
+            .applying(.initialInputIntent)
+            .applying(.initialInputAcknowledged(operationID: "turn_1"))
+            .applying(.unavailable)
         #expect(AgentTaskNativeDispatch.restoreRebindPhase(
             from: withAck.phase, submissions: withAck.submissions
         ) == .parentSettlementUnknown)
