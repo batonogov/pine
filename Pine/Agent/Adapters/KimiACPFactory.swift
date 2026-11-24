@@ -84,7 +84,10 @@ nonisolated struct KimiACPAdmission: Sendable {
 /// Registry factory for the Kimi Code CLI ACP adapter. The pinned
 /// observation keeps the adapter unavailable until an authorized, version-
 /// exact observation exists; a `nil` observation means not admitted.
-nonisolated struct KimiACPFactory: AgentAdapterFactory {
+nonisolated struct KimiACPFactory: AgentAdapterReviewingFactory {
+    /// ACP session creation does not disable the model's built-in write tools.
+    /// Do not turn this into an enforced claim without proving that boundary.
+    let reviewerControl: AgentTaskReviewerControl = .promptOnly
     let id: AdapterFactoryID
     let observation: AdapterProbeResult?
     let admit: @Sendable (AgentAdapterSessionRequest) async throws -> KimiACPAdmission
