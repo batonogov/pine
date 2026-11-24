@@ -276,6 +276,9 @@ actor CodexAppServerNativeSession: AgentAdapterSession,
     private var accountState: CodexAppServerAccountState = .unknown
     private let turnStarted = CodexAppServerNativeFlag()
     private let replayFence = CodexAppServerNativeReplayFence()
+    /// Read-only discovery observation produced from the pinned
+    /// initialize/account/catalog/config reads of this session.
+    private(set) var discoveryReport: AgentTaskDiscoveryReport?
 
     init(materials: CodexAppServerNativeMaterials, request: AgentAdapterSessionRequest) {
         guard materials.ownership.policy.requestedSettings == .inheritNativeConfiguration else {
@@ -334,6 +337,17 @@ actor CodexAppServerNativeSession: AgentAdapterSession,
                 accountState = (try? CodexAppServerAccountState(response: result)) ?? .unknown
             }
 
+            // Discovery only: non-mutating catalog/config reads of the pinned
+            // app-server surface. Failures keep the documented floor state;
+            // neither call blocks the thread start or applies an override.
+            let modelList = try? await client.call(
+                method: "model/list", params: .object([:])
+            )
+            let configRead = try? await client.call(
+                method: "config/read",
+                params: .object(["cwd": .string(workingDirectory.path)])
+            )
+
             // A fresh provider conversation rooted in the bound worktree.
             // No model, approval, or sandbox overrides: native inheritance.
             let started = try await client.call(
@@ -354,6 +368,20 @@ actor CodexAppServerNativeSession: AgentAdapterSession,
                 opaqueIdentifier: threadID,
                 executableVersion: CodexAppServerExecutableIdentity.supportedVersion
             )), ownership: ownership)
+            do {
+                discoveryReport = try CodexAppServerConfigurationDiscovery.report(
+                    selectedExecutable: ownership.policy.selectedExecutable,
+                    environmentProvenance: ownership.policy.environmentProvenance,
+                    accountState: accountState,
+                    modelList: modelList,
+                    configRead: configRead,
+                    sessionStarted: true
+                )
+            } catch {
+                // A malformed observation is a negative observation, never a
+                // fabricated capability: the report stays nil.
+                discoveryReport = nil
+            }
             pumpTask = Task { await pump() }
             phase = .ready
         } catch {
@@ -769,9 +797,8 @@ nonisolated final class CodexAppServerNativeFactory: AgentAdapterFactory, @unche
     private let materials: CodexAppServerNativeMaterials
     private let consumed = Mutex(false)
 
-    init(materials: CodexAppServerNativeMaterials, factoryID: AdapterFactoryID) throws {
-        self.materials = materials
-        self.id = factoryID
+    /// The exact profile every Codex app-server factory offers.
+    nonisolated static func profile() throws -> AdapterCapabilityProfile {
         let signals: Set<AdapterLifecycleCapabilities.Signal> = [
             .init(scope: .turn, phase: .started),
             .init(scope: .turn, phase: .waitingForQuestion),
@@ -781,13 +808,19 @@ nonisolated final class CodexAppServerNativeFactory: AgentAdapterFactory, @unche
             .init(scope: .turn, phase: .failed),
             .init(scope: .turn, phase: .cancelled)
         ]
-        maximumProfile = try AdapterCapabilityProfile(
+        return try AdapterCapabilityProfile(
             transport: .ownedStandardIO,
             lifecycle: AdapterLifecycleCapabilities(signals: signals, evidence: []),
             delivery: AdapterDeliverySemantics(
                 replay: .none, ordering: .unordered, minimumAuthentication: .ownedChildPipe
             )
         )
+    }
+
+    init(materials: CodexAppServerNativeMaterials, factoryID: AdapterFactoryID) throws {
+        self.materials = materials
+        self.id = factoryID
+        maximumProfile = try Self.profile()
     }
 
     func probe() async throws -> AdapterProbeResult {

@@ -25,6 +25,13 @@ struct OpenCodeTaskView: View {
                 Button(Strings.openCodeTaskClose, action: onDismiss)
             }
 
+            // Contextual "How to run": the task's own execution observations,
+            // not a permanent settings surface (#1760). Hidden until the
+            // session produces its discovery report.
+            if let report = runtime?.discoveryReport {
+                howToRun(report: report)
+            }
+
             if let runtime, let snapshot = runtime.snapshot {
                 status(snapshot.state)
                 if snapshot.inputFenced {
@@ -99,6 +106,102 @@ struct OpenCodeTaskView: View {
         .padding(20)
         .frame(width: 620, height: 640)
         .disabled(isSending && taskID == nil)
+    }
+
+    /// The contextual "How to run" disclosure (#1765): agent,
+    /// connection/account, and the native execution settings with their
+    /// provenance, exactly as the session's discovery report observed them.
+    private func howToRun(report: AgentTaskDiscoveryReport) -> some View {
+        DisclosureGroup {
+            VStack(alignment: .leading, spacing: 6) {
+                ForEach(AgentTaskHowToRun.lines(report: report)) { line in
+                    howToRunLine(line)
+                }
+            }
+            .padding(.top, 8)
+        } label: {
+            Label(Strings.howToRunTitle, systemImage: "slider.horizontal.3")
+                .font(.headline)
+        }
+        .accessibilityIdentifier(AccessibilityID.howToRunDisclosure)
+    }
+
+    private func howToRunLine(_ line: AgentTaskHowToRunLine) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(howToRunTitle(for: line.kind))
+                .foregroundStyle(.secondary)
+                .frame(width: 130, alignment: .leading)
+            howToRunValue(line)
+        }
+        .accessibilityIdentifier(howToRunAccessibilityID(for: line.kind))
+    }
+
+    private func howToRunTitle(for kind: AgentTaskHowToRunLine.Kind) -> LocalizedStringKey {
+        switch kind {
+        case .agent: Strings.howToRunAgent
+        case .account: Strings.howToRunAccount
+        case .model: Strings.howToRunModel
+        case .reasoningEffort: Strings.howToRunEffort
+        case .permissions: Strings.howToRunPermissions
+        }
+    }
+
+    private func howToRunAccessibilityID(for kind: AgentTaskHowToRunLine.Kind) -> String {
+        switch kind {
+        case .agent: AccessibilityID.howToRunAgentLine
+        case .account: AccessibilityID.howToRunAccountLine
+        case .model: AccessibilityID.howToRunModelLine
+        case .reasoningEffort: AccessibilityID.howToRunEffortLine
+        case .permissions: AccessibilityID.howToRunPermissionsLine
+        }
+    }
+
+    @ViewBuilder
+    private func howToRunValue(_ line: AgentTaskHowToRunLine) -> some View {
+        switch line.kind {
+        case .agent:
+            HStack(spacing: 6) {
+                Text(agentDisplayName)
+                if let version = line.agentVersion {
+                    Text(verbatim: version)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        case .account:
+            switch line.account {
+            case .authenticated(let label):
+                if let label {
+                    Text(verbatim: label)
+                } else {
+                    Text(Strings.howToRunNativeCredentials)
+                }
+            case .loginRequired:
+                Text(Strings.howToRunLoginRequired)
+            case .accountUnavailable:
+                Text(Strings.howToRunAccountUnavailable)
+            case .expiredCredentials:
+                Text(Strings.howToRunExpiredCredentials)
+            case .unknown, nil:
+                Text(Strings.howToRunUnknown)
+            }
+        case .model, .reasoningEffort, .permissions:
+            switch line.setting {
+            case .confirmed(let value):
+                Text(verbatim: value).textSelection(.enabled)
+            case .agentSettings:
+                Text(Strings.howToRunAgentSettings)
+            case .cliControls:
+                Text(Strings.howToRunCliControls)
+            case nil:
+                EmptyView()
+            }
+        }
+    }
+
+    private var agentDisplayName: String {
+        (try? AgentPresentationCatalog.builtIn(stableIdentifier: "openCode"))?.displayName
+            ?? "OpenCode"
     }
 
     private func status(_ state: OpenCodeACPSession.State) -> some View {

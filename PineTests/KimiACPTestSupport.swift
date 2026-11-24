@@ -134,7 +134,11 @@ nonisolated final class KimiFakeTransport: KimiACPTransport, Sendable {
                     "configOptions": .array([
                         .object([
                             "id": .string("mode"), "name": .string("Session Mode"),
-                            "type": .string("select"), "currentValue": .string("ask")
+                            "type": .string("select"), "currentValue": .string("ask"),
+                            "options": .array([
+                                .object(["value": .string("ask"), "name": .string("Ask")]),
+                                .object(["value": .string("neverAsk"), "name": .string("Never Ask")]),
+                            ]),
                         ]),
                         .object([
                             "id": .string("future"), "name": .string("Future"),
@@ -225,6 +229,8 @@ nonisolated struct KimiFixtureOptions: Sendable {
     var foreignReplay = false
     var imageCapability = true
     var embeddedContextCapability = true
+    /// Launch-boundary observation for the discovery report.
+    var discovery: KimiACPConfigurationDiscovery.Input?
 }
 
 nonisolated final class KimiSessionRecorder: Sendable {
@@ -261,7 +267,9 @@ nonisolated struct KimiFixtureFactory: AgentAdapterFactory {
     }
 
     func makeSession(_ request: AgentAdapterSessionRequest) async throws -> any AgentAdapterSession {
-        let factory = KimiACPFactory(id: id, observation: try await probe()) { request in
+        let factory = KimiACPFactory(
+            id: id, observation: try await probe(), discovery: options.discovery
+        ) { request in
             KimiACPAdmission(
                 launch: { _ in self.transport },
                 cwd: request.reviewBinding?.lease.canonicalWorktree.path ?? "/fixture/task",

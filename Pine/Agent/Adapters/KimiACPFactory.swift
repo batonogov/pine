@@ -90,6 +90,9 @@ nonisolated struct KimiACPFactory: AgentAdapterReviewingFactory {
     let reviewerControl: AgentTaskReviewerControl = .promptOnly
     let id: AdapterFactoryID
     let observation: AdapterProbeResult?
+    /// Launch-boundary observation for the session's discovery report; nil
+    /// until the task-owner wiring supplies the validated executable.
+    var discovery: KimiACPConfigurationDiscovery.Input? = nil
     let admit: @Sendable (AgentAdapterSessionRequest) async throws -> KimiACPAdmission
 
     func probe() async throws -> AdapterProbeResult {
@@ -116,7 +119,8 @@ nonisolated struct KimiACPFactory: AgentAdapterReviewingFactory {
                 revokeOwnership: admission.revokeOwnership,
                 sessionBound: admission.sessionBound,
                 promptResponded: admission.promptResponded,
-                accountGate: admission.accountGate
+                accountGate: admission.accountGate,
+                discovery: discovery
             )
             try Task.checkCancellation()
             return session

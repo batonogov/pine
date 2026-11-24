@@ -713,6 +713,16 @@ nonisolated private struct NativeBridgeFixture: Sendable {
                     try await peer.write(CodexAppServerMessage.response(id, result: .object([
                         "account": .null, "requiresOpenaiAuth": .bool(true)
                     ])).encoded(), deadline: deadline)
+                case .request(let id, "model/list", _):
+                    // The fixture server lists no models: the session keeps the
+                    // documented floor state, exactly like a malformed reply.
+                    try await peer.write(CodexAppServerMessage.response(id, result: .object([
+                        "data": .array([]), "nextCursor": .null
+                    ])).encoded(), deadline: deadline)
+                case .request(let id, "config/read", _):
+                    try await peer.write(CodexAppServerMessage.response(id, result: .object([
+                        "config": .object([:]), "origins": .object([:])
+                    ])).encoded(), deadline: deadline)
                 case .request(let id, "thread/start", _):
                     let thread = "thr_fixture"
                     threadID = thread
