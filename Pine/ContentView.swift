@@ -49,6 +49,7 @@ struct ContentView: View {
     @State var isAgentActivityPresented = false
     @State var isAgentHistoryPresented = false
     @State var isAgentInboxPresented = false
+    @State var isOpenCodeTaskPresented = false
     /// Conduit from the inbox toolbar button to the popover anchor's
     /// coordinator, so the click resolves against authoritative popover
     /// state instead of the possibly-stale binding (#1665).
@@ -144,6 +145,22 @@ struct ContentView: View {
                     onOpenProject: { openNewProject() },
                     onCloseProject: { closeActiveProject() }
                 )
+            }
+
+            // Kept on `.navigation`, not `.primaryAction`: the layout pin
+            // (`AgentInboxToolbarLayoutTracker`) assumes exactly one
+            // `.primaryAction` item — the Inbox button — and a second one
+            // disturbed the Inbox's outside-click dismissal/reopen on
+            // macOS 27, where retitling re-applies the toolbar. The visual
+            // position is the same leading cluster either way.
+            ToolbarItem(placement: .navigation) {
+                Button {
+                    isOpenCodeTaskPresented = true
+                } label: {
+                    Label(Strings.openCodeTaskRequest, systemImage: "arrow.up.message")
+                }
+                .disabled(workspace.rootURL == nil)
+                .accessibilityIdentifier(AccessibilityID.openCodeTaskToolbarButton)
             }
 
             // Agent Inbox entry point in the project window toolbar (#1337).
@@ -280,6 +297,17 @@ struct ContentView: View {
             projectManager: projectManager,
             isKeyWindow: controlActiveState == .key
         ))
+        .sheet(isPresented: $isOpenCodeTaskPresented) {
+            if let root = workspace.rootURL {
+                OpenCodeTaskView(
+                    registry: registry,
+                    project: AgentTaskProjectIdentity(
+                        canonicalProjectPath: root.path, canonicalWorktreePath: root.path
+                    ),
+                    onDismiss: { isOpenCodeTaskPresented = false }
+                )
+            }
+        }
         .sheet(isPresented: $isBranchSwitcherPresented) {
             BranchSwitcherView(
                 gitProvider: workspace.gitProvider,

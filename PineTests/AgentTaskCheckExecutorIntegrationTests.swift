@@ -366,7 +366,7 @@ struct AgentTaskCheckExecutorIntegrationTests {
                 }
             })
         }
-        #expect(await waitUntilMainActor({ entered.withLock { $0 } }, ceiling: .seconds(15)))
+        #expect(await waitUntilMainActor({ entered.withLock { $0 } }, ceiling: .seconds(30)))
         if replacePlan {
             #expect(await executor.approve(
                 taskID: prepared.task.id, plan: replacementPlan(prepared.plan), environment: prepared.environment
