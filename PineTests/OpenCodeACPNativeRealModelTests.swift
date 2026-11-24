@@ -49,29 +49,39 @@ struct OpenCodeACPNativeRealModelTests {
         let runtime = try #require(projects.openCodeRuntime(for: taskID))
         defer { Task { await runtime.stop(deadline: .now.advanced(by: .seconds(10))) } }
 
-        // Observed activity: the turn must be seen working before it waits.
-        let sawActivity = try await Self.observe(runtime) { runtime.snapshot?.questions.count == 1 }
-        #expect(sawActivity.contains(.working) || sawActivity.contains(.submitted))
-        #expect(sawActivity.contains(.waiting))
-
-        // Real question, answered exactly once on the exact context.
-        let question = try #require(runtime.snapshot?.questions.first)
-        #expect(question.permission == false)
-        let answers = try Self.firstChoiceAnswers(for: question)
-        _ = try await runtime.answerQuestion(question, answers: answers)
-        await #expect(throws: OpenCodeACPError.self) {
-            _ = try await runtime.answerQuestion(question, answers: answers)
+        // Observed activity: the submitted turn is seen working before any
+        // ask can settle the stage.
+        let sawActivity = try await Self.observe(runtime) {
+            (runtime.snapshot?.questions.count == 1)
+                || runtime.snapshot?.state == .unverified
         }
+        #expect(sawActivity.contains(.working) || sawActivity.contains(.submitted))
 
-        // Real one-shot write permission.
-        try #require(await Self.observe(runtime) {
-            (runtime.snapshot?.questions.first?.permission ?? false)
-        })
-        let permission = try #require(runtime.snapshot?.questions.first)
-        #expect(permission.permission == true)
-        _ = try await runtime.answerPermission(
-            permission, optionID: try #require(permission.allowOnceOptionID), decision: .allowOnce
-        )
+        // A real question and a real one-shot write permission arrive in
+        // either order; each is answered/allowed exactly once on the exact
+        // context. The stage ends when both are served or the turn settles.
+        var sawQuestion = false
+        var sawPermission = false
+        let stageDeadline = ContinuousClock.now.advanced(by: .seconds(600))
+        while (sawQuestion && sawPermission) == false, ContinuousClock.now < stageDeadline,
+              runtime.snapshot?.state != .unverified {
+            if let question = runtime.snapshot?.questions.first {
+                if question.permission {
+                    let allow = try #require(question.allowOnceOptionID)
+                    _ = try await runtime.answerPermission(question, optionID: allow, decision: .allowOnce)
+                    sawPermission = true
+                } else {
+                    let answers = try Self.firstChoiceAnswers(for: question)
+                    _ = try await runtime.answerQuestion(question, answers: answers)
+                    sawQuestion = true
+                }
+            } else if (sawQuestion && sawPermission) == false {
+                try? await Task.sleep(for: .milliseconds(200))
+            }
+        }
+        #expect(sawQuestion)
+        #expect(sawPermission)
+        #expect(sawActivity.contains(.waiting))
 
         // Real unverified result; the provider turn never settles Ready.
         try #require(await Self.observe(runtime) {

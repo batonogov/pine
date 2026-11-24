@@ -52,21 +52,38 @@ final class OpenCodeRealModelJourneyUITests: PineUITestCase {
         XCTAssertTrue(waitForEnabled(send, timeout: 10), "Send Request must arm after input")
         send.click()
 
-        // Observed activity: the turn is seen working before anything asks.
+        // Observed activity: the submitted turn shows Working… before any
+        // ask can arrive (state .submitted/.working both project to it).
         let status = app.staticTexts["openCodeTaskStatus"].firstMatch
         XCTAssertTrue(waitForLabel(status, containing: "Working…", timeout: 240),
                       "Expected observed Working… activity")
 
-        // A real question arrives; the UI preselects the first choice.
-        XCTAssertTrue(waitForLabel(status, containing: "Answer needed", timeout: 300))
-        let answer = app.buttons["Answer"].firstMatch
-        XCTAssertTrue(waitForEnabled(answer, timeout: 120), "Answer must arm on the preselected choice")
-        answer.click()
-
-        // A real one-shot write permission; allow it exactly once.
-        let allow = app.buttons["Allow Once"].firstMatch
-        XCTAssertTrue(waitForEnabled(allow, timeout: 300), "Expected a real write permission request")
-        allow.click()
+        // A real question and a real one-shot write permission arrive in
+        // either order; each is answered/allowed in the UI exactly once.
+        var sawAnswer = false
+        var sawAllow = false
+        let stageDeadline = Date().addingTimeInterval(900)
+        while (sawAnswer && sawAllow) == false, Date() < stageDeadline {
+            if status.exists, status.label.contains("Result received") { break }
+            if status.exists, status.label.contains("Task failed") { break }
+            if !sawAnswer {
+                let answer = app.buttons["Answer"].firstMatch
+                if answer.waitForExistence(timeout: 1), answer.isEnabled {
+                    answer.click()
+                    sawAnswer = true
+                }
+            }
+            if !sawAllow {
+                let allow = app.buttons["Allow Once"].firstMatch
+                if allow.waitForExistence(timeout: 1), allow.isEnabled {
+                    allow.click()
+                    sawAllow = true
+                }
+            }
+            Thread.sleep(forTimeInterval: 1)
+        }
+        XCTAssertTrue(sawAnswer, "Expected a real form question to answer in the UI")
+        XCTAssertTrue(sawAllow, "Expected a real one-shot write permission to allow in the UI")
 
         // A real unverified result, explicitly not Ready.
         XCTAssertTrue(waitForLabel(status, containing: "Result received", timeout: 300))
