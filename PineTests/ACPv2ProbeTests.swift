@@ -135,13 +135,15 @@ struct ACPv2ProbeTests {
             throw CodexAppServerWireError.invalidEnvelope
         }
 
-        // -32022: the peer supports no version at or below the requested one.
-        // Pine's envelope retains the error CODE (the `data` object with the
-        // supported list is dropped by design); the spec-permitted fallback
-        // is to repeat initialize with a lower version.
+        // -32022: the peer supports a version higher than the requested one
+        // (the spec's own example: requested 1, supported [2]). No version at
+        // or below the requested one exists, so there is no fallback to
+        // negotiate; the spec says close the connection and inform the user.
+        // Pine's envelope retains the error CODE; the `data` object with the
+        // supported list is dropped by design.
         let rejectedLine =
             #"{"jsonrpc":"2.0","id":0,"error":{"code":-32022,"message":"Unsupported protocol version","data":{"#
-            + #""requested":2,"supported":[1]}}}"#
+            + #""requested":1,"supported":[2]}}}"#
         let rejected = Self.framedLine(rejectedLine)
         #expect(rejected == .failure(.integer(0), code: -32022))
     }
@@ -312,7 +314,7 @@ struct ACPv2ProbeTests {
             ])
         ]))
         let bytes = try KimiACPWire.encode(message)
-        try await runOnBackground {
+        await runOnBackground {
             inputPipe.fileHandleForWriting.write(bytes)
         }
 
@@ -355,10 +357,11 @@ struct ACPv2ProbeTests {
                 return
             }
             // Unsupported peer behavior stays explicit: -32022 means the
-            // peer supports no version at or below 2 (the data object with
-            // its supported list is not retained by the Pine envelope).
+            // peer supports no version at or below the requested 2 (the data
+            // object with its supported list is not retained by the Pine
+            // envelope); the spec says close and inform the user.
             Issue.record(Comment(rawValue: "ACP v2 probe: peer rejected initialize with code \(code)"
-                + (code == -32022 ? " (unsupported protocol version: this peer is v1-baseline only)" : "")))
+                + (code == -32022 ? " (unsupported protocol version: peer supports no version at or below 2)" : "")))
         case .request, .notification:
             Issue.record("ACP v2 probe: initialize was answered by a non-response frame")
         }
