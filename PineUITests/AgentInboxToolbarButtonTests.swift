@@ -33,23 +33,6 @@ final class AgentInboxToolbarButtonTests: PineUITestCase {
         )
     }
 
-    // TEMPORARY (#1854 reopen regression diagnostic) — removes with the fix.
-    private var inboxTraceURL: URL {
-        URL(fileURLWithPath: "/tmp/pine-inbox-trace.log")
-    }
-
-    private func resetInboxTrace() {
-        try? FileManager.default.removeItem(at: inboxTraceURL)
-    }
-
-    private func dumpInboxTrace() {
-        guard let contents = try? String(contentsOf: inboxTraceURL, encoding: .utf8)
-        else { return }
-        print("=== INBOX TRACE START ===")
-        print(contents)
-        print("=== INBOX TRACE END ===")
-    }
-
     override func tearDownWithError() throws {
         for url in projectURLs { cleanupProject(url) }
         try super.tearDownWithError()
@@ -70,7 +53,6 @@ final class AgentInboxToolbarButtonTests: PineUITestCase {
         let url = try createTempProject(files: ["hello.swift": "// hi\n"])
         projectURLs.append(url)
         launchWithProject(url)
-        resetInboxTrace()
 
         XCTAssertTrue(
             waitForExistence(toolbarButton, timeout: 10),
@@ -101,7 +83,6 @@ final class AgentInboxToolbarButtonTests: PineUITestCase {
             waitForExistence(inbox, timeout: 5),
             "The toolbar button should reopen the Inbox after Escape"
         )
-        dumpInboxTrace()
     }
 
     /// #1665: the button belongs on the trailing edge of the toolbar. When
@@ -205,7 +186,6 @@ final class AgentInboxToolbarButtonTests: PineUITestCase {
         let url = try createTempProject(files: ["hello.swift": "// hi\n"])
         projectURLs.append(url)
         launchWithProject(url)
-        resetInboxTrace()
 
         let window = projectWindows(for: url).firstMatch
         XCTAssertTrue(waitForExistence(window, timeout: 10))
@@ -289,7 +269,6 @@ final class AgentInboxToolbarButtonTests: PineUITestCase {
             app.windows["Agent Inbox"].exists,
             "Agent Inbox should never become a separate window"
         )
-        dumpInboxTrace()
     }
 
     /// The View menu goes through `AppDelegate`'s real host selection rather
