@@ -215,6 +215,9 @@ struct OpenCodeACPNativeBridgeTests {
         try #require(await waitUntilMainActor {
             fixture.task()?.nativeDispatch?.phase == .cancellationConfirmed
         })
+        // The late question follows the cancellation response on the wire.
+        // Wait for its terminal reply before reading the provider snapshot.
+        try #require(await waitUntilMainActor { fixture.server.terminalReplyCount == 1 })
         let snapshot = await fixture.provider().snapshot()
         #expect(snapshot.parentOutcome == .cancelled)
         // The late question is answered terminally on the wire; the session
@@ -222,9 +225,6 @@ struct OpenCodeACPNativeBridgeTests {
         // failed effect (which would be .unknown).
         #expect(snapshot.state == .cancelled && !snapshot.inputFenced)
         #expect(snapshot.questions.isEmpty && !snapshot.submittedQuestions.isEmpty)
-        // The terminal reply is written asynchronously: wait for the fake
-        // server to record it instead of racing the pipe read.
-        try #require(await waitUntilMainActor { fixture.server.terminalReplyCount == 1 })
         #expect(fixture.task()?.runs.last?.outcome == nil)
         await fixture.session.stop(deadline: .now.advanced(by: .seconds(2)))
     }
