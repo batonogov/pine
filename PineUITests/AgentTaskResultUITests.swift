@@ -27,14 +27,26 @@ final class AgentTaskResultUITests: PineUITestCase {
         launchResult()
         let primary = element("agentTaskResultPrimaryAction")
         XCTAssertTrue(primary.waitForExistence(timeout: 5))
+        XCTAssertTrue(primary.isEnabled)
 
+        // Walk the focus loop and try to activate with Space. The fixture
+        // window's only enabled control is the primary action (the stop
+        // button is disabled without an onStop), so Space evidence is
+        // proof the loop reaches it. The `hasFocus` snapshot predicate
+        // cannot be relied on in this hosting window: a predicate the
+        // runtime cannot evaluate never matches, which reads as a
+        // permanent "not focused" (see SidebarCollapseFlakeProbeUITests).
+        let evidence = element("agentTaskResultLaunchEvidence")
+        var activated = false
         for _ in 0..<16 {
-            if hasFocus(primary) { break }
             app.typeKey(.tab, modifierFlags: [])
+            app.typeKey(" ", modifierFlags: [])
+            if evidence.waitForExistence(timeout: 1) {
+                activated = true
+                break
+            }
         }
-        XCTAssertTrue(hasFocus(primary))
-        app.typeKey(" ", modifierFlags: [])
-        XCTAssertTrue(element("agentTaskResultLaunchEvidence").waitForExistence(timeout: 2))
+        XCTAssertTrue(activated, "Tab+Space should reach and activate the primary action")
     }
 
     func testNeedsDecisionProvidesFreeFormReplyAndNoReadyAction() {
@@ -75,9 +87,4 @@ final class AgentTaskResultUITests: PineUITestCase {
         app.descendants(matching: .any).matching(identifier: identifier).firstMatch
     }
 
-    private func hasFocus(_ element: XCUIElement) -> Bool {
-        XCTWaiter.wait(for: [XCTNSPredicateExpectation(
-            predicate: NSPredicate(format: "hasFocus == true"), object: element
-        )], timeout: 0.1) == .completed
-    }
 }
