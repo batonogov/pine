@@ -27,6 +27,27 @@ nonisolated struct AgentTaskNativeDispatch: Codable, Equatable, Sendable,
         var customMirror: Mirror { Mirror(self, children: ["value": description]) }
     }
     static let maximumSubmissions = 32
+    /// The journal phase an explicit exact-session restore rebind (#1811)
+    /// returns to, or nil when no documented post-session state can be
+    /// re-entered (an indeterminate last-input state). Restore is then
+    /// refused, never guessed.
+    static func restoreRebindPhase(from phase: Phase, submissions: [Submission]) -> Phase? {
+        guard phase != .reserved, phase != .launchIntent else { return nil }
+        guard phase == .unavailable else { return phase }
+        switch submissions.last?.phase {
+        case nil: return .sessionBound
+        case .acknowledged, .responseObserved: return .parentSettlementUnknown
+        case .unknown: return .inputUnknown
+        case .intent: return nil
+        }
+    }
+
+    /// Admission eligibility for a new-owner exact-session restore: a
+    /// post-session journal with the exact recorded conversation, whose
+    /// rebind target exists. Every such phase has an observed run.
+    static func isRestoreEligible(_ phase: Phase, submissions: [Submission]) -> Bool {
+        restoreRebindPhase(from: phase, submissions: submissions) != nil
+    }
     let taskID: UUID
     let runID: UUID
     var bindingID: UUID?
@@ -108,6 +129,17 @@ nonisolated struct AgentTaskNativeDispatch: Codable, Equatable, Sendable,
         var next = self
         switch transition {
         case .sessionBound(let identity):
+            // Explicit restore re-binds the exact recorded identity on a
+            // post-session phase: the journal re-enters its documented
+            // post-session state (a `.unavailable` journal, the normal one
+            // after a clean stop, rebinds through
+            // `restoreRebindPhase`). No input is replayed. A fresh launch
+            // still requires launchIntent with no conversation.
+            if let conversation, conversation == identity,
+               let rebind = Self.restoreRebindPhase(from: phase, submissions: submissions) {
+                next.phase = rebind
+                return next
+            }
             guard phase == .launchIntent, conversation == nil else { throw AgentTaskNativeAdmissionError.invalidTransition }
             next.conversation = identity
             next.phase = .sessionBound

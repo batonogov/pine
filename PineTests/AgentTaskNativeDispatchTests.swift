@@ -217,6 +217,81 @@ struct AgentTaskNativeDispatchTests {
         #expect(try journal2.applying(.unavailable).phase == .unavailable)
     }
 
+    @Test func restoreRebindReturnsTheDocumentedPostSessionPhase() throws {
+        let identity = AgentVendorSessionIdentity(provider: "codex", opaqueIdentifier: "thr_1")
+        // Pre-session phases are never restore targets.
+        #expect(AgentTaskNativeDispatch.restoreRebindPhase(
+            from: .reserved, submissions: []
+        ) == nil)
+        #expect(AgentTaskNativeDispatch.restoreRebindPhase(
+            from: .launchIntent, submissions: []
+        ) == nil)
+        // A post-session journal keeps its phase on rebind.
+        let bound = try launchedJournal().applying(.sessionBound(identity))
+        #expect(AgentTaskNativeDispatch.restoreRebindPhase(
+            from: bound.phase, submissions: bound.submissions
+        ) == .sessionBound)
+        // The clean-stop `.unavailable` journal re-enters by its last
+        // recorded input state.
+        var unavailable = bound
+        unavailable = try unavailable.applying(.unavailable)
+        #expect(AgentTaskNativeDispatch.restoreRebindPhase(
+            from: unavailable.phase, submissions: unavailable.submissions
+        ) == .sessionBound)
+        var withAck = try unavailable.applying(.initialInputIntent)
+        withAck = try withAck.applying(.initialInputAcknowledged(operationID: "turn_1"))
+        withAck = try withAck.applying(.unavailable)
+        #expect(AgentTaskNativeDispatch.restoreRebindPhase(
+            from: withAck.phase, submissions: withAck.submissions
+        ) == .parentSettlementUnknown)
+        var withUnknown = try launchedJournal()
+            .applying(.sessionBound(identity))
+            .applying(.initialInputIntent)
+        withUnknown = try withUnknown
+            .applying(.submissionUnknown(submissionID: withUnknown.submissions[0].id))
+            .applying(.unavailable)
+        #expect(AgentTaskNativeDispatch.restoreRebindPhase(
+            from: withUnknown.phase, submissions: withUnknown.submissions
+        ) == .inputUnknown)
+        // An indeterminate last input (recorded intent, never acknowledged,
+        // then invalidated) has no documented re-entry: restore is refused,
+        // never guessed.
+        var withIntent = try launchedJournal()
+            .applying(.sessionBound(identity))
+            .applying(.initialInputIntent)
+            .applying(.unavailable)
+        #expect(AgentTaskNativeDispatch.restoreRebindPhase(
+            from: withIntent.phase, submissions: withIntent.submissions
+        ) == nil)
+        #expect(!AgentTaskNativeDispatch.isRestoreEligible(
+            withIntent.phase, submissions: withIntent.submissions
+        ))
+    }
+
+    @Test func restoreRebindIsAOneShotExactIdentityRebind() throws {
+        let identity = AgentVendorSessionIdentity(provider: "codex", opaqueIdentifier: "thr_1")
+        var unavailable = try launchedJournal()
+            .applying(.sessionBound(identity))
+            .applying(.initialInputIntent)
+            .applying(.initialInputAcknowledged(operationID: "turn_1"))
+        unavailable = try unavailable.applying(.unavailable)
+        // The exact recorded identity re-binds through the rebind target.
+        let rebound = try unavailable.applying(.sessionBound(identity))
+        #expect(rebound.phase == .parentSettlementUnknown)
+        #expect(rebound.conversation == identity)
+        #expect(rebound.submissions.count == 1)
+        // A foreign identity is never adopted.
+        #expect(throws: AgentTaskNativeAdmissionError.invalidTransition) {
+            _ = try unavailable.applying(.sessionBound(
+                AgentVendorSessionIdentity(provider: "codex", opaqueIdentifier: "thr_other")
+            ))
+        }
+        // Fresh-launch semantics are unchanged: launchIntent still requires
+        // no prior conversation.
+        let launched = launchedJournal()
+        #expect(try launched.applying(.sessionBound(identity)).phase == .sessionBound)
+    }
+
     @Test func journalRoundTripsAndRedacts() throws {
         let identity = AgentVendorSessionIdentity(provider: "codex", opaqueIdentifier: "thr_secret", executableVersion: "codex-cli 0.169.0")
         var journal = try launchedJournal()
