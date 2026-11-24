@@ -60,7 +60,7 @@ session plan/estimate per §1, recording revision + reason in the run record.
 | --- | --- |
 | 1 — first-use | 15 min recorded familiarization → SC1 → SC2 → SC3 |
 | 2 | SC4 (incl. the 5-min neutral task) → SC5 (T1→T2→T3, recorded order) → SC6 where the tool supports explicit handoff (Pine: OpenCode → Codex per #1811; record its absence as a capability difference, never simulate one) |
-| 3 — repeat-use | F probes the tool can induce — baseline F1 (expired account), F3 (denied action), F5 (lost session); F2, F4, F6 where supported, otherwise marked **not comparable** → configured repeat task (fresh seed copy, new task identity; count setup/provider/routing again, feeds T1) |
+| 3 — repeat-use | F probes the tool can induce — baseline F1 (expired account), F3 (denied action), F5 (lost session); F2, F4, F6 where supported, otherwise marked **not comparable**; B2 probe (ordinary root question, not F4) where the fixture provides one (revenue Packet 2 policy question or ledger T3 merge policy), per the suite table → configured repeat task (fresh seed copy, new task identity; count setup/provider/routing again, feeds T1) |
 
 Pine-only additions: the T4 responsiveness probe (§4) and the #1810 boundary
 cards B1–B6 where the candidate supports them. Baselines: run the same
@@ -74,12 +74,15 @@ expand it); record actual settings and defects, not "native" as a proxy.
 ## 4. Measurement
 
 - One [scorecard.md](scorecard.md) row per tool × participant × scenario run,
-  using its columns verbatim: run; fixture/requirements; provider/transport/
-  settings; completion/quality; handling time **split** (cold setup | warm
-  creation | agent execution | required verification | human handling — never
-  summed); context copying; interruptions; recovery (F rows); responsiveness;
-  learnability; stated preference; removed/merged concepts; repeated user
-  decisions; evidence classification; failures/confounds.
+  using its columns verbatim: run; fixture / requirements; provider /
+  transport / settings; completion / quality; handling time — **kept separate,
+  never summed** (cold setup | warm task creation | agent execution | required
+  verification | human handling); context copying; interruptions; recovery;
+  responsiveness; learnability; stated preference; removed/merged concepts;
+  repeated user decisions; evidence classification; failures / confounds.
+- Note: the frozen revenue seed's "Warm creation" label (revenue/README.md)
+  is the same measurement as the scorecard's "warm task creation" — a
+  pre-existing aliasing; the seed text is untouched.
 - The facilitator, not an agent, runs the hidden oracles: RED before
   participant work and GREEN on the checked candidate afterward (revenue per
   stage; ledger per task). Participant-authored regression checks are scored
@@ -103,8 +106,8 @@ expand it); record actual settings and defects, not "native" as a proxy.
 | --- | --- | --- |
 | T1 | A configured repeat task needs no repeated provider/setup configuration or manual worktree routing | HYPOTHESIS |
 | T2 | A two-revision result loop requires zero manual context copy/paste or manual relay of reviewer findings | HYPOTHESIS |
-| T3 | On returning, a user can identify goal, latest result, evidence freshness, and next decision within 15 s in at least 80% of observed trials | HYPOTHESIS |
-| T4 | p95 input-to-feedback below 100 ms under the documented three-task load on the recorded reference Mac, excluding network/agent work | HYPOTHESIS |
+| T3 | On returning, a user can identify goal, latest result, evidence freshness, and next decision within 15 seconds in at least 80% of observed trials | HYPOTHESIS |
+| T4 | Local input/focus/navigation remains responsive under the documented three-task load; p95 input-to-feedback below 100 ms on the recorded reference Mac, excluding network/agent work | HYPOTHESIS |
 | T5 | No misleading Ready in the acceptance fault matrix; every generated attention item is a usable result or a concrete decision, with no duplicates | HYPOTHESIS |
 | T6 | After familiarization, at least 30% lower median human-handling time for the revise-and-return scenarios (SC2, SC4) than the best tested baseline, with no loss of outcome quality or verification | HYPOTHESIS |
 
