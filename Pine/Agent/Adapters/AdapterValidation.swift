@@ -118,17 +118,20 @@ nonisolated struct AgentAdapterSessionRequest: Sendable {
     let resumeFrom: AdapterResumeCheckpoint?
     let sink: any AgentEventSink
     let controlAuthority: AgentAdapterControlAuthority
+    let reviewBinding: AgentAdapterReviewBinding?
 
     fileprivate init(
         contract: NegotiatedAdapterContract,
         resumeFrom: AdapterResumeCheckpoint?,
         sink: any AgentEventSink,
-        controlAuthority: AgentAdapterControlAuthority
+        controlAuthority: AgentAdapterControlAuthority,
+        reviewBinding: AgentAdapterReviewBinding?
     ) {
         self.contract = contract
         self.resumeFrom = resumeFrom
         self.sink = sink
         self.controlAuthority = controlAuthority
+        self.reviewBinding = reviewBinding
     }
 }
 
@@ -1101,7 +1104,16 @@ nonisolated private final class CoreBoundSessionLifetime: Sendable {
     }
 }
 
-nonisolated private struct CoreBoundAdapterSession: AgentAdapterSession {
+nonisolated private final class ReviewBindingBox: Sendable {
+    private let storage: Mutex<AgentAdapterReviewBinding?>
+    init(_ value: AgentAdapterReviewBinding?) { storage = Mutex(value) }
+    var value: AgentAdapterReviewBinding? {
+        get { storage.withLock { $0 } }
+        set { storage.withLock { $0 = newValue } }
+    }
+}
+
+nonisolated private struct CoreBoundAdapterSession: AgentAdapterControlledSession {
     let contract: NegotiatedAdapterContract
     let registryID: UUID
     let namespace: SourceNamespace
@@ -1109,6 +1121,8 @@ nonisolated private struct CoreBoundAdapterSession: AgentAdapterSession {
     let sink: ValidatingAgentEventSink
     let authorityLease: OneShotAuthorityLease
     let lifetime: CoreBoundSessionLifetime
+    let controlAuthority: AgentAdapterControlAuthority
+    let reviewBinding: ReviewBindingBox
 
     var state: SourceSessionState { lifetime.state }
 
@@ -1139,6 +1153,24 @@ nonisolated private struct CoreBoundAdapterSession: AgentAdapterSession {
 
     func stop(deadline: ContinuousClock.Instant) async {
         await lifetime.stop(deadline: deadline)
+    }
+
+    func dispatch(
+        _ control: AgentAdapterControl,
+        beforeDispatch: @escaping @Sendable () throws -> Void
+    ) async throws -> AgentAdapterControlDispatch {
+        try Task.checkCancellation()
+        let authority = controlAuthority
+        let validate: @Sendable () throws -> Void = {
+            try authority.validate()
+            try beforeDispatch()
+            try authority.validate()
+        }
+        try validate()
+        guard let controlled = lifetime.underlying as? any AgentAdapterControlledSession else {
+            throw AgentAdapterControlError.unsupported
+        }
+        return try await controlled.dispatch(control, beforeDispatch: validate)
     }
 }
 
@@ -1228,7 +1260,8 @@ nonisolated struct AgentAdapterRegistry: Sendable {
     func makeSession(
         contract: NegotiatedAdapterContract,
         resumeFrom checkpoint: AdapterResumeCheckpoint?,
-        downstream: @escaping Downstream
+        downstream: @escaping Downstream,
+        reviewBinding: AgentAdapterReviewBinding? = nil
     ) async throws -> any AgentAdapterSession {
         let resolved = try factory(for: contract)
         guard checkpoint == nil || contract.profile.replay == .sourceCursor else {
@@ -1269,8 +1302,13 @@ nonisolated struct AgentAdapterRegistry: Sendable {
             state: state,
             downstream: downstream
         )
-        let request = AgentAdapterSessionRequest(contract: contract, resumeFrom: checkpoint, sink: sink,
-                                                 controlAuthority: controlAuthority)
+        let request = AgentAdapterSessionRequest(
+            contract: contract, resumeFrom: checkpoint, sink: sink,
+            controlAuthority: controlAuthority, reviewBinding: reviewBinding
+        )
+        if let reviewBinding {
+            try await runOnBackground { try reviewBinding.validate() }
+        }
         var guardedLifetime: CoreBoundSessionLifetime?
         do {
             try Task.checkCancellation()
@@ -1294,7 +1332,9 @@ nonisolated struct AgentAdapterRegistry: Sendable {
                 attempt: attempt,
                 sink: sink,
                 authorityLease: authorityLease,
-                lifetime: lifetime
+                lifetime: lifetime,
+                controlAuthority: controlAuthority,
+                reviewBinding: ReviewBindingBox(reviewBinding)
             )
         } catch {
             await state.failStart()
@@ -1305,6 +1345,79 @@ nonisolated struct AgentAdapterRegistry: Sendable {
             }
             throw error
         }
+    }
+
+    /// Identity only, including before start. Possession grants no live control
+    /// authority; the returned control wrapper enforces activation/revocation.
+    func sourceIdentity(for session: any AgentAdapterSession) throws -> ValidatedAgentSourceIdentity {
+        guard let source = session as? CoreBoundAdapterSession,
+              source.registryID == registryID else { throw AdapterSessionError.contractMismatch }
+        return ValidatedAgentSourceIdentity(namespace: source.namespace, attempt: source.attempt)
+    }
+
+    func controls(for session: any AgentAdapterSession) throws -> any AgentAdapterControlledSession {
+        guard let source = session as? CoreBoundAdapterSession,
+              source.registryID == registryID else { throw AdapterSessionError.contractMismatch }
+        return source
+    }
+
+    func reviewerIdentity(for session: any AgentAdapterSession) async throws -> AgentVendorSessionIdentity {
+        let reviewer = try reviewingSession(for: session)
+        try reviewer.source.controlAuthority.validate()
+        return try await reviewer.session.reviewerIdentity
+    }
+
+    func rebindReview(
+        on session: any AgentAdapterSession, binding: AgentAdapterReviewBinding
+    ) async throws {
+        let reviewer = try reviewingSession(for: session)
+        guard let existing = reviewer.source.reviewBinding.value,
+              existing.lease.canonicalWorktree == binding.lease.canonicalWorktree else {
+            throw AgentAdapterControlError.unsupported
+        }
+        try await runOnBackground { try binding.validate() }
+        reviewer.source.reviewBinding.value = binding
+    }
+
+    func review(
+        on session: any AgentAdapterSession, request: AgentAdapterReviewRequest,
+        beforeDispatch: @escaping @Sendable () throws -> Void = {}
+    ) async throws -> AgentAdapterReviewResult {
+        let reviewer = try reviewingSession(for: session)
+        guard let bound = reviewer.source.reviewBinding.value,
+              bound.expected == request.binding.expected,
+              bound.lease.canonicalWorktree == request.binding.lease.canonicalWorktree else {
+            throw AgentAdapterControlError.unsupported
+        }
+        try await runOnBackground {
+            try bound.validate()
+            try request.binding.validate()
+        }
+        let authority = reviewer.source.controlAuthority
+        try authority.validate()
+        let result = try await reviewer.session.review(request, beforeDispatch: {
+            try authority.validate()
+            try beforeDispatch()
+            try request.binding.validate()
+            try authority.validate()
+        })
+        // A stopped reviewer can finish an asynchronous response late. Its
+        // verdict never crosses back into admission after authority is lost.
+        try authority.validate()
+        try beforeDispatch()
+        try await runOnBackground { try request.binding.validate() }
+        return result
+    }
+
+    private func reviewingSession(
+        for session: any AgentAdapterSession
+    ) throws -> (source: CoreBoundAdapterSession, session: any AgentAdapterReviewingSession) {
+        guard let source = session as? CoreBoundAdapterSession,
+              source.registryID == registryID,
+              let reviewer = source.lifetime.underlying as? any AgentAdapterReviewingSession else {
+            throw AgentAdapterControlError.unsupported
+        }
+        return (source, reviewer)
     }
 
     func makeCheckpoint(for sourceSession: any AgentAdapterSession) async throws -> AdapterResumeCheckpoint {
@@ -1336,6 +1449,11 @@ nonisolated struct AgentAdapterRegistry: Sendable {
             lastSourceEvent: lastSourceEvent,
             lastSourceSequence: lastSourceSequence
         )
+    }
+
+    func reviewerControl(adapterID: AdapterID) -> AgentTaskReviewerControl {
+        (adapters[adapterID]?.1 as? any AgentAdapterReviewingFactory)?
+            .reviewerControl ?? .unspecified
     }
 
     func probe(adapterID: AdapterID) async throws -> AgentAdapterOffer {

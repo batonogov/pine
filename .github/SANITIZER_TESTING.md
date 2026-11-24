@@ -13,12 +13,11 @@ native and concurrency boundaries:
 - terminal, subprocess ownership, SwiftTerm, AppKit, and Metal;
 - agent detection, terminal ownership, and durable task persistence;
 - file watching and external-change delivery;
-- LSP process and stream lifecycle;
 - tab, pane, project, window, save, and termination races.
 
-`UserTaskRunnerTests` and `LSPProcessTransportTests` exercise real child
-processes. Their lifecycle assertions require termination and reaping before a
-test completes so one case cannot leave a process behind for the next case.
+`UserTaskRunnerTests` exercises real child processes. Its lifecycle assertions
+require termination and reaping before a test completes so one case cannot leave
+a process behind for the next case.
 The manifest runs serially and enables per-test timeouts as a second bound.
 
 The sanitizer command is deliberately run once. There is no

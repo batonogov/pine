@@ -375,6 +375,41 @@ final class SettingsUITests: PineUITestCase {
         )
     }
 
+    func testAgentNotificationsRequireStructuredIntegration() throws {
+        launchClean()
+        openSettings()
+
+        let agentTab = app.buttons["Agent Handoff"].firstMatch
+        XCTAssertTrue(agentTab.waitForExistence(timeout: 10))
+        agentTab.click()
+
+        let notificationSettings = app.descendants(matching: .any)[
+            "agentNotificationSettings"
+        ].firstMatch
+        XCTAssertTrue(notificationSettings.waitForExistence(timeout: 5))
+
+        // XCUITest string queries are capped at 128 characters, and the
+        // full explanation exceeds that, so match a stable prefix.
+        let explanationText = app.staticTexts.matching(
+            NSPredicate(
+                format: "value BEGINSWITH %@",
+                "Process-only integrations do not send agent notifications"
+            )
+        ).firstMatch
+        XCTAssertTrue(
+            explanationText.waitForExistence(timeout: 5),
+            "Settings should explain that verified events need structured integration"
+        )
+
+        let processEndedToggle = app.descendants(matching: .any).matching(
+            NSPredicate(format: "label == %@", "Process ended")
+        ).firstMatch
+        XCTAssertFalse(
+            processEndedToggle.exists,
+            "Process-only integrations should not expose a Process ended toggle"
+        )
+    }
+
     func testEverySettingsPaneUsesLocalizedLabels() throws {
         launchClean()
         openSettings(
@@ -417,12 +452,6 @@ final class SettingsUITests: PineUITestCase {
                     "terminalFontFamilyPicker",
                     "terminalFontSizeSlider",
                 ]
-            ),
-            (
-                tab: "Language Servers",
-                contentIdentifier: "lsp-settings-executable",
-                expectedLabels: [],
-                expectedIdentifiers: []
             ),
             (
                 tab: "Agent Handoff",
@@ -485,12 +514,6 @@ final class SettingsUITests: PineUITestCase {
                     "terminalFontFamilyPicker",
                     "terminalFontSizeSlider",
                 ]
-            ),
-            (
-                tab: "Языковые серверы",
-                contentIdentifier: "lsp-settings-executable",
-                expectedLabels: [],
-                expectedIdentifiers: []
             ),
             (
                 tab: "Передача контекста",

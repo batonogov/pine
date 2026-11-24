@@ -206,7 +206,14 @@ final class NativeFileWindowMenuUITests: PineUITestCase {
             waitForEnabled(openButton, timeout: 5),
             "Selecting the file should enable Open"
         )
-        openButton.click()
+        // #1812/#1839: on macOS 27 CI, neither the Open button nor row
+        // double-click reliably accepts the selected file. Open is the default
+        // button, so accept with Return and assert dismissal before the tab.
+        openPanel.typeKey(.return, modifierFlags: [])
+        XCTAssertTrue(
+            openPanel.waitForNonExistence(timeout: 5),
+            "Pressing Return should dismiss the native Open panel"
+        )
         XCTAssertTrue(
             waitForExistence(editorTab("main.swift"), timeout: 5),
             "Open… should open the selected file in an editor tab"

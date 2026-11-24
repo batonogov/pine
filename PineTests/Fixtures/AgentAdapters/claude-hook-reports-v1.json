@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 1,
+  "fixtureVersion": "2026-11-16",
+  "agent": "claudeCode",
+  "plane": "user-launched-terminal-hook-reporting",
+  "sanitization": "Synthetic hook envelopes only; prompts, tool_input, transcript paths, environment values, and credentials are omitted or marked as dropped. The allowlist is the report model itself: event, session id, launch token, tool name, subagent flag, historical flag.",
+  "launchToken": "pine-launch-token-0123456789",
+  "sessionID": "f0000000-0000-4000-8000-0000000000f0",
+  "cases": [
+    {
+      "name": "valid-session-start",
+      "wire": "{\"hook_event_name\":\"SessionStart\",\"session_id\":\"f0000000-0000-4000-8000-0000000000f0\",\"launch_token\":\"pine-launch-token-0123456789\"}",
+      "historical": false,
+      "expect": "live"
+    },
+    {
+      "name": "valid-tool-event",
+      "wire": "{\"hook_event_name\":\"PreToolUse\",\"session_id\":\"f0000000-0000-4000-8000-0000000000f0\",\"launch_token\":\"pine-launch-token-0123456789\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"FIXTURE-INPUT\"}}",
+      "historical": false,
+      "expect": "live"
+    },
+    {
+      "name": "spooled-stop-historical",
+      "wire": "{\"hook_event_name\":\"Stop\",\"session_id\":\"f0000000-0000-4000-8000-0000000000f0\",\"launch_token\":\"pine-launch-token-0123456789\"}",
+      "historical": true,
+      "expect": "historical"
+    },
+    {
+      "name": "foreign-session",
+      "wire": "{\"hook_event_name\":\"Stop\",\"session_id\":\"f0000000-0000-4000-8000-0000000000f1\",\"launch_token\":\"pine-launch-token-0123456789\"}",
+      "historical": false,
+      "expect": "foreignSession"
+    },
+    {
+      "name": "foreign-launch",
+      "wire": "{\"hook_event_name\":\"Stop\",\"session_id\":\"f0000000-0000-4000-8000-0000000000f0\",\"launch_token\":\"other-launch-token-01234567\"}",
+      "historical": false,
+      "expect": "foreignLaunch"
+    },
+    {
+      "name": "nested-subagent",
+      "wire": "{\"hook_event_name\":\"Stop\",\"session_id\":\"f0000000-0000-4000-8000-0000000000f0\",\"launch_token\":\"pine-launch-token-0123456789\",\"agent_id\":\"agent-0001\"}",
+      "historical": false,
+      "expect": "nested"
+    },
+    {
+      "name": "missing-token",
+      "wire": "{\"hook_event_name\":\"Stop\",\"session_id\":\"f0000000-0000-4000-8000-0000000000f0\"}",
+      "historical": false,
+      "expect": "unauthenticated"
+    },
+    {
+      "name": "unsupported-event",
+      "wire": "{\"hook_event_name\":\"FileChanged\",\"session_id\":\"f0000000-0000-4000-8000-0000000000f0\",\"launch_token\":\"pine-launch-token-0123456789\"}",
+      "historical": false,
+      "expect": "unsupportedEvent"
+    }
+  ]
+}

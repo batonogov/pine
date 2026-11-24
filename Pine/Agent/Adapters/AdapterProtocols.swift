@@ -13,6 +13,12 @@ nonisolated protocol AgentAdapterSession: Sendable {
     func stop(deadline: ContinuousClock.Instant) async
 }
 
+nonisolated protocol AgentAdapterReviewingFactory: AgentAdapterFactory {
+    /// The actual control enforced by this factory's reviewer sessions.
+    /// Prompt-only and unspecified values never admit reviewer evidence.
+    var reviewerControl: AgentTaskReviewerControl { get }
+}
+
 nonisolated protocol AgentAdapterFactory: Sendable {
     var id: AdapterFactoryID { get }
     /// Probes the exact factory instance stored by the registry.

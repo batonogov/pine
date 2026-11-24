@@ -27,6 +27,7 @@ struct PineApp: App {
             arguments: CommandLine.arguments,
             environment: ProcessInfo.processInfo.environment
         )
+        appDelegate.terminalProcessCleanupOwnerRegistry = .shared
     }
 
     private var registry: ProjectRegistry { appDelegate.registry }
@@ -80,7 +81,6 @@ struct PineApp: App {
 
         Settings {
             PineSettingsView(
-                lspSettings: registry.lspSettings,
                 handoffSettings: .shared,
                 notificationController: appDelegate.agentNotifications,
                 agentTasks: registry.agentTasks,
@@ -1033,6 +1033,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
             bindQuickTerminalAgentRouting()
         }
     }
+
+    var terminalProcessCleanupOwnerRegistry = TerminalProcessCleanupOwnerRegistry()
 
     /// Application-wide, permission-gated agent notification coordinator.
     lazy var agentNotifications = AgentNotificationController(
@@ -2391,8 +2393,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
         for (_, pm) in registry.openProjects {
             pm.saveSession()
             pm.cleanupEditorContext()
-            // Shut down language servers so no orphan process survives (#1010).
-            pm.shutdownLanguageServers()
             // Clean up the recovery snapshots this session is answerable for:
             // the ones belonging to its open tabs. Emptying the whole
             // directory would also take the crash snapshots nobody has decided
@@ -3487,9 +3487,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
                     operation: { await projectManager.flushAgentHistoryPersistence() }
                 ), saved else { return false }
             }
+            for projectManager in registry.commandResultOwners {
+                guard let saved = await valueBeforeTerminationDeadline(
+                    forwardDeadline,
+                    deadlineObserver: terminationDeadlineObserver,
+                    onTimeout: {},
+                    operation: { await projectManager.flushCommandResultPersistence() }
+                ), saved else { return false }
+            }
             return registry.openProjects.values.allSatisfy {
                 !$0.hasPendingAgentHistory
-            }
+            } && !registry.hasPendingCommandResults
         }
         guard await persistCompletedHistoryBeforeDeadline() else {
             await presentTerminationFailure()
@@ -3640,6 +3648,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
             return false
         }
 
+        guard await registry.shutdownCheckExecutions(until: forwardDeadline) else {
+            await rollbackAgentTasks()
+            await presentTerminationFailure()
+            return false
+        }
         var preparedUserTaskShutdown = false
         if registry.hasOutstandingUserTaskExecution {
             guard await registry.shutdownUserTasks(
@@ -3741,6 +3754,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
         terminalStopControllers.append(
             contentsOf: quickTerminalControllers
         )
+        // A tab or project closed before Quit may already be cleaning up with
+        // no live inventory reference left. The pre-termination barrier must
+        // account for those detached owners as well (#1786).
+        terminalStopControllers = terminalProcessCleanupOwnerRegistry
+            .applicationTerminationControllers(
+                from: terminalStopControllers
+            )
         guard await TerminalTabCloseAuthorization.waitForAuthorizedStops(
             terminalStopControllers,
             until: forwardDeadline
@@ -3758,9 +3778,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
             return false
         }
 
+        // A result, retention choice, or Clear may arrive during the history await.
+        guard !registry.hasPendingCommandResults else {
+            await rollbackAfterRequestedTerminalStops()
+            await presentTerminationFailure()
+            return false
+        }
+
         // The waits above suspend the main actor. Reject any process/tab/task
         // generation that appeared before the final synchronous commit.
-        guard destructiveAuthorizationsStillCoverCurrentState() else {
+        guard destructiveAuthorizationsStillCoverCurrentState(),
+              registry.agentTasks.checkShutdownIsPrepared else {
             await rollbackAfterRequestedTerminalStops()
             await presentTerminationFailure()
             return false

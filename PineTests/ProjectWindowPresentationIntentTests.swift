@@ -411,8 +411,10 @@ extension ProjectWindowPresentationIntentTests {
         #expect(!registry.isWindowOpen(fixture.worktree.worktreeRoot))
         session.windowDidClose(registry: registry)
         registry.closeProjectWindow(target)
-        registry.runBackgroundReclamationPassForTesting()
-        #expect(registry.openProjects.isEmpty)
+        try #require(await waitUntilMainActor {
+            registry.runBackgroundReclamationPassForTesting()
+            return registry.openProjects.isEmpty
+        })
     }
 
     @Test("Open Recent captures destination intent before suspended admission",
@@ -488,8 +490,10 @@ extension ProjectWindowPresentationIntentTests {
         for url in [fixture.repository, fixture.other, fixture.worktree.worktreeRoot] {
             registry.closeProjectWindow(url)
         }
-        registry.runBackgroundReclamationPassForTesting()
-        #expect(registry.openProjects.isEmpty)
+        try #require(await waitUntilMainActor {
+            registry.runBackgroundReclamationPassForTesting()
+            return registry.openProjects.isEmpty
+        })
     }
 
     @Test("Open Recent cannot reopen a sessionless owner closed during admission")
@@ -533,8 +537,10 @@ extension ProjectWindowPresentationIntentTests {
         #expect(opened.isEmpty)
         #expect(!registry.isWindowOpen(fixture.worktree.worktreeRoot))
         #expect(manager.presentationLifecycle == .backgroundSuspended)
-        registry.runBackgroundReclamationPassForTesting()
-        #expect(registry.openProjects.isEmpty)
+        try #require(await waitUntilMainActor {
+            registry.runBackgroundReclamationPassForTesting()
+            return registry.openProjects.isEmpty
+        })
     }
 
     @Test("Closing an inactive repository invalidates admission of its worktree")

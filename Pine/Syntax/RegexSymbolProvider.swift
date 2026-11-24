@@ -8,8 +8,7 @@
 import Foundation
 
 /// Exposes Pine's existing declaration regexes through the normalized symbol
-/// provider seam. Results remain flat, preserving unsupported/offline behavior
-/// while LSP supplies hierarchy when available.
+/// provider seam. Results remain flat.
 nonisolated struct RegexSymbolProvider: SymbolProviding {
     let fileExtension: String
 

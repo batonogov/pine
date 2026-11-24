@@ -119,8 +119,7 @@ nonisolated private final class BoundedPipeDrain: @unchecked Sendable {
 ///    instead of the whole lane freezing.
 /// 2. `terminationHandler` signals a semaphore, raced against the deadline.
 /// 3. On timeout the child gets `SIGTERM`; if it is still running after
-///    `gracePeriod` more seconds, it gets `SIGKILL` (same escalation as the
-///    SourceKit-LSP smoke wait).
+///    `gracePeriod` more seconds, it gets `SIGKILL`.
 /// 4. Only then does the helper throw `BoundedProcessExitError`, naming the
 ///    command that hung.
 ///

@@ -1645,8 +1645,157 @@ struct AgentTaskLifecycleEvidenceTests {
         #expect(events.map(\.taskID) == [settled.id])
     }
 
-    @Test("process-only accuracy never emits a completion event")
-    func processOnlyAccuracyStaysProcessEnded() throws {
+    @Test("pass death before final settle leaves stale and blocks legacy Ready")
+    func passDeathBeforeFinalSettleBlocksLegacyReady() throws {
+        let registry = AgentTaskRegistry()
+        let settled = settledTask(seed: 76, accuracy: .verifiedLifecycleTransitions)
+        // The verification pass claimed the attempt before recording facts.
+        var claimed = settled
+        claimed.verificationState = .pending
+        registry.setTasksForTesting([claimed])
+
+        let run = try #require(claimed.runs.first)
+        let now = claimed.lastActivityAt
+        let cs = codeState("a")
+        #expect(registry.recordEvidence(fact(
+            .agentReportedCompletion,
+            runID: run.id,
+            generation: run.process.processGeneration,
+            result: .reported,
+            at: now,
+            codeState: cs,
+            environment: environment,
+            sequence: 1
+        ), taskID: claimed.id, deferSettlement: true) == .accepted)
+        #expect(registry.recordEvidence(fact(
+            .independentCheck,
+            runID: run.id,
+            generation: run.process.processGeneration,
+            result: .succeeded,
+            at: now.addingTimeInterval(1),
+            codeState: cs,
+            environment: environment,
+            sequence: 2,
+            pre: cs,
+            post: cs
+        ), taskID: claimed.id, deferSettlement: true) == .accepted)
+        #expect(registry.recordEvidence(fact(
+            .reviewerOutcome,
+            runID: run.id,
+            generation: run.process.processGeneration,
+            result: .succeeded,
+            at: now.addingTimeInterval(2),
+            codeState: cs,
+            environment: environment,
+            sequence: 3,
+            pre: cs,
+            post: cs
+        ), taskID: claimed.id, deferSettlement: true) == .accepted)
+        #expect(try #require(registry.task(for: claimed.id)).runs.last?.outcome == .unverified)
+
+        // The pass dies before settleVerificationPass(makeCurrent:).
+        #expect(registry.clearVerificationPending(
+            taskID: claimed.id, runID: run.id,
+            processGeneration: run.process.processGeneration
+        ) == true)
+        var afterClear = try #require(registry.task(for: claimed.id))
+        #expect(afterClear.verificationState == .stale)
+
+        // A later physical re-settlement recomputes success from the recorded
+        // facts. `.stale` must survive: only no-pass `.none` could be promoted
+        // to `.verified` by the legacy settlement path.
+        AgentTaskLifecycleReducer.settleTerminated(task: &afterClear, runIndex: 0)
+        #expect(afterClear.runs.last?.outcome == .success)
+        #expect(afterClear.verificationState == .stale)
+        registry.setTasksForTesting([afterClear])
+        let readiness = registry.readiness(
+            for: claimed.id, codeState: cs, environment: environment
+        )
+        #expect(!readiness.isReady && readiness.gaps.contains(.verificationNotCurrent))
+    }
+
+    @Test("mid-pass termination clobbering pending to none still leaves stale")
+    func midPassTerminationClobberStillLeavesStale() throws {
+        let registry = AgentTaskRegistry()
+        let settled = settledTask(seed: 77, accuracy: .verifiedLifecycleTransitions)
+        // A mid-pass provider termination re-settles the unverified run and
+        // clobbers the claimed `.pending` (or the executor's `.stale`) back
+        // to no-pass `.none`; the facts are recorded afterwards.
+        var clobbered = settled
+        clobbered.verificationState = .none
+        registry.setTasksForTesting([clobbered])
+
+        let run = try #require(clobbered.runs.first)
+        let now = clobbered.lastActivityAt
+        let cs = codeState("b")
+        #expect(registry.recordEvidence(fact(
+            .agentReportedCompletion,
+            runID: run.id,
+            generation: run.process.processGeneration,
+            result: .reported,
+            at: now,
+            codeState: cs,
+            environment: environment,
+            sequence: 1
+        ), taskID: clobbered.id, deferSettlement: true) == .accepted)
+        #expect(registry.recordEvidence(fact(
+            .independentCheck,
+            runID: run.id,
+            generation: run.process.processGeneration,
+            result: .succeeded,
+            at: now.addingTimeInterval(1),
+            codeState: cs,
+            environment: environment,
+            sequence: 2,
+            pre: cs,
+            post: cs
+        ), taskID: clobbered.id, deferSettlement: true) == .accepted)
+        #expect(registry.recordEvidence(fact(
+            .reviewerOutcome,
+            runID: run.id,
+            generation: run.process.processGeneration,
+            result: .succeeded,
+            at: now.addingTimeInterval(2),
+            codeState: cs,
+            environment: environment,
+            sequence: 3,
+            pre: cs,
+            post: cs
+        ), taskID: clobbered.id, deferSettlement: true) == .accepted)
+
+        // Pass death must still fence the promotable state.
+        #expect(registry.clearVerificationPending(
+            taskID: clobbered.id, runID: run.id,
+            processGeneration: run.process.processGeneration
+        ) == true)
+        var afterClear = try #require(registry.task(for: clobbered.id))
+        #expect(afterClear.verificationState == .stale)
+        AgentTaskLifecycleReducer.settleTerminated(task: &afterClear, runIndex: 0)
+        #expect(afterClear.runs.last?.outcome == .success)
+        #expect(afterClear.verificationState == .stale)
+        registry.setTasksForTesting([afterClear])
+        let readiness = registry.readiness(
+            for: clobbered.id, codeState: cs, environment: environment
+        )
+        #expect(!readiness.isReady && readiness.gaps.contains(.verificationNotCurrent))
+    }
+
+    @Test("clear without required facts leaves a plain none untouched")
+    func clearWithoutRequiredFactsLeavesNone() throws {
+        let registry = AgentTaskRegistry()
+        let plain = settledTask(seed: 78)
+        registry.setTasksForTesting([plain])
+        #expect(plain.verificationState == .none)
+        let run = try #require(plain.runs.first)
+        #expect(registry.clearVerificationPending(
+            taskID: plain.id, runID: run.id,
+            processGeneration: run.process.processGeneration
+        ) == true)
+        #expect(try #require(registry.task(for: plain.id)).verificationState == .none)
+    }
+
+    @Test("process-only termination preserves unverified history without a notification")
+    func processOnlyTerminationIsSilent() throws {
         let registry = AgentTaskRegistry()
         let live = makeTask(
             seed: 73,
@@ -1669,7 +1818,7 @@ struct AgentTaskLifecycleEvidenceTests {
             to: [after],
             accuracy: { _ in .processTerminationOnly }
         )
-        #expect(events.map(\.kind) == [.processEnded])
+        #expect(events.isEmpty)
     }
 
     @Test("relaunch invalidates verified evidence but preserves history")
@@ -2212,6 +2361,27 @@ struct AgentTaskLifecycleEvidenceTests {
                 return
             }
             #expect(registry.armLaunch(reservation))
+            if sequence == 5 {
+                var task = try #require(registry.task(for: retainedTaskID))
+                let removedRun = try #require(task.runs.first)
+                let grantID = UUID()
+                let command = hex("f")
+                task.checkGrant = AgentTaskCheckGrant(
+                    scheme: 1, id: grantID, taskID: task.id, planFingerprint: hex("e"),
+                    environment: environment, approvedAt: removedRun.startedAt, revokedAt: nil
+                )
+                task.checkExecution = AgentTaskCheckExecution(
+                    id: UUID(), runID: removedRun.id, processGeneration: removedRun.process.processGeneration,
+                    passID: UUID(), attempt: 1, grantID: grantID, planFingerprint: hex("e"),
+                    requiredCommands: [command], code: codeState("a"), environment: environment,
+                    operations: [.init(
+                        id: UUID(), commandFingerprint: command, required: true,
+                        startedAt: removedRun.startedAt, finishedAt: removedRun.startedAt,
+                        status: .succeeded, exitCode: 0, identitiesMatched: true
+                    )], completed: true
+                )
+                registry.setTasksForTesting(registry.tasks.map { $0.id == task.id ? task : $0 })
+            }
             registry.bridge(
                 next,
                 replacing: previous,
@@ -2224,6 +2394,7 @@ struct AgentTaskLifecycleEvidenceTests {
         // away, and each of them carries a settled processCompletion fact.
         let task = try #require(registry.task(for: retainedTaskID))
         #expect(task.runs.count == 2)
+        #expect(task.checkExecution == nil)
         let save = await store.save(
             tasks: registry.tasks,
             project: identity
@@ -2232,6 +2403,7 @@ struct AgentTaskLifecycleEvidenceTests {
         let loaded = await store.load(project: identity)
         #expect(loaded.status == .loaded)
         #expect(loaded.tasks.count == 1)
+        #expect(loaded.tasks.first?.checkExecution == nil)
     }
 
     @Test("dismissing a completed outcome stays saveable")

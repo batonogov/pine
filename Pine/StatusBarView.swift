@@ -16,11 +16,6 @@ struct StatusBarView: View {
     var terminalManager: TerminalManager? = nil
     var progress: ProgressTracker?
     var onToggleTerminal: (() -> Void)?
-    /// LSP / validator diagnostics summary for the Problems indicator (#1010).
-    /// `nil` hides the indicator (e.g. no project loaded).
-    var diagnosticsSummary: DiagnosticsSummary?
-    /// Called when the user clicks the Problems indicator to toggle the panel.
-    var onToggleProblems: (() -> Void)?
     /// Called when the user clicks the agent attention bell to open the
     /// attention-list overlay (#1112).
     var onShowAttention: (() -> Void)?
@@ -45,27 +40,6 @@ struct StatusBarView: View {
         // and walking the pane/tab tree twice (isEmpty check + arg) is wasteful.
         let summaries = agentSummaries
         return HStack(spacing: LayoutMetrics.statusBarItemSpacing) {
-            // Problems indicator (#1010): click to toggle the Problems panel.
-            // Hidden when there are zero diagnostics *and* no panel is open.
-            if let summary = diagnosticsSummary, summary.total > 0 {
-                Button {
-                    onToggleProblems?()
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: summary.errorCount > 0 ? "xmark.octagon.fill" : "exclamationmark.bubble.fill")
-                            .font(.caption2)
-                            // The severity is already in `description`; the
-                            // glyph would only add an unnamed image stop.
-                            .accessibilityHidden(true)
-                        Text(verbatim: summary.description)
-                            .font(.subheadline)
-                    }
-                    .foregroundStyle(summary.errorCount > 0 ? .red : .orange)
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier(AccessibilityID.problemsIndicator)
-            }
-
             if let progress, progress.isLoading {
                 HStack(spacing: 4) {
                     ProgressView()

@@ -10,23 +10,25 @@ import Testing
 
 @testable import Pine
 
-nonisolated private struct PTYFixtureEvidence: Sendable {
+nonisolated struct PTYFixtureEvidence: Sendable {
     let phase: String
     let processID: pid_t
     let processGroupID: pid_t
     let identity: UserTaskProcessIdentity?
 }
 
-nonisolated private enum PTYFixtureError: Error {
+nonisolated enum PTYFixtureError: Error {
     case processDidNotStart
     case processOwnershipUnavailable
 }
 
-nonisolated private enum PTYFixtureTrace {
+/// Trace-file evidence shared with the detached-ownership regressions
+/// (#1786).
+nonisolated enum PTYFixtureTrace {
     static func wait(
         for phase: String,
         at url: URL,
-        timeout: TimeInterval = 3
+        timeout: TimeInterval = 5
     ) async -> PTYFixtureEvidence? {
         await Task.detached(priority: .utility) {
             let deadline = DispatchTime.now() + timeout
@@ -256,8 +258,10 @@ struct TerminalPTYProcessTreeTests {
             canonicalDirectory: FileManager.default.temporaryDirectory
         )
         defer { retention.finishCleanup(succeeded: true) }
+        let ownerRegistry = TerminalProcessCleanupOwnerRegistry()
         let controller = TerminalProcessTreeController(
             retention: retention,
+            ownerRegistry: ownerRegistry,
             cleanupForTesting: { false },
             deferredCleanupForTesting: { Darwin.usleep(100_000) }
         )
@@ -288,8 +292,10 @@ struct TerminalPTYProcessTreeTests {
             releaseCleanup.signal()
             retention.finishCleanup(succeeded: true)
         }
+        let ownerRegistry = TerminalProcessCleanupOwnerRegistry()
         let controller = TerminalProcessTreeController(
             retention: retention,
+            ownerRegistry: ownerRegistry,
             cleanupForTesting: { false },
             deferredCleanupForTesting: {
                 _ = releaseCleanup.wait(timeout: .now() + 5)
@@ -314,8 +320,10 @@ struct TerminalPTYProcessTreeTests {
         )
         defer { retention.finishCleanup(succeeded: true) }
         let deferredFinished = DispatchSemaphore(value: 0)
+        let ownerRegistry = TerminalProcessCleanupOwnerRegistry()
         let controller = TerminalProcessTreeController(
             retention: retention,
+            ownerRegistry: ownerRegistry,
             cleanupForTesting: { false },
             deferredCleanupForTesting: { deferredFinished.signal() }
         )
@@ -334,7 +342,80 @@ struct TerminalPTYProcessTreeTests {
         ).value
         #expect(deferredCompleted)
         #expect(!controller.waitForApplicationTermination(timeout: 0))
+        // Deferred completion releases the fence and owner, but cannot turn
+        // an expired application deadline or bounded failure into success.
+        let ownerReleased = await Task.detached(priority: .utility) {
+            let deadline = DispatchTime.now() + 5
+            let stillTracked = {
+                ownerRegistry.inFlightControllers
+                    .contains { $0 === controller }
+            }
+            while stillTracked(), DispatchTime.now() < deadline {
+                Darwin.usleep(10_000)
+            }
+            return !stillTracked()
+        }.value
+        #expect(ownerReleased)
+        #expect(!retention.isRetained)
+        #expect(!controller.waitForTermination(timeout: 0))
+    }
+
+    @Test("drained deferred cleanup releases the owner without app Quit")
+    func deferredCleanupReleasesOwnerWithoutQuit() async throws {
+        let retention = TerminalWorkingDirectoryRetention(
+            canonicalDirectory: FileManager.default.temporaryDirectory
+        )
+        defer { retention.finishCleanup(succeeded: true) }
+        let deferredFinished = DispatchSemaphore(value: 0)
+        let releaseDeferred = DispatchSemaphore(value: 0)
+        defer { releaseDeferred.signal() }
+        let ownerRegistry = TerminalProcessCleanupOwnerRegistry()
+        let controller = TerminalProcessTreeController(
+            retention: retention,
+            ownerRegistry: ownerRegistry,
+            cleanupForTesting: { false },
+            deferredCleanupForTesting: {
+                _ = releaseDeferred.wait(timeout: .now() + 5)
+                deferredFinished.signal()
+            }
+        )
+        controller.requestTermination()
+
+        let boundedResult = await Task.detached(priority: .utility) {
+            controller.waitForTermination(timeout: 1)
+        }.value
+        #expect(!boundedResult)
+        // Fail-closed while the deferred outcome is still unknown.
         #expect(retention.isRetained)
+
+        releaseDeferred.signal()
+        let waitForDeferred: @Sendable () -> Bool = {
+            deferredFinished.wait(timeout: .now() + 3) == .success
+        }
+        let finished = await Task.detached(
+            priority: .utility,
+            operation: waitForDeferred
+        ).value
+        #expect(finished)
+        // No app Quit and no manual application wait: the drained owner
+        // record drops, so a later Quit stops waiting for this controller
+        // (#1786).
+        let released = await Task.detached(priority: .utility) {
+            let deadline = DispatchTime.now() + 5
+            let stillTracked = {
+                ownerRegistry.inFlightControllers
+                    .contains { $0 === controller }
+            }
+            while stillTracked(), DispatchTime.now() < deadline {
+                Darwin.usleep(10_000)
+            }
+            return !stillTracked()
+        }.value
+        #expect(released)
+        // Actual deferred completion releases the fence without Quit. The
+        // bounded phase remains a truthful failure in its own wait result.
+        #expect(!retention.isRetained)
+        #expect(!controller.waitForTermination(timeout: 0))
     }
 
     @Test("replacement records a new exact process generation")

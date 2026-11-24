@@ -4,8 +4,8 @@
 <head>
     <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
     <meta name="AppleTitle" content="io.github.batonogov.pine.help" />
-    <meta name="description" content="Learn how to open projects, edit code, use panes, terminals, Git, LSP diagnostics, agent features, and keyboard shortcuts in Pine." />
-    <meta name="KEYWORDS" content="Troubleshooting, Pine, help, editor, project, tab, pane, terminal, Git, LSP, diagnostics, agent, shortcuts, settings, keybindings, folding, minimap, find, replace" />
+    <meta name="description" content="Learn how to open projects, edit code, use panes, terminals, Git, agent features, and keyboard shortcuts in Pine." />
+    <meta name="KEYWORDS" content="Troubleshooting, Pine, help, editor, project, tab, pane, terminal, Git, diagnostics, agent, shortcuts, settings, keybindings, folding, minimap, find, replace" />
     <title>Troubleshooting — Pine Help</title>
     <link rel="stylesheet" type="text/css" href="../style.css" />
 </head>
@@ -20,10 +20,6 @@
             <li>
                 <strong>Terminal shows a black screen</strong>
                 <span>Pine uses a Metal renderer by default. If you see a black screen, relaunch with the option key held, or run <code>defaults write io.github.batonogov.pine PINE_DISABLE_METAL -bool YES</code> to switch to CoreGraphics.</span>
-            </li>
-            <li>
-                <strong>LSP completion or diagnostics not working</strong>
-                <span>Open Settings &gt; Languages and verify the server executable path. Pine reports server errors in the status bar.</span>
             </li>
             <li>
                 <strong>Large files are slow</strong>

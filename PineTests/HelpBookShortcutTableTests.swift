@@ -49,11 +49,11 @@ struct HelpBookShortcutTableTests {
         // View and Window menus; the ⌘= / ⇧⌘- aliases are invisible by
         // design.
         .increaseFontSize, .decreaseFontSize, .resetFontSize, .toggleBlame,
-        .showProblems, .revealFileInFinder, .showAgentInbox, .newAgent,
+        .revealFileInFinder, .showAgentInbox, .newAgent,
         // Terminal extras beyond the two the table carries.
         .sendToTerminal, .toggleTerminalZoom,
-        // Change and diagnostic steppers share their paired rows below.
-        .nextChange, .previousChange, .nextDiagnostic, .previousDiagnostic,
+        // Change steppers share their paired row below.
+        .nextChange, .previousChange,
     ]
 
     /// The commands the table must carry as single rows: everything that
@@ -69,7 +69,6 @@ struct HelpBookShortcutTableTests {
     private static var expectedPairs: [(first: UserCommand, second: UserCommand)] {
         [
             (.nextChange, .previousChange),
-            (.nextDiagnostic, .previousDiagnostic),
         ]
     }
 

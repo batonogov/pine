@@ -184,19 +184,16 @@ struct ProjectRegistryTests {
             ProjectRegistry.canonicalProjectURL(tempDir)
         let registry = ProjectRegistry()
         let project = try #require(registry.projectManager(for: tempDir))
+        try #require(await project.taskRunStore.flushResultPersistence())
         let run = project.taskRunStore.start(makeTaskRun(id: "deleted"))
-        let probe = ProjectTaskCancellationProbe()
+        let outcome = makeTaskOutcome(id: "deleted")
+        let probe = ProjectTaskCancellationProbe(onWait: {
+            Task { @MainActor in
+                project.taskRunStore.finishRun(id: run.id, outcome: outcome, cancelled: true)
+            }
+        })
         project.taskRunStore.registerCancellation(
-            UserTaskCancellation(
-                terminate: {
-                    probe.recordCancellation()
-                    return true
-                },
-                waitForCompletion: { _ in
-                    probe.recordWait()
-                    return true
-                }
-            ),
+            probe.makeCancellation(),
             forRunID: run.id
         )
 
@@ -209,9 +206,11 @@ struct ProjectRegistryTests {
         #expect(registry.projectManager(for: tempDir) == nil)
         #expect(registry.detachedUserTaskCleanupCount == 1)
 
-        for _ in 0..<200 where project.hasOutstandingUserTaskExecution {
-            try? await Task.sleep(for: .milliseconds(5))
-        }
+        #expect(await waitUntilMainActor {
+            !project.hasOutstandingUserTaskExecution
+                && project.taskRunStore.runs.isEmpty
+                && registry.detachedUserTaskCleanupCount == 0
+        })
         #expect(probe.cancellationCount == 1)
         #expect(probe.waitCount == 1)
         #expect(!project.hasOutstandingUserTaskExecution)
@@ -226,6 +225,7 @@ struct ProjectRegistryTests {
             ProjectRegistry.canonicalProjectURL(tempDir)
         let registry = ProjectRegistry()
         let project = try #require(registry.projectManager(for: tempDir))
+        try #require(await project.taskRunStore.flushResultPersistence())
         let run = project.taskRunStore.start(makeTaskRun(id: "slow-delete"))
         let probe = ProjectTaskCancellationProbe(waitResult: false)
         project.taskRunStore.registerCancellation(
@@ -257,6 +257,7 @@ struct ProjectRegistryTests {
             outcome: makeTaskOutcome(id: "slow-delete"),
             cancelled: true
         )
+        #expect(await project.flushCommandResultPersistence())
         #expect(registry.destroyAllProjects())
     }
 
@@ -275,6 +276,8 @@ struct ProjectRegistryTests {
         let second = try #require(
             registry.projectManager(for: secondDirectory)
         )
+        try #require(await first.taskRunStore.flushResultPersistence())
+        try #require(await second.taskRunStore.flushResultPersistence())
         let history = first.taskRunStore.start(
             makeTaskRun(id: "retained-history")
         )
@@ -491,11 +494,13 @@ nonisolated private final class ProjectTaskCancellationProbe:
     @unchecked Sendable {
     private let lock = NSLock()
     private let waitResult: Bool
+    private let onWait: (@Sendable () -> Void)?
     private var cancellations = 0
     private var waits = 0
 
-    init(waitResult: Bool = true) {
+    init(waitResult: Bool = true, onWait: (@Sendable () -> Void)? = nil) {
         self.waitResult = waitResult
+        self.onWait = onWait
     }
 
     var cancellationCount: Int {
@@ -526,6 +531,7 @@ nonisolated private final class ProjectTaskCancellationProbe:
             },
             waitForCompletion: { [self] _ in
                 recordWait()
+                onWait?()
                 return waitResult
             }
         )

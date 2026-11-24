@@ -115,16 +115,6 @@ struct SettingsLocalizationTests {
     @Test("System-facing Settings controls resolve through the catalog")
     func systemControlLabels() {
         #expect(
-            Strings.lspChooseExecutablePrompt(
-                locale: Locale(identifier: "en")
-            ) == "Choose"
-        )
-        #expect(
-            Strings.lspChooseExecutablePrompt(
-                locale: Locale(identifier: "ru")
-            ) == "Выбрать"
-        )
-        #expect(
             Strings.dialogClose(locale: Locale(identifier: "ru"))
                 == "Закрыть"
         )

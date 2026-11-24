@@ -49,6 +49,7 @@ struct ContentView: View {
     @State var isAgentActivityPresented = false
     @State var isAgentHistoryPresented = false
     @State var isAgentInboxPresented = false
+    @State var isOpenCodeTaskPresented = false
     /// Conduit from the inbox toolbar button to the popover anchor's
     /// coordinator, so the click resolves against authoritative popover
     /// state instead of the possibly-stale binding (#1665).
@@ -144,6 +145,22 @@ struct ContentView: View {
                     onOpenProject: { openNewProject() },
                     onCloseProject: { closeActiveProject() }
                 )
+            }
+
+            // Kept on `.navigation`, not `.primaryAction`: the layout pin
+            // (`AgentInboxToolbarLayoutTracker`) assumes exactly one
+            // `.primaryAction` item — the Inbox button — and a second one
+            // disturbed the Inbox's outside-click dismissal/reopen on
+            // macOS 27, where retitling re-applies the toolbar. The visual
+            // position is the same leading cluster either way.
+            ToolbarItem(placement: .navigation) {
+                Button {
+                    isOpenCodeTaskPresented = true
+                } label: {
+                    Label(Strings.openCodeTaskRequest, systemImage: "arrow.up.message")
+                }
+                .disabled(workspace.rootURL == nil)
+                .accessibilityIdentifier(AccessibilityID.openCodeTaskToolbarButton)
             }
 
             // Agent Inbox entry point in the project window toolbar (#1337).
@@ -280,6 +297,17 @@ struct ContentView: View {
             projectManager: projectManager,
             isKeyWindow: controlActiveState == .key
         ))
+        .sheet(isPresented: $isOpenCodeTaskPresented) {
+            if let root = workspace.rootURL {
+                OpenCodeTaskView(
+                    registry: registry,
+                    project: AgentTaskProjectIdentity(
+                        canonicalProjectPath: root.path, canonicalWorktreePath: root.path
+                    ),
+                    onDismiss: { isOpenCodeTaskPresented = false }
+                )
+            }
+        }
         .sheet(isPresented: $isBranchSwitcherPresented) {
             BranchSwitcherView(
                 gitProvider: workspace.gitProvider,
@@ -362,11 +390,6 @@ struct ContentView: View {
             // backward compatibility.
             projectManager.saveSession()
         }
-        .modifier(ProblemsPanelRefreshObserver(
-            diagnosticsGeneration: projectManager.lspManager.diagnosticsGeneration,
-            activePaneID: paneManager.activePaneID,
-            controller: projectManager.problemsController
-        ))
         .modifier(GitAndNotificationObserver(
             lineDiffs: $lineDiffs,
             columnVisibility: $columnVisibility,
@@ -409,7 +432,7 @@ struct ContentView: View {
         }
     }
 
-    /// Detail pane content: editor area + Problems panel + status bar. Broken
+    /// Detail pane content: editor area + status bar. Broken
     /// out into its own computed property because the `StatusBarView(…)`
     /// initializer with its multi-line terminal-toggle closure pushes the
     /// `body` modifier chain past the SwiftUI type-checker's budget (#1112).
@@ -418,21 +441,6 @@ struct ContentView: View {
         VStack(spacing: 0) {
             editorArea
                 .frame(maxHeight: .infinity)
-            // Collapsible Problems panel (#1236): a bottom pane between the
-            // editor area and the status bar, driven by the project-scoped
-            // `ProblemsPanelController`. Previously dead code — never rendered.
-            if projectManager.problemsController.isPanelVisible {
-                ProblemsPanelChrome(
-                    controller: projectManager.problemsController,
-                    onSelect: { diagnostic in
-                        navigateToDiagnostic(diagnostic)
-                    },
-                    onClose: {
-                        projectManager.problemsController.isPanelVisible = false
-                    }
-                )
-                .frame(height: LayoutMetrics.problemsPanelHeight)
-            }
             StatusBarView(
                 gitProvider: workspace.gitProvider,
                 paneManager: paneManager,
@@ -487,10 +495,6 @@ struct ContentView: View {
                         }
                     }
                 },
-                diagnosticsSummary: projectManager.problemsController.summary,
-                onToggleProblems: {
-                    projectManager.problemsController.togglePanel()
-                },
                 onShowAttention: {
                     commandOverlayRouter.present(.agentAttention)
                 },
@@ -502,43 +506,6 @@ struct ContentView: View {
                     isBranchSwitcherPresented = true
                 }
             )
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .showProblems)) { notification in
-            guard Self.shouldHandleTargetedCommand(
-                notificationObject: notification.object,
-                currentProject: projectManager,
-                isKeyWindow: controlActiveState == .key
-            ) else { return }
-            // Defer to break reentrancy (#1051): mutating @Observable state
-            // synchronously from a menu→notification callstack collides with
-            // the button-action's exclusive access to SwiftUI storage.
-            DispatchQueue.main.async {
-                projectManager.problemsController.togglePanel()
-            }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .nextDiagnostic)) { notification in
-            guard Self.shouldHandleTargetedCommand(
-                notificationObject: notification.object,
-                currentProject: projectManager,
-                isKeyWindow: controlActiveState == .key
-            ) else { return }
-            DispatchQueue.main.async {
-                if let diagnostic = projectManager.problemsController.nextDiagnostic() {
-                    self.navigateToDiagnostic(diagnostic)
-                }
-            }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .previousDiagnostic)) { notification in
-            guard Self.shouldHandleTargetedCommand(
-                notificationObject: notification.object,
-                currentProject: projectManager,
-                isKeyWindow: controlActiveState == .key
-            ) else { return }
-            DispatchQueue.main.async {
-                if let diagnostic = projectManager.problemsController.previousDiagnostic() {
-                    self.navigateToDiagnostic(diagnostic)
-                }
-            }
         }
     }
 
@@ -611,26 +578,6 @@ struct ContentView: View {
 
 }
 
-/// Keeps the Problems panel synchronized without adding more generic closure
-/// layers to `ContentView.body`, which is already close to SwiftUI's
-/// type-checking complexity limit.
-private struct ProblemsPanelRefreshObserver: ViewModifier {
-    let diagnosticsGeneration: Int
-    let activePaneID: PaneID
-    let controller: ProblemsPanelController
-
-    func body(content: Content) -> some View {
-        content
-            .onChange(of: diagnosticsGeneration) { _, _ in
-                // Refresh the Problems panel when LSP diagnostics change so
-                // stale cached state (selection, summary) is invalidated.
-                controller.refreshFromLSPDiagnostics()
-            }
-            .onChange(of: activePaneID) { _, _ in
-                controller.refreshDocumentOwnership()
-            }
-    }
-}
 // MARK: - Preview
 
 #Preview {

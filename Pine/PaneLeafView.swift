@@ -93,10 +93,6 @@ struct PaneLeafView: View {
     @State private var isDragTargeted = false
     @State private var goToLineOffset: GoToRequest?
     @State private var paneSize: CGSize = .zero
-    /// Definition quick-pick controller — shared with the editor coordinator
-    /// via the `CodeEditorView` environment for multiple-definition navigation.
-    @State private var definitionQuickPickController = DefinitionQuickPickController()
-
     @AppStorage("minimapVisible", store: PineStorageContext.defaults) private var isMinimapVisible = true
     @AppStorage(BlameConstants.storageKey, store: PineStorageContext.defaults) private var isBlameVisible = true
     @AppStorage("wordWrapEnabled", store: PineStorageContext.defaults) private var isWordWrapEnabled = true
@@ -350,12 +346,6 @@ struct PaneLeafView: View {
 
             // StatusBar is rendered once in ContentView, not per-pane
         }
-        .overlay {
-            // Definition quick-pick (multiple go-to-definition results)
-            if definitionQuickPickController.isVisible {
-                DefinitionQuickPickOverlay(controller: definitionQuickPickController)
-            }
-        }
     }
 
     @ViewBuilder
@@ -389,7 +379,7 @@ struct PaneLeafView: View {
             lineDiffs: lineDiffs,
             diffVersion: diffVersion,
             diffHunks: diffHunks,
-            validationDiagnostics: mergedDiagnostics(for: tab),
+            validationDiagnostics: configValidator.diagnostics,
             isBlameVisible: isBlameVisible,
             blameLines: blameLines,
             foldState: Binding(
@@ -401,15 +391,6 @@ struct PaneLeafView: View {
             syntaxHighlightingDisabled: tab.syntaxHighlightingDisabled,
             initialCursorPosition: goToLineOffset?.offset ?? tab.cursorPosition,
             initialScrollOffset: goToLineOffset != nil ? 0 : tab.scrollOffset,
-            definitionQuickPickController: definitionQuickPickController,
-            lspFoldRangeRequester: { url, text in
-                await projectManager.lspManager.foldingRanges(
-                    url: url,
-                    text: text
-                )
-            },
-            lspFoldRefreshGeneration:
-                projectManager.lspManager.foldingRefreshGeneration,
             onStateChange: { cursor, scroll in
                 tabManager.updateEditorState(cursorPosition: cursor, scrollOffset: scroll)
             },
@@ -448,18 +429,8 @@ struct PaneLeafView: View {
         )
         .id(tab.id)
         .accessibilityIdentifier(AccessibilityID.codeEditor)
-        .background {
-            LSPDocumentPresentationLifecycle(
-                manager: projectManager.lspManager,
-                url: tab.fileURL,
-                contentRevision: tab.contentVersion,
-                text: tab.content
-            )
-            .id(tab.id)
-        }
         .onAppear {
             goToLineOffset = nil
-            projectManager.problemsController.refreshDocumentOwnership()
             if let fileURL = tab.fileURL {
                 configValidator.validate(
                     url: fileURL,
@@ -467,25 +438,11 @@ struct PaneLeafView: View {
                     revision: tab.contentVersion
                 )
             }
-            installLSPUIEndpoint(tabManager: tabManager)
         }
         .onDisappear {
             configValidator.clear()
-            if let fileURL = tab.fileURL {
-                projectManager.problemsController.removeConfigDiagnostics(
-                    owner: problemsOwner(
-                        for: tab,
-                        fileURL: fileURL
-                    )
-                )
-            }
-            clearLSPUIEndpoint()
         }
         .onChange(of: tab.content) { _, newValue in
-            // The prior result is stale as soon as contentVersion changes.
-            // Refreshing ownership makes it disappear before the debounced
-            // validator commits the replacement.
-            projectManager.problemsController.refreshDocumentOwnership()
             guard let fileURL = tab.fileURL else { return }
             configValidator.validate(
                 url: fileURL,
@@ -502,118 +459,7 @@ struct PaneLeafView: View {
                     revision: tab.contentVersion
                 )
             }
-            projectManager.problemsController.refreshDocumentOwnership()
         }
-        .onChange(of: configValidator.diagnosticsResultGeneration) { _, _ in
-            guard let fileURL = tab.fileURL,
-                  let revision = configValidator.diagnosticsRevision else {
-                return
-            }
-            projectManager.problemsController.setConfigDiagnostics(
-                configValidator.diagnostics,
-                owner: problemsOwner(for: tab, fileURL: fileURL),
-                contentRevision: revision
-            )
-        }
-    }
-
-    // MARK: - LSP UI endpoint installation
-
-    private func problemsOwner(
-        for tab: EditorTab,
-        fileURL: URL
-    ) -> ProblemsDocumentOwner {
-        projectManager.problemsController.documentOwner(
-            paneID: paneID,
-            tabID: tab.id,
-            uri: fileURL.absoluteString
-        )
-    }
-
-    /// Installs the LSP UI endpoint handlers so the editor coordinator can
-    /// route hover, definition, code action, and rename requests to this
-    /// project's `LSPManager`.
-    private func installLSPUIEndpoint(tabManager: TabManager) {
-        let lspManager = projectManager.lspManager
-
-        LSPUIEndpoint.shared.hoverHandler = { url, offset, text in
-            await lspManager.hover(url: url, offset: offset, text: text)
-        }
-        LSPUIEndpoint.shared.definitionHandler = { url, offset, text in
-            await lspManager.definition(url: url, offset: offset, text: text)
-        }
-        LSPUIEndpoint.shared.codeActionHandler = { url, offset, text in
-            await lspManager.codeAction(url: url, offset: offset, text: text)
-        }
-        LSPUIEndpoint.shared.renameHandler = { url, offset, text, newName in
-            await lspManager.rename(url: url, offset: offset, text: text, newName: newName)
-        }
-        LSPUIEndpoint.shared.applyEditHandler = { edit in
-            lspManager.applyWorkspaceEdit(
-                edit,
-                tabManager: tabManager,
-                workspaceURL: workspace.rootURL
-            )
-        }
-        LSPUIEndpoint.shared.openFileAtLineHandler = { [weak tabManager] url, line, character in
-            guard let tabManager else { return }
-            Self.openLSPFile(
-                url: url,
-                line: line,
-                character: character,
-                in: tabManager
-            )
-        }
-    }
-
-    /// Routes a 0-based LSP destination through the location-aware open path.
-    /// `TabManager` installs the destination only after a pending large-file
-    /// decision succeeds, so the source tab cannot consume it prematurely.
-    @discardableResult
-    static func openLSPFile(
-        url: URL,
-        line: Int,
-        character: Int,
-        in tabManager: TabManager,
-        completion: TabManager.OpenCompletion? = nil
-    ) -> TabManager.OpenRequestResult {
-        tabManager.openTabAndGoToLocation(
-            url: url,
-            line: oneBasedLSPCoordinate(line),
-            column: oneBasedLSPCoordinate(character),
-            completion: completion
-        )
-    }
-
-    /// Converts an untrusted 0-based LSP coordinate to Pine's 1-based
-    /// coordinate without trapping on a negative or `Int.max` server value.
-    private static func oneBasedLSPCoordinate(_ value: Int) -> Int {
-        guard value > 0 else { return 1 }
-        return value == .max ? .max : value + 1
-    }
-
-    /// Clears the LSP UI endpoint handlers.
-    private func clearLSPUIEndpoint() {
-        LSPUIEndpoint.shared.hoverHandler = nil
-        LSPUIEndpoint.shared.definitionHandler = nil
-        LSPUIEndpoint.shared.codeActionHandler = nil
-        LSPUIEndpoint.shared.renameHandler = nil
-        LSPUIEndpoint.shared.applyEditHandler = nil
-        LSPUIEndpoint.shared.openFileAtLineHandler = nil
-    }
-
-    // MARK: - Diagnostics merging
-
-    /// Merges config-validator diagnostics (yamllint, shellcheck, etc.) with
-    /// LSP diagnostics for the given file. LSP diagnostics are keyed by
-    /// document URI; config diagnostics are per-active-file in the validator.
-    private func mergedDiagnostics(for tab: EditorTab) -> [ValidationDiagnostic] {
-        guard let fileURL = tab.fileURL else { return [] }
-        var combined = configValidator.diagnostics
-        combined.append(
-            contentsOf: projectManager.lspManager.diagnostics(for: fileURL)
-        )
-        return combined
     }
 
     // MARK: - Git diff & blame
@@ -800,55 +646,5 @@ struct PaneLeafView: View {
 
     private func closeAllTabsWithConfirmation(tabManager: TabManager) {
         projectManager.requestCloseAllTabs(in: tabManager, paneID: paneID)
-    }
-}
-
-/// Owns one LSP document lease for one mounted editor presentation. A durable
-/// tab ID can be reused across a window reopen, while these UUIDs cannot; an
-/// old view's delayed disappearance therefore removes only its own buffer.
-private struct LSPDocumentPresentationLifecycle: View {
-    let manager: LSPManager
-    let url: URL?
-    let contentRevision: UInt64
-    let text: String
-    @State private var ownerID = UUID()
-
-    var body: some View {
-        Color.clear
-            .onAppear {
-                guard let url else { return }
-                manager.didOpen(
-                    url: url,
-                    ownerID: ownerID,
-                    contentRevision: contentRevision,
-                    text: text
-                )
-            }
-            .onDisappear {
-                guard let url else { return }
-                manager.didClose(url: url, ownerID: ownerID)
-            }
-            .onChange(of: text) { _, newText in
-                guard let url else { return }
-                manager.didChange(
-                    url: url,
-                    ownerID: ownerID,
-                    contentRevision: contentRevision,
-                    text: newText
-                )
-            }
-            .onChange(of: url) { oldURL, newURL in
-                if let oldURL {
-                    manager.didClose(url: oldURL, ownerID: ownerID)
-                }
-                if let newURL {
-                    manager.didOpen(
-                        url: newURL,
-                        ownerID: ownerID,
-                        contentRevision: contentRevision,
-                        text: text
-                    )
-                }
-            }
     }
 }

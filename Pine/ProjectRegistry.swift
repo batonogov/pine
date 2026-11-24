@@ -1253,7 +1253,7 @@ struct TerminationSaveInventoryAuthorization {
 /// Each project directory maps to a single ProjectManager instance.
 @MainActor
 @Observable
-final class ProjectRegistry: LSPSettingsObserver {
+final class ProjectRegistry {
     private struct AgentInboxWindowIntent {
         let session: ProjectWindowSession
         let generation: UUID
@@ -1289,10 +1289,16 @@ final class ProjectRegistry: LSPSettingsObserver {
     /// Recently opened project paths (most recent first), persisted to UserDefaults.
     var recentProjects: [URL] = []
 
-    /// Application-wide LSP preferences shared by every project manager.
-    let lspSettings: LSPSettings
     /// Application-lifetime durable agent identity across every project.
     let agentTasks: AgentTaskRegistry
+    /// The existing app owner retains provider runtimes; this is not a task store.
+    @ObservationIgnored private lazy var openCodeNativeComposition =
+        OpenCodeACPNativeComposition(tasks: agentTasks)
+    @ObservationIgnored private let openCodeNativeBindings = AgentTaskEnvironmentBindings()
+    @ObservationIgnored private var openCodeNativeObserver: NSObjectProtocol?
+    @ObservationIgnored private lazy var claudeCodeNativeComposition =
+        ClaudeCodeACPNativeComposition(tasks: agentTasks)
+    @ObservationIgnored private var claudeCodeNativeObserver: NSObjectProtocol?
     @ObservationIgnored
     weak var quickTerminalAgentRouter: (any QuickTerminalAgentRouting)?
 
@@ -1402,10 +1408,6 @@ final class ProjectRegistry: LSPSettingsObserver {
     /// invalidated only when a count they display actually moves.
     private var agentInboxAttentionCounts: [URL: Int] = [:]
 
-    /// Serializes settings lifecycle changes so rapid Apply/Reset operations
-    /// cannot race each other across projects.
-    @ObservationIgnored
-    private var lspSettingsChangeTask: Task<Void, Never>?
     /// Prevents a ProjectManager from being created without a matching agent
     /// metadata registration while that registry has frozen admission.
     @ObservationIgnored
@@ -1416,7 +1418,6 @@ final class ProjectRegistry: LSPSettingsObserver {
     private var worktreeRemovalReservations: Set<URL> = []
 
     init(
-        lspSettings: LSPSettings = .shared,
         defaults: UserDefaults = PineStorageContext.defaults,
         agentHistoryPrivateStore: AgentHistoryPrivateStore? = nil,
         fileManager: FileManager = .default,
@@ -1438,7 +1439,6 @@ final class ProjectRegistry: LSPSettingsObserver {
             "--clear-recent-projects"
         )
     ) {
-        self.lspSettings = lspSettings
         self.agentTasks = agentTasks ?? Self.makeDefaultAgentTaskRegistry()
         self.defaults = defaults
         self.agentHistoryPrivateStore = agentHistoryPrivateStore
@@ -1492,13 +1492,138 @@ final class ProjectRegistry: LSPSettingsObserver {
             self.agentTasks.seedMarketingInboxForUITesting()
         }
         #endif
-        lspSettings.addObserver(self)
         // Keeps the toolbar attention badge current (#1337). The token is not
         // retained: this registry owns `agentTasks`, so the observer cannot
         // outlive its target, and the closure holds `self` weakly.
         _ = self.agentTasks.addTaskChangeObserver { [weak self] _, tasks in
             self?.recomputeAgentInboxAttentionCounts(tasks: tasks)
         }
+        openCodeNativeObserver = NotificationCenter.default.addObserver(
+            forName: .openCodeNativeOwnershipPrepared, object: nil, queue: nil
+        ) { [weak self] note in
+            guard let ownership = note.object as? AgentTaskNativeOwnership else { return }
+            Task { @MainActor [weak self] in
+                guard let self,
+                      let task = self.agentTasks.task(for: ownership.policy.taskID),
+                      task.descriptor.typeIdentifier == ownership.policy.agentID.value else {
+                    return
+                }
+                try? await self.openCodeNativeComposition.prepare(ownership)
+            }
+        }
+        claudeCodeNativeObserver = NotificationCenter.default.addObserver(
+            forName: .claudeCodeNativeOwnershipPrepared, object: nil, queue: nil
+        ) { [weak self] note in
+            guard let ownership = note.object as? AgentTaskNativeOwnership else { return }
+            Task { @MainActor [weak self] in
+                guard let self,
+                      let task = self.agentTasks.task(for: ownership.policy.taskID),
+                      task.descriptor.typeIdentifier == "claudeCode",
+                      task.descriptor.typeIdentifier == ownership.policy.agentID.value else {
+                    return
+                }
+                await self.claudeCodeNativeComposition.prepare(ownership)
+            }
+        }
+    }
+
+    isolated deinit {
+        if let openCodeNativeObserver {
+            NotificationCenter.default.removeObserver(openCodeNativeObserver)
+        }
+        if let claudeCodeNativeObserver {
+            NotificationCenter.default.removeObserver(claudeCodeNativeObserver)
+        }
+    }
+
+    func openCodeRuntime(for taskID: UUID) -> OpenCodeACPTaskRuntime? {
+        openCodeNativeComposition.runtime(for: taskID)
+    }
+
+    @discardableResult
+    func composeOpenCodeRuntime(
+        _ materials: OpenCodeACPNativeMaterials
+    ) async throws -> OpenCodeACPTaskRuntime {
+        try await openCodeNativeComposition.compose(materials)
+    }
+
+    func claudeCodeRuntime(for taskID: UUID) -> ClaudeCodeACPTaskRuntime? {
+        claudeCodeNativeComposition.runtime(for: taskID)
+    }
+
+    @discardableResult
+    func composeClaudeCodeRuntime(
+        _ materials: ClaudeCodeACPNativeMaterials
+    ) async throws -> ClaudeCodeACPTaskRuntime {
+        try await claudeCodeNativeComposition.compose(materials)
+    }
+
+    /// Explicit Request dispatch: durable intent and environment first, then
+    /// one owned ACP process and one physical prompt. Restoration never calls it.
+    func startOpenCodeTask(
+        instruction: String,
+        project: AgentTaskProjectIdentity,
+        executable: URL? = nil,
+        managedRoot: URL? = nil,
+        onTaskCreated: @MainActor (UUID) -> Void = { _ in }
+    ) async throws -> UUID {
+        let text = instruction.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty, text.utf8.count <= 65_536 else {
+            throw OpenCodeACPError.invalidState
+        }
+        let selected = if let executable {
+            executable
+        } else {
+            await runOnBackground {
+                ExternalToolResolver.fromEnvironment().resolve(tool: "opencode").map {
+                    URL(fileURLWithPath: $0)
+                }
+            }
+        }
+        guard let selected else { throw OpenCodeACPError.unavailable }
+        guard let reservation = await agentTasks.createNativeTask(
+            project: project,
+            descriptor: AgentDescriptor(agentType: .openCode, launchExecutable: "opencode"),
+            title: text.split(whereSeparator: \.isNewline).first.map(String.init),
+            objective: text
+        ) else { throw OpenCodeACPError.unavailable }
+        onTaskCreated(reservation.taskID)
+        let root = managedRoot ?? ProjectWindowSession.managedRoot(
+            for: URL(fileURLWithPath: project.canonicalProjectPath)
+        )
+        try await runOnBackground {
+            try FileManager.default.createDirectory(
+                at: root, withIntermediateDirectories: true,
+                attributes: [.posixPermissions: 0o700]
+            )
+        }
+        let target = root.appendingPathComponent(reservation.taskID.uuidString.lowercased())
+        guard let binding = await agentTasks.setupReservedWorktree(
+            taskID: reservation.taskID, runID: reservation.runID,
+            expectedWorktree: target, bindings: openCodeNativeBindings
+        ) else { throw OpenCodeACPError.unavailable }
+        let selection = AgentTaskNativeLaunchPolicy.Selection(
+            agentID: try AgentID(migratingLegacyStableIdentifier: "openCode"),
+            selectedExecutable: selected
+        )
+        guard case .eligible(let policy) = AgentTaskNativeLaunchPolicy.evaluate(
+            taskID: reservation.taskID, runID: reservation.runID,
+            bindingID: binding.id, selection: selection,
+            provenance: AgentTaskLaunchProvenance(
+                authenticationOrigin: .inheritNative,
+                environmentProvenance: .inheritedPineProcess
+            )
+        ) else { throw OpenCodeACPError.unavailable }
+        let ownership = try await agentTasks.prepareNativeLaunch(
+            policy: policy, binding: binding, bindings: openCodeNativeBindings
+        )
+        let runtime = try await openCodeNativeComposition.prepare(ownership)
+        guard runtime.isCurrent else { throw OpenCodeACPError.invalidState }
+        try await runtime.start()
+        guard try await runtime.submit(text) == .acknowledged else {
+            throw OpenCodeACPError.unavailable
+        }
+        return reservation.taskID
     }
 
     private static func makeDefaultAgentTaskRegistry() -> AgentTaskRegistry {
@@ -1672,6 +1797,7 @@ final class ProjectRegistry: LSPSettingsObserver {
         guard let manager = openProjects[root] else { return true }
         manager.finalizeAgentSessionsForHistory()
         manager.agentHistory.retryFailedPersistence()
+        manager.retryCommandResultPersistence()
         guard backgroundProjects.contains(root),
               backgroundPresentationLeases[root]?.isEmpty != false,
               !manager.requiresBackgroundRetention,
@@ -1982,7 +2108,10 @@ final class ProjectRegistry: LSPSettingsObserver {
                     ), isDir.boolValue else {
                         // Failed history remains owned even if its directory
                         // disappeared. Removing this manager would discard the
-                        // only recoverable pending snapshot.
+                        // only recoverable pending snapshot. Command results do
+                        // not block: a deleted root can never be persisted to
+                        // again, and the store's rootMissing path releases that
+                        // ownership by design.
                         guard !existing.hasPendingAgentHistory else { return nil }
                         // Directory was deleted while in background — clean up
                         existing.requestUserTaskShutdown()
@@ -2017,6 +2146,10 @@ final class ProjectRegistry: LSPSettingsObserver {
                         return nil
                     }
                 }
+                // The directory may have been deleted and recreated while the
+                // project was backgrounded: its result workspace identity is
+                // stale and must be re-derived before the manager is reused.
+                existing.recoverRecreatedResultRoot()
                 if reopenBackgroundProject {
                     existing.prepareForWindowPresentation()
                     _ = markProjectWindowOpen(
@@ -2052,7 +2185,6 @@ final class ProjectRegistry: LSPSettingsObserver {
         let contextEpoch = contextPresentationEpochs[canonical, default: 0] &+ 1
         contextPresentationEpochs[canonical] = contextEpoch
         let pm = ProjectManager(
-            lspSettings: lspSettings,
             sessionDefaults: defaults,
             agentHistoryPrivateStore: agentHistoryPrivateStore ?? AgentHistoryPrivateStore(),
             agentProcessSnapshotPoller: agentProcessSnapshotPoller,
@@ -2490,6 +2622,7 @@ final class ProjectRegistry: LSPSettingsObserver {
             }
             manager.finalizeAgentSessionsForHistory()
             manager.agentHistory.retryFailedPersistence()
+            manager.retryCommandResultPersistence()
             guard backgroundPresentationLeases[canonical]?.isEmpty != false,
                   !manager.requiresBackgroundRetention,
                   !hasTerminalWorkingDirectoryRetention(in: canonical) else {
@@ -2593,18 +2726,18 @@ final class ProjectRegistry: LSPSettingsObserver {
     /// pane or terminal tab.
     ///
     /// Presentation is read from the task's terminal route, which survives
-    /// process termination, rather than from run liveness: a `.processEnded`
-    /// notification is resolved from the same registry mutation that already
-    /// marked the run terminated, so a liveness-based check could never pass
-    /// by delivery time and the banner+sound fired for the very terminal the
-    /// user was watching.
+    /// process termination, rather than from run liveness. The retired
+    /// process-exit banner (#1760) resolved from the same registry mutation
+    /// that already marked the run terminated, so a liveness-based check
+    /// could never pass by delivery time and the banner+sound fired for the
+    /// very terminal the user was watching.
     func isAgentTaskPresented(_ taskID: UUID) -> Bool {
         guard let task = agentTasks.task(for: taskID) else { return false }
         if task.route.surface.isQuickTerminal {
             return quickTerminalAgentRouter?
                 .isQuickTerminalAgentTaskPresented(task) == true
         }
-        guard task.route.surface == .projectWindow else { return false }
+        guard task.route.surface == .projectWindow, let paneID = task.route.paneID else { return false }
         let projectURL = URL(
             fileURLWithPath: task.project.canonicalWorktreePath,
             isDirectory: true
@@ -2615,7 +2748,7 @@ final class ProjectRegistry: LSPSettingsObserver {
               manager.rootURL == projectURL,
               manager.paneManager.activePaneID.id == task.route.paneID,
               manager.paneManager.terminalState(
-                  for: PaneID(id: task.route.paneID)
+                  for: PaneID(id: paneID)
               )?.activeTerminalID == task.route.tabID,
               let window = manager.dialogOwnerWindow,
               window.isVisible,
@@ -2867,9 +3000,10 @@ final class ProjectRegistry: LSPSettingsObserver {
             return .projectUnavailable
         }
 
-        guard manager.terminal.activateTerminal(
-            paneID: PaneID(id: route.paneID),
-            tabID: route.tabID
+        guard let paneID = route.paneID, let tabID = route.tabID,
+              manager.terminal.activateTerminal(
+            paneID: PaneID(id: paneID),
+            tabID: tabID
         ) else {
             return .routeStale
         }
@@ -2981,9 +3115,10 @@ final class ProjectRegistry: LSPSettingsObserver {
         guard let route = resolveAgentRecoveryTerminal(
             terminalID,
             in: manager
-        ), manager.terminal.activateTerminal(
-            paneID: PaneID(id: route.paneID),
-            tabID: route.tabID
+        ), let paneID = route.paneID, let tabID = route.tabID,
+           manager.terminal.activateTerminal(
+            paneID: PaneID(id: paneID),
+            tabID: tabID
         ) else { return .launchRejected }
 
         if let activateApplication {
@@ -3592,11 +3727,16 @@ final class ProjectRegistry: LSPSettingsObserver {
             )
         }
         detachedTaskCleanupProjects = detachedTaskCleanupProjects.filter {
-            $0.value.hasOutstandingUserTaskExecution
+            $0.value.hasOutstandingUserTaskExecution || $0.value.hasPendingCommandResults
         }
         return !userTaskOwners.contains(where: {
-            $0.hasOutstandingUserTaskExecution
+            $0.hasOutstandingUserTaskExecution || $0.hasPendingCommandResults
         })
+    }
+
+    /// Required checks own runners outside the per-project user-task stores.
+    func shutdownCheckExecutions(until deadline: DispatchTime) async -> Bool {
+        await agentTasks.shutdownCheckExecutions(until: deadline)
     }
 
     /// Legacy project-teardown entry point. Its snapshot is captured at the
@@ -3622,7 +3762,7 @@ final class ProjectRegistry: LSPSettingsObserver {
         }
         guard !openProjects.values.contains(where: {
             $0.hasPendingAgentHistory
-        }) else { return false }
+        }), !hasPendingCommandResults else { return false }
         guard !userTaskOwners.contains(where: {
             $0.hasOutstandingUserTaskExecution
         }) else {
@@ -3632,8 +3772,6 @@ final class ProjectRegistry: LSPSettingsObserver {
             return false
         }
 
-        lspSettingsChangeTask?.cancel()
-        lspSettingsChangeTask = nil
         backgroundReclamationTask?.cancel()
         backgroundReclamationTask = nil
         backgroundReclamationQueue.removeAll()
@@ -3838,28 +3976,6 @@ final class ProjectRegistry: LSPSettingsObserver {
             guard let count = countsByIdentity[identity] else { continue }
             counts[url] = count
         }
-    }
-
-    // MARK: - Language Server Settings
-
-    func lspSettingsDidChange(_ change: LSPSettingsChange) {
-        let previous = lspSettingsChangeTask
-        lspSettingsChangeTask = Task { @MainActor [weak self] in
-            if let previous {
-                await previous.value
-            }
-            guard let self, !Task.isCancelled else { return }
-            let projectManagers = Array(self.openProjects.values)
-            for projectManager in projectManagers {
-                guard !Task.isCancelled else { return }
-                await projectManager.lspManager.applySettingsChange(change)
-            }
-        }
-    }
-
-    /// Test synchronization point for asynchronous graceful restarts.
-    func waitForLSPSettingsChanges() async {
-        await lspSettingsChangeTask?.value
     }
 
     // MARK: - Recent Projects
@@ -4075,6 +4191,13 @@ final class ProjectRegistry: LSPSettingsObserver {
             fileURLWithPath: canonical.path,
             isDirectory: true
         ).standardizedFileURL
+    }
+
+    /// Includes removed managers still owning a completed result or cleanup.
+    var commandResultOwners: [ProjectManager] { userTaskOwners }
+
+    var hasPendingCommandResults: Bool {
+        commandResultOwners.contains { $0.hasPendingCommandResults }
     }
 
     private var userTaskOwners: [ProjectManager] {

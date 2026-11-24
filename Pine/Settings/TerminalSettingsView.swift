@@ -435,8 +435,7 @@ struct TerminalSettingsView: View {
         ShellSettings.commonShells.contains { $0.path == shell.shellPath }
     }
 
-    /// Each line is one literal process argument — mirrors the LSP arguments
-    /// convention. No shell tokenization is performed.
+    /// Each line is one literal process argument. No shell tokenization is performed.
     private func parsedArguments(_ text: String) -> [String] {
         guard !text.isEmpty else { return [] }
         var lines = text.components(separatedBy: "\n")

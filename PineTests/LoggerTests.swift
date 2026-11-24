@@ -63,10 +63,6 @@ struct LoggerTests {
         #expect(LogCategory.migration.rawValue == "migration")
     }
 
-    @Test func lspCategoryRawValue() {
-        #expect(LogCategory.lsp.rawValue == "lsp")
-    }
-
     @Test func taskCategoryRawValue() {
         #expect(LogCategory.task.rawValue == "task")
     }
@@ -85,7 +81,7 @@ struct LoggerTests {
     // MARK: - CaseIterable
 
     @Test func expectedCategoryCount() {
-        #expect(LogCategory.allCases.count == 12)
+        #expect(LogCategory.allCases.count == 11)
     }
 
     @Test func allCasesContainsAllCategories() {
@@ -98,7 +94,6 @@ struct LoggerTests {
             .editor,
             .app,
             .migration,
-            .lsp,
             .task,
             .extensibility,
             .agent,
@@ -117,7 +112,6 @@ struct LoggerTests {
         Logger.editor.debug("test")
         Logger.app.debug("test")
         Logger.migration.debug("test")
-        Logger.lsp.debug("test")
         Logger.task.debug("test")
         Logger.extensibility.debug("test")
     }

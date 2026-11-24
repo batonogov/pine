@@ -23,6 +23,9 @@ supersede the older contextual editor/terminal proposal:
 - Preserve existing files, unsaved work, history, and environment ownership
   through deliberate migration. Removing UI does not authorize deleting data.
 
+The canonical removal/merge ledger is
+[design/pine-3/subtraction-ledger.md](design/pine-3/subtraction-ledger.md) (#1760).
+
 These are selected Pine 3.0 requirements, not shipped functionality. They do not
 change the released Pine 2.x feature record or establish provider compatibility.
 
@@ -97,13 +100,22 @@ task-local and do not imply arbitrary interactive TUI compatibility.
 
 ## Baseline: what Pine 2.x already ships
 
+In current source, process-only integrations send no agent notifications,
+including on process exit. Waiting-input, failure, and completion notifications
+require verified lifecycle events from a supported structured integration; no
+such integration is app-enabled yet. Released binaries may behave differently.
+
 Public surfaces describe two things and never blur them:
 
 - **Shipped now (Pine 2.x):** a native SwiftUI + AppKit code editor; a full
   VT100/xterm built-in terminal; CLI-agent detection with badges, activity, and
   privacy-bounded notifications; a cross-project Agent Inbox that routes back to
-  the exact live session; isolated agent worktrees; LSP code intelligence; Git
+  the exact live session; isolated agent worktrees; Git
   integration; and session persistence with restoration.
+  Current built-in integrations detect processes, not verified waiting or success.
+  The [compatibility matrix](agent-compatibility.md) and
+  [dated capability audit](cli-capability-evidence-2026-11-14.md) distinguish
+  process detection, documented upstream interfaces, and verified Pine integration.
 - **Direction (Pine 3.0, this document):** durable tasks, validated
   task-owned environments, reliable agent lifecycle signals, Ready evidence
   from Pine-observed checks and independent review, attention in the current
@@ -151,6 +163,15 @@ Mac application. This is a decision-making standard, not a visual imitation.
    with an ordinary message or explicitly supplied visual reference where
    supported. Opening a result changes viewed/unread only; it does not accept the
    result, execute commands, or authorize Git operations.
+
+Task continuity is required scope: the goal, explicit user decisions,
+constraints, feedback references, and result history stay usable across
+relaunches through a compact, inspectable task brief
+([#1759](https://github.com/batonogov/pine/issues/1759)). Explicit
+cross-provider handoff is a bounded ship/defer experiment behind that
+decision, not a Pine 3.0 promise; a new provider cannot inherit another
+provider's hidden state, and the brief must say so when a reference is
+expired or unavailable.
 
 ## Result, not transcript
 
@@ -265,7 +286,13 @@ interface is available.
 
 ## First complete release slice
 
-Prove Codex app-server end to end before broadening compatibility:
+Prove OpenCode V2 (`opencode acp`) end to end before broadening
+compatibility. The maintainer-approved required structured sequence is
+OpenCode → Codex → Kimi → Claude
+([#1811](https://github.com/batonogov/pine/issues/1811),
+[#1723](https://github.com/batonogov/pine/issues/1723),
+[#1732](https://github.com/batonogov/pine/issues/1732),
+[#1727](https://github.com/batonogov/pine/issues/1727)):
 
 - One task, one implementer, and a separate read-only reviewer session.
 - Selected-project task creation with a remembered default agent.
@@ -278,10 +305,13 @@ Prove Codex app-server end to end before broadening compatibility:
   type.
 - Natural-language continuation and truthful failure/relaunch recovery.
 
-Kimi Code CLI through `kimi acp` is the required second structured adapter;
-Claude Code is the third. Shared provider contract tests must demonstrate the
-same task, attention, review, Ready, recovery, and evidence semantics while
-documenting real capability differences.
+Codex app-server is the required second structured adapter, Kimi Code CLI
+through `kimi acp` the third, and Claude Code the fourth. OpenCode was
+previously an optional candidate; its promotion to first required adapter
+is recorded in [#1811](https://github.com/batonogov/pine/issues/1811)
+(2026-11-16). Shared provider contract tests must demonstrate the same task,
+attention, review, Ready, recovery, and evidence semantics while documenting
+real capability differences.
 
 Then demonstrate at least three independent same-repository tasks with validated
 routing and a documented concurrency limit `N`, including honest `N+1` queueing
@@ -302,13 +332,16 @@ capabilities described as shipped and ADE capabilities described as Pine 3.0
 direction, using durable wording: no agent counts, adapter totals, or release
 dates.
 
-Alignment remains open under [#1730](https://github.com/batonogov/pine/issues/1730):
-older future-facing copy and the preserved prototype still refer to contextual
-code/terminal access or an Inbox. Synchronize those direction labels across all
-nine locales; do not remove accurate released-editor Help or screenshots merely
-because the selected future composition differs. Refresh native Help/screenshots
-with the corresponding implementation, and change GitHub About only with
-authorization. This document correction is not completion of that broader work.
+The README, the landing page and all nine landing translations, and the in-app
+Help in all nine locales now carry the selected direction.
+[#1730](https://github.com/batonogov/pine/issues/1730) tracks the remaining
+surfaces: the GitHub About description and topics change only with
+authorization (prepared in
+[1730-github-about-proposal.md](1730-github-about-proposal.md)), and the
+released-UI screenshots are audited in
+[1730-screenshot-audit.md](1730-screenshot-audit.md) and refreshed only when
+the corresponding ADE UI ships. Do not remove accurate released-editor Help
+or screenshots merely because the selected future composition differs.
 
 ## Release quality gates
 

@@ -21,7 +21,7 @@ struct LocalizationPluralRulesTests {
     private static let english = Locale(identifier: "en")
     private static let russian = Locale(identifier: "ru")
 
-    // MARK: - Validation / Problems counts
+    // MARK: - Validation counts
 
     @Test("Error counts follow Russian one/few/many and English one/other")
     func errorCountPlurals() {
@@ -50,22 +50,6 @@ struct LocalizationPluralRulesTests {
             "0 предупреждений", "1 предупреждение", "2 предупреждения",
             "5 предупреждений",
         ])
-    }
-
-    @Test("Problems summary has no singular special case left to regress")
-    func problemsCountsDelegateToPluralRules() {
-        #expect(
-            Strings.problemsErrorCount(1, locale: Self.english)
-                == "1 error"
-        )
-        #expect(
-            Strings.problemsWarningCount(1, locale: Self.russian)
-                == "1 предупреждение"
-        )
-        #expect(
-            Strings.problemsErrorCount(5, locale: Self.russian)
-                == "5 ошибок"
-        )
     }
 
     // MARK: - Agent activity / completion counts
@@ -428,26 +412,6 @@ struct LocalizationPluralRulesTests {
         #expect(
             IndentationStyle.tabs.displayName
                 == Strings.statusbarIndentationTabs()
-        )
-    }
-
-    // MARK: - Rename popover
-
-    @Test("Rename popover copy resolves per locale")
-    func renamePopoverCopy() {
-        #expect(
-            Strings.lspRenameLabel(locale: Self.english)
-                == "Rename symbol to:"
-        )
-        #expect(
-            Strings.lspRenamePlaceholder(locale: Self.english)
-                == "New name"
-        )
-        #expect(
-            Strings.lspRenameLabel(locale: Self.russian) != "Rename symbol to:"
-        )
-        #expect(
-            Strings.lspRenamePlaceholder(locale: Self.russian) != "New name"
         )
     }
 

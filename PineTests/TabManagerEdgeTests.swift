@@ -726,7 +726,7 @@ struct TabManagerEdgeTests {
         )
     }
 
-    @Test func lspLargeFileNavigationWaitsForOpenAndPreservesLocation() async throws {
+    @Test func sourceLocationLargeFileNavigationWaitsForOpenAndPreservesLocation() async throws {
         let dir = try makeTempDir()
         defer { cleanup(dir) }
         let manager = makeTabManager()
@@ -757,11 +757,10 @@ struct TabManagerEdgeTests {
             return .abort
         }
 
-        let request = PaneLeafView.openLSPFile(
+        let request = manager.openTabAndGoToLocation(
             url: targetURL,
-            line: 0,
-            character: 2,
-            in: manager,
+            line: 1,
+            column: 3,
             completion: { completionResult = $0 }
         )
 
@@ -789,7 +788,7 @@ struct TabManagerEdgeTests {
         )
     }
 
-    @Test func lspImmediateNavigationUsesUTF16CharacterOffsets() throws {
+    @Test func sourceLocationImmediateNavigationUsesUTF16CharacterOffsets() throws {
         let dir = try makeTempDir()
         defer { cleanup(dir) }
         let manager = makeTabManager()
@@ -800,11 +799,10 @@ struct TabManagerEdgeTests {
             content: content
         )
 
-        let result = PaneLeafView.openLSPFile(
+        let result = manager.openTabAndGoToLocation(
             url: url,
-            line: 0,
-            character: 2,
-            in: manager
+            line: 1,
+            column: 3
         )
 
         let activeTabID = try #require(manager.activeTabID)
@@ -822,7 +820,7 @@ struct TabManagerEdgeTests {
         )
     }
 
-    @Test func lspCancelledLargeFileDoesNotRouteOrChangeSelection() async throws {
+    @Test func sourceLocationCancelledLargeFileDoesNotRouteOrChangeSelection() async throws {
         let dir = try makeTempDir()
         defer { cleanup(dir) }
         let manager = makeTabManager()
@@ -854,11 +852,10 @@ struct TabManagerEdgeTests {
             return .abort
         }
 
-        let result = PaneLeafView.openLSPFile(
+        let result = manager.openTabAndGoToLocation(
             url: targetURL,
-            line: 4,
-            character: 7,
-            in: manager,
+            line: 5,
+            column: 8,
             completion: { completionResult = $0 }
         )
 
@@ -874,39 +871,6 @@ struct TabManagerEdgeTests {
         #expect(manager.activeTabID == sourceTabID)
         #expect(manager.pendingGoToLocation == nil)
         #expect(!manager.tabs.contains { $0.url == targetURL })
-    }
-
-    @Test func lspCoordinatesClampNegativeAndSaturateAtIntMax() throws {
-        let dir = try makeTempDir()
-        defer { cleanup(dir) }
-        let manager = makeTabManager()
-        let url = try tempFile(
-            in: dir,
-            name: "extreme.swift",
-            content: "value"
-        )
-
-        _ = PaneLeafView.openLSPFile(
-            url: url,
-            line: .max,
-            character: .max,
-            in: manager
-        )
-        #expect(
-            manager.pendingGoToLocation ==
-                EditorNavigationLocation(line: .max, column: .max)
-        )
-
-        _ = PaneLeafView.openLSPFile(
-            url: url,
-            line: -1,
-            character: .min,
-            in: manager
-        )
-        #expect(
-            manager.pendingGoToLocation ==
-                EditorNavigationLocation(line: 1, column: 1)
-        )
     }
 
     // MARK: - Auto-save

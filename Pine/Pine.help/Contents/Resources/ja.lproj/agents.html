@@ -4,7 +4,7 @@
 <head>
     <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
     <meta name="AppleTitle" content="io.github.batonogov.pine.help" />
-    <meta name="description" content="Pineのエージェント受信トレイ、非公開通知、復旧、完了概要、分離ワークツリーの使い方を説明します。Pine 3.0のADE方向性（現在の機能ではありません）も紹介しています。" />
+    <meta name="description" content="Pineのエージェント受信トレイ、通知設定、復旧、完了概要、分離ワークツリーの使い方を説明します。Pine 3.0のADE方向性（現在の機能ではありません）も紹介しています。" />
     <meta name="KEYWORDS" content="エージェント受信トレイ, 通知, 復旧, 完了概要, ワークツリー, エージェント検出, 履歴, プライバシー, Pine" />
     <title>エージェント受信トレイ、ワークフローと ADE の方向性 — Pineヘルプ</title>
     <link rel="stylesheet" type="text/css" href="../style.css" />
@@ -25,7 +25,7 @@
             <div class="card">
                 <a name="pine-agent-settings" id="pine-agent-settings"></a>
                 <h3>非公開通知</h3>
-                <p>通知は「設定」&gt;「エージェント」で管理できます。現在の組み込み連携はプロセスのみを観測し、プロセス終了を通知できますが、検証済みの入力待ち、失敗、正常完了は通知できません。通知にはプロンプト、ターミナル出力、トークン、絶対パス、ベンダー識別子は含まれません。</p>
+                <p>通知設定は「設定」&gt;「エージェント」で管理できます。プロセスのみを観測する現在の連携は、プロセス終了時を含め、エージェント通知を送信しません。入力待ち、失敗、完了の通知には、検証済みのライフサイクルイベントを提供するサポート対象の構造化連携が必要ですが、そのような連携はまだアプリで有効になっていません。通知にはプロンプト、ターミナル出力、トークン、絶対パス、ベンダー識別子は含まれません。</p>
             </div>
             <div class="card">
                 <h3>復旧とワークツリー</h3>

@@ -363,8 +363,7 @@ struct BackgroundDispatchTests {
     // threads means no pool at all — the same shape as a raw
     // `DispatchQueue.global().async`. The surfaces fixed in #1548 declare
     // `.workItem` (the `pine.fswatcher`, `com.pine.tool-resolver-cache`,
-    // `com.pine.lsp-transport`, `com.pine.lsp-transport.lifecycle`, and
-    // `com.pine.agent-history` queues) or wrap
+    // `com.pine.agent-history` queue) or wrap
     // their bodies in `autoreleasepool` (the remaining raw global-queue work
     // items). The production queues are `private`, so these tests mirror the
     // configuration they now declare. Note what `.workItem` covers per

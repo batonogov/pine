@@ -95,12 +95,6 @@ struct MenuShortcutOverrideTests {
             // ⌥Z claimed a typeable letter app-wide (#1564): ⌘ joins the
             // chord so the Z mnemonic survives without stealing text input.
             .toggleWordWrap: AdvertisedShortcut("z", [.command, .option]),
-            .showProblems: AdvertisedShortcut("x", [.command, .shift]),
-            // Bare F8/⇧F8 needed Fn under default settings and collided with
-            // system feature keys (#1564). ⌥⌘↓/↑ mirror Next/Previous Change
-            // (⌃⌥↓/↑) on the Command modifier family.
-            .nextDiagnostic: AdvertisedShortcut(.downArrow, [.command, .option]),
-            .previousDiagnostic: AdvertisedShortcut(.upArrow, [.command, .option]),
             .revealFileInFinder: AdvertisedShortcut("r", [.command, .shift]),
             .showAgentInbox: AdvertisedShortcut("i", [.command, .shift]),
             .newAgent: AdvertisedShortcut("a", [.command, .shift]),
@@ -180,27 +174,23 @@ struct MenuShortcutOverrideTests {
         )
     }
 
-    /// The same replacement, for a command whose built-in chord is an arrow
-    /// key: the user's new chord must retire the arrow chord underneath.
-    /// (Before #1564 this test used F8 — bare function keys are no longer
-    /// built-in chords, but a user may still bind one, so the grammar below
-    /// keeps naming them.)
+    /// A rebound command must retire its built-in chord underneath.
     @Test("rebinding a command retires its replaced chord")
-    func rebindRetiresAFunctionKeyChord() async throws {
+    func rebindRetiresTheBuiltInChord() async throws {
         let keybindings = try await Self.registry(
-            loading: #"[{"command": "nextDiagnostic", "key": "cmd+j"}]"#
+            loading: #"[{"command": "quickOpen", "key": "cmd+j"}]"#
         )
 
         let shortcut = try #require(
             MenuKeyboardShortcut(
-                keybindings.effectiveChord(for: .nextDiagnostic)
+                keybindings.effectiveChord(for: .quickOpen)
             )
         )
         #expect(shortcut.key.character == "j")
         #expect(
             keybindings.suppressesBuiltInShortcut(
                 for: try #require(
-                    Self.keyDown("↓", modifiers: [.command, .option], keyCode: 125)
+                    Self.keyDown("p", modifiers: [.command])
                 )
             )
         )

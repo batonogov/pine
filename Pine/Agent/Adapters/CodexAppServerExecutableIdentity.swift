@@ -93,21 +93,27 @@ nonisolated struct CodexAppServerExecutableIdentity: Equatable, Sendable,
 
     func validateProcessImage(processID: pid_t, incarnation: UserTaskProcessIdentity) async throws {
         try await runOnBackground {
-            guard UserTaskProcessInspector.identity(for: processID) == incarnation else {
-                throw CodexAppServerExecutableError.changed
-            }
-            // libproc's macro is (4 * MAXPATHLEN), unavailable to Swift.
-            var path = [UInt8](repeating: 0, count: 4 * Int(MAXPATHLEN))
-            let count = path.withUnsafeMutableBytes { proc_pidpath(processID, $0.baseAddress, UInt32($0.count)) }
-            guard count > 0, let end = path.firstIndex(of: 0),
-                  let value = String(bytes: path[..<end], encoding: .utf8) else {
-                throw CodexAppServerExecutableError.unavailable
-            }
-            var info = stat()
-            guard lstat(value, &info) == 0, Stamp(info) == stamp,
-                  UserTaskProcessInspector.identity(for: processID) == incarnation else {
-                throw CodexAppServerExecutableError.changed
-            }
+            try self.validateProcessImageSynchronously(processID: processID, incarnation: incarnation)
+        }
+    }
+
+    /// Synchronous variant for admission gates that already own an off-main
+    /// background path (owned-process spawn and receipt validation).
+    func validateProcessImageSynchronously(processID: pid_t, incarnation: UserTaskProcessIdentity) throws {
+        guard UserTaskProcessInspector.identity(for: processID) == incarnation else {
+            throw CodexAppServerExecutableError.changed
+        }
+        // libproc's macro is (4 * MAXPATHLEN), unavailable to Swift.
+        var path = [UInt8](repeating: 0, count: 4 * Int(MAXPATHLEN))
+        let count = path.withUnsafeMutableBytes { proc_pidpath(processID, $0.baseAddress, UInt32($0.count)) }
+        guard count > 0, let end = path.firstIndex(of: 0),
+              let value = String(bytes: path[..<end], encoding: .utf8) else {
+            throw CodexAppServerExecutableError.unavailable
+        }
+        var info = stat()
+        guard lstat(value, &info) == 0, Stamp(info) == stamp,
+              UserTaskProcessInspector.identity(for: processID) == incarnation else {
+            throw CodexAppServerExecutableError.changed
         }
     }
 

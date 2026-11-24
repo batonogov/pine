@@ -917,7 +917,7 @@ struct PineAppMenuCommands: Commands {
 
         // MARK: - View menu
         // Font size, terminal toggle, preview, minimap, blame, word wrap,
-        // problems/diagnostics, agent launch
+        // agent launch
         CommandGroup(after: .toolbar) {
             Divider()
 
@@ -995,58 +995,6 @@ struct PineAppMenuCommands: Commands {
             .effectiveKeyboardShortcut(
                 keybindings.effectiveChord(for: .toggleWordWrap)
             )
-
-            Divider()
-
-            Button {
-                guard let pm = focusedProject else { return }
-                UserCommandInvocationRouter.dispatch(
-                    .showProblems,
-                    projectManager: pm
-                )
-            } label: {
-                Label(Strings.menuProblems, systemImage: MenuIcons.problems)
-            }
-            .effectiveKeyboardShortcut(
-                keybindings.effectiveChord(for: .showProblems)
-            )
-            .disabled(focusedProject == nil)
-
-            Button {
-                guard let pm = focusedProject else { return }
-                UserCommandInvocationRouter.dispatch(
-                    .nextDiagnostic,
-                    projectManager: pm
-                )
-            } label: {
-                Label(
-                    Strings.menuNextDiagnostic,
-                    systemImage: MenuIcons.nextDiagnostic
-                )
-            }
-            .effectiveKeyboardShortcut(
-                keybindings.effectiveChord(for: .nextDiagnostic)
-            )
-            .disabled(focusedProject == nil)
-
-            Button {
-                guard let pm = focusedProject else { return }
-                UserCommandInvocationRouter.dispatch(
-                    .previousDiagnostic,
-                    projectManager: pm
-                )
-            } label: {
-                Label(
-                    Strings.menuPreviousDiagnostic,
-                    systemImage: MenuIcons.previousDiagnostic
-                )
-            }
-            .effectiveKeyboardShortcut(
-                keybindings.effectiveChord(for: .previousDiagnostic)
-            )
-            .disabled(focusedProject == nil)
-
-            Divider()
 
             // The switcher's New Agent submenu, in the menu bar where it
             // belongs (#1525). Hiding the toolbar used to delete the feature

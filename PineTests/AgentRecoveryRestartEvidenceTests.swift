@@ -27,7 +27,7 @@ struct AgentRecoveryRestartEvidenceTests {
         #expect(task.reviewedSnapshot == original.reviewedSnapshot)
         #expect(task.acceptedSnapshot == original.acceptedSnapshot)
         #expect(task.objective == original.objective)
-        fixture.expectNoExecution(restored, terminalIDs: original.runs.map(\.terminalID))
+        fixture.expectNoExecution(restored, terminalIDs: original.runs.compactMap(\.terminalID))
     }
 
     @Test("Missing metadata demonstrates the old reseed oracle and rejects it without seed argv")
@@ -46,7 +46,7 @@ struct AgentRecoveryRestartEvidenceTests {
         #expect(replacement.id != original.id)
         #expect(replacement.runs.only?.id != original.runs.only?.id)
         #expect(replacement.runs != original.runs)
-        fixture.expectNoExecution(reseeded, terminalIDs: replacement.runs.map(\.terminalID))
+        fixture.expectNoExecution(reseeded, terminalIDs: replacement.runs.compactMap(\.terminalID))
         reseeded.agentTasks.prepareForApplicationTermination()
         #expect(await reseeded.agentTasks.flushPersistence() == .saved)
         try FileManager.default.removeItem(at: fixture.metadata)
@@ -54,7 +54,7 @@ struct AgentRecoveryRestartEvidenceTests {
         let unseeded = try await fixture.launch(arguments: [])
         #expect(unseeded.agentTasks.loadStatusByProject[fixture.identity.persistenceKey] == .missing)
         #expect(unseeded.agentTasks.tasks.isEmpty)
-        fixture.expectNoExecution(unseeded, terminalIDs: original.runs.map(\.terminalID))
+        fixture.expectNoExecution(unseeded, terminalIDs: original.runs.compactMap(\.terminalID))
     }
 
     @Test("Corrupt metadata is rejected and cannot be replaced on an unseeded restart")
@@ -69,7 +69,7 @@ struct AgentRecoveryRestartEvidenceTests {
         #expect(restored.agentTasks.loadStatusByProject[fixture.identity.persistenceKey] == .rejected(.corrupt))
         #expect(restored.agentTasks.tasks.isEmpty)
         #expect(try Data(contentsOf: fixture.metadata) == Data("not task metadata".utf8))
-        fixture.expectNoExecution(restored, terminalIDs: original.runs.map(\.terminalID))
+        fixture.expectNoExecution(restored, terminalIDs: original.runs.compactMap(\.terminalID))
     }
 
     @MainActor
@@ -122,7 +122,7 @@ struct AgentRecoveryRestartEvidenceTests {
             #expect(run.endedAt != nil)
             #expect(run.outcome == .unverified)
             #expect(!task.evidence.isEmpty, "Preserve real process-completion evidence")
-            expectNoExecution(registry, terminalIDs: [run.terminalID])
+            expectNoExecution(registry, terminalIDs: [run.terminalID].compactMap { $0 })
             registry.agentTasks.prepareForApplicationTermination()
             #expect(await registry.agentTasks.flushPersistence() == .saved)
             // Capture the actual durable representation before creating the

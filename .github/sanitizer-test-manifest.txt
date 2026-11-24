@@ -13,9 +13,6 @@ PineTests/FileSystemWatcherTests
 PineTests/TabExternalChangeDetectorTests
 PineTests/ExternalChangeRefreshRegressionTests
 
-# Language-server process lifecycle and stream transport.
-PineTests/LSPProcessTransportTests
-
 # Tabs, panes, projects, windows, and termination-save coordination.
 PineTests/TabManagerTests
 PineTests/PaneManagerTests

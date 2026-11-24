@@ -220,6 +220,27 @@ nonisolated struct UserTaskArgvRunnerTests {
         #expect(gate.startCount == 1)
     }
 
+    @Test func noChildRejectionAndMissingExecutableReleaseOwnershipForRetry() async throws {
+        for rejected in [true, false] {
+            let runner = UserTaskRunner(maximumConcurrentExecutions: 1)
+            let failed = ArgvRunnerProbe()
+            let handle = start(
+                runner, failed, executable: rejected ? "/usr/bin/true" : "/nonexistent/pine-owned-missing-tool"
+            ) { _ in
+                if rejected { throw CancellationError() }
+            }
+            let result = try await failed.finished()
+            #expect(result.outcome.preSpawnRejected == rejected)
+            #expect(result.outcome.processExitCode == nil)
+            #expect(result.outcome.cleanupSucceeded)
+            #expect(handle.wait(until: .now() + 10))
+            #expect(failed.startCount == 0)
+            let retry = ArgvRunnerProbe()
+            start(runner, retry, executable: "/usr/bin/true")
+            #expect(try await retry.finished().outcome.succeeded)
+        }
+    }
+
     @Test func cancellationAndDeadlineReapChildren() async throws {
         for cancel in [true, false] {
             let pidFile = FileManager.default.temporaryDirectory

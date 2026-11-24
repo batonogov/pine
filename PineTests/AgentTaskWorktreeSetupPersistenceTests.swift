@@ -139,7 +139,7 @@ struct AgentTaskWorktreeSetupPersistenceTests {
         )
         #expect(await store.save(tasks: [task], project: fixture.identity).isDurablySaved)
         let critical = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: fixture.metadata)) as? [String: Any])
-        #expect(critical["schemaVersion"] as? Int == 4)
+        #expect(critical["schemaVersion"] as? Int == 5)
         let loaded = await store.load(project: fixture.identity)
         #expect(loaded.status == .loaded)
         #expect(loaded.tasks == [task])
@@ -471,7 +471,10 @@ nonisolated private struct SetupPersistenceFixture: Sendable {
         let terminal = UUID()
         return AgentTaskBridgeContext(project: identity, route: AgentTaskRoute(paneID: UUID(), tabID: terminal,
             terminalID: terminal, availability: availability), origin: .pineLaunched,
-            observedAt: Date(timeIntervalSince1970: 1_794_700_000))
+            // Current time truncated to whole seconds: recent enough to stay
+            // inside the seven-day retention horizon, and second-precision so
+            // the JSON roundtrip preserves the timestamps exactly.
+            observedAt: Date(timeIntervalSince1970: floor(Date().timeIntervalSince1970)))
     }
     @MainActor func task() -> AgentTask {
         var task = AgentTask(descriptor: AgentDescriptor(agentType: .codex), context: context())

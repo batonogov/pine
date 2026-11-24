@@ -391,7 +391,6 @@ final class ScreenshotTests: PineUITestCase {
 
         - Syntax highlighting for 37 languages
         - Split editor and terminal panes
-        - LSP diagnostics and code intelligence
         - Git context and live agent activity
         - Minimap, folding, and project search
 
