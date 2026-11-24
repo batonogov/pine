@@ -11,12 +11,12 @@ matrix, and accessibility checklist live in the
 
 The checked-in catalog schema is version 1. **Catalog fixture version** below
 identifies the version label in the synthetic process-name fixture; it is not
-a minimum protocol version or a certified integration version. All retained
-first-party entries remain **Detected**: process snapshots with observed
-process-generation trust, manual terminal launch/new sessions, and process
-termination observations only. No structured transport, approval, provider
-resume, account/model discovery, or verified completion is enabled by these
-entries. The manual terminal can still run arbitrary programs.
+a minimum protocol version or a certified integration version. Retained
+**Detected** entries provide process snapshots with observed process-generation
+trust, manual terminal launch/new sessions, and process termination observations
+only. A separately marked structured adapter adds its documented owned transport;
+it does not add account/model discovery or verified completion. The manual
+terminal can still run arbitrary programs.
 
 The [dated capability evidence audit](cli-capability-evidence-2026-11-14.md)
 separates source review, fixtures, limited version/help observations, handshake,
@@ -37,7 +37,7 @@ The active catalog and all nine Help pages reflect this retirement.
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | [Pi](https://github.com/badlogic/pi-mono) | `pi` | 0.83.0 | Detected | Process snapshot; observed process generation | Manual terminal / new session only | Process termination only | No structured transport enabled; upstream candidates and limitations are recorded in the dated audit. |
 | [Codex](https://github.com/openai/codex) | `codex` | 0.146.0 | Detected | Process snapshot; observed process generation | Manual terminal / new session only | Process termination only | No structured transport enabled; upstream candidates and limitations are recorded in the dated audit. |
-| [Claude Code](https://github.com/anthropics/claude-code) | `claude` | 2.1.220 | Detected | Process snapshot; observed process generation | Manual terminal / new session only; native resume only by explicit user action as a new attempt | Process termination only | Structured transport not enabled in the app yet; the owned stream-json/control codec/model foundation is implemented with pinned floors (see below), recorded in the [2026-11-16 evidence](claude-stream-control-evidence-2026-11-16.md). |
+| [Claude Code](https://github.com/anthropics/claude-code) | `claude` (terminal detection), `claude-agent-acp` (owned adapter) | 2.1.220 | Structured via official ACP adapter | ACP v1 over Pine-owned child stdio; observed process generation | Owned official adapter; exact `session/load` only by explicit user action as a new attempt; no auto-resume | Main-turn end is unverified, never Ready by itself | Adapter pin 0.109.1; synthetic fixtures and composition only. Real adapter handshake, provider authentication, and an authenticated real-model journey are not claimed. Provider auth/configuration remains adapter-owned. |
 | [OpenCode](https://github.com/anomalyco/opencode) | `opencode` | 1.18.10 | Detected | Process snapshot; observed process generation | Manual terminal / new session only | Process termination only | No structured transport enabled; upstream candidates and limitations are recorded in the dated audit. |
 | [GitHub Copilot CLI](https://github.com/github/copilot-cli) | `github-copilot-cli`, `copilot` | 1.0.77 | Detected | Process snapshot; observed process generation | Manual terminal / new session only | Process termination only | No structured transport enabled; upstream candidates and limitations are recorded in the dated audit. |
 | [Aider](https://github.com/Aider-AI/aider) | `aider` | 0.86.0 | Detected | Process snapshot; observed process generation | Manual terminal / new session only | Process termination only | No structured transport enabled; upstream candidates and limitations are recorded in the dated audit. |
@@ -60,30 +60,37 @@ metadata, and remembered defaults require a new explicit agent choice. Manual
 terminal commands remain available. Empry⊙ is excluded from Pine 3.0 structured
 adapter plans; historical release records remain unchanged.
 
-## Structured transport floors (Pine-owned, first slice)
+## Claude Code official ACP adapter (#1727)
 
-The first owned structured-adapter slice is Claude Code's
-stream-json/control protocol over supervised child stdio
-(#1727). Codex's owned app-server slice precedes it and Kimi/OpenCode
-extend the shared contracts; this table records the exact transport and
-version floors for Claude at the codec/model level. These floors are
-requirements of the implemented slice, not broad compatibility claims,
-and the app does not enable the transport until the registry integration
-and the real-version final gate (full turns, live permission exchange)
-pass.
+Claude's structured route is the official standalone `claude-agent-acp`
+process, launched as a Pine-owned child. It is not the earlier native
+stream-json/control launch path. The adapter wraps and owns the bundled Claude
+CLI, provider authentication, and native configuration; Pine neither reads nor
+manages Claude credentials, OAuth state, or keychain entries. The standalone
+macOS x64/arm64 archives need no Node.js installation. The inherited
+`CLAUDE_CODE_EXECUTABLE` setting may select a local CLI instead of the bundled
+one; this does not relax the adapter identity/version pin.
 
 | Item | Claude Code value |
 | --- | --- |
-| Transport | Owned child stdio; `-p --input-format stream-json --output-format stream-json --verbose`; JSONL frames ≤ 1 MiB |
-| Pinned executable | 2.1.311 (verified handshake, 2026-11-16, unauthenticated, no model calls) |
-| Structured-slice minimum | 2.1.296 (max of the required feature floors) |
-| Feature floors | `capabilities` field and interrupt receipts ≥ 2.1.205; `cancel_queued` ≥ 2.1.219; `--system-prompt-snapshot off` ≥ 2.1.257; `--permission-prompts` ≥ 2.1.259; `pending_permission_requests` ≥ 2.1.268; `claude_code_version` ≥ 2.1.296 |
-| Feature detection | Observed `capabilities` array first (open set; unrecognized values ignored); recorded version floors when the array is absent; missing evidence is unknown, never "absent" |
-| Pending-request recovery | `pending_permission_requests` on the `initialize` response wrapper; a missing field means an older CLI, so post-reconnect approval state stays unknown rather than "no pending requests" |
-| Cancellation | `interrupt` control request; receipt (`still_queued`/`cancelled`) is observation only — queued messages are never auto-resent; a late completion after cancellation is a race outcome, never Ready |
-| Stop semantics | `result success` = agent-reported main-turn end only; may coexist with background work; never independently establishes verified completion or Ready |
-| Resume | Native `--resume` only through explicit user action, as a new Pine attempt/source namespace; registry checkpoints are never persisted as resume data; a new process is never live reattachment |
-| Limitations | No transport reconnect on owned stdio (process death ends the attempt); native user questions (`pending_user_dialog_requests`) are parsed as count-only and unmapped; `can_use_tool` wire shape implemented from the documented contract, live exchange is the final gate; hooks are reporting-only with consent/preview and project-local settings only |
+| Transport | Literal-argv `claude-agent-acp` with no subcommand; ACP v1 JSON-RPC 2.0 over the shared bounded Pine-owned stdio channel/framer (JSONL frames ≤ 1 MiB); process-group stop/reap and bounded secret-free stderr drain |
+| Pinned adapter | 0.109.1 exactly; `--version` has a 5-second cap and initialize requires protocol 1 plus `agentInfo.name == "@agentclientprotocol/claude-agent-acp"` and the same exact version |
+| Protocol floor | ACP v1 only in this slice. ACP v2 Preview is not negotiated or enabled |
+| Sessions | `session/new`; exact-ID `session/load` is a separate explicit action in a new Pine attempt/source namespace. No process reattachment, auto-resume, reconnect, or automatic prompt resend |
+| User input | One-shot `session/request_permission` (`allow_once`/`reject_once`) and the strict form-only `elicitation/create` subset. Identical redelivery of an answered request replays its exact response; unsupported schemas and unowned reverse RPC fail closed |
+| Cancellation | `session/cancel`; remains requested until the provider confirms cancellation. Late completion is a race outcome and queued input is never automatically resent |
+| Main-turn end | `session/prompt` `end_turn` (including the other bounded terminal reasons) is unverified main-turn completion only. It never proves background-work settlement, checks, review, or Ready |
+| Provider configuration | `mcpServers: []` from Pine and inherited native adapter configuration. Provider authentication is not inferred from process ownership or a successful ACP handshake |
+| Verification boundary | Executable identity, framing, session/control behavior, ownership composition, stopped-provider replacement, and teardown have deterministic local coverage. This slice records no real adapter handshake result; no authenticated real-model turn or live permission exchange is claimed |
+
+The opt-in `PINE_RUN_CLAUDECODE_ACP_SMOKE=1` (or
+`$TMPDIR/pine-claude-acp-smoke`) check uses
+`PINE_CLAUDECODE_ACP_BINARY`, a synthetic working directory, no model prompt,
+and no auth mutation. It composes without launching, starts to idle with a
+bound native session, and tears down the owned process. It remains the final
+local smoke gate for the real adapter handshake; provider authentication and a
+real-model journey are separate acceptance evidence, not implications of this
+integration slice.
 
 ## Tier meanings
 
@@ -93,10 +100,11 @@ pass.
   process generation. Lookalike names remain generic.
 - **Attention-aware:** Pine has a verified provider signal for a user-action
   transition. No first-party adapter currently claims this tier.
-- **Structured:** Pine negotiates a documented, authenticated structured
-  lifecycle contract. No first-party adapter currently claims this tier in
-  the catalog above: the Kimi Code CLI structured adapter (#1732) below
-  stays **Detected** until its real-version smoke passes on the pinned binary.
+- **Structured:** Pine negotiates a documented structured lifecycle contract
+  over an owned authenticated channel. Claude's row marks the official ACP
+  adapter composition, not a completed authenticated provider journey. The
+  Kimi Code CLI structured adapter (#1732) below stays **Detected** until its
+  real-version smoke passes on the pinned binary.
 
 ## Kimi Code CLI structured ACP floor (#1732)
 
