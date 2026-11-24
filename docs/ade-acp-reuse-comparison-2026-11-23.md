@@ -5,8 +5,9 @@ Scope: research slice of
 [#1729](https://github.com/batonogov/pine/issues/1729) epic and milestone
 **Pine 3.0 — ADE**. It inventories Pine's current ACP wire, compares the
 maintained reusable ACP components, and records the chosen route per
-integration plane. Documentation only: no Swift code, no dependency or
-runtime additions, no `.help` changes. Companion evidence:
+integration plane. The 2026-11-23 record itself is documentation only: no
+Swift code, no dependency or runtime additions, no `.help` changes. Section 7
+adds the dated probe-outcome evidence from the #1846 code slice. Companion evidence:
 [CLI capability evidence](cli-capability-evidence-2026-11-14.md),
 [Claude stream/control evidence](claude-stream-control-evidence-2026-11-16.md),
 [T3 integration research](t3-code-agent-integration-2026-11-15.md), and the
@@ -171,17 +172,15 @@ be confirmed against `schema-v2.0.0-beta.3` before any code.
   encode and validation helpers, and the correlation/replay state machine,
   behind the existing seams, keeping every exact pin, the `_meta`
   child-session contract, and the fail-closed settlement semantics.
-- **The opt-in ACP v2 probe code is deferred to a follow-up.** Dependency:
-  the in-flight **PR #1848** ("feat(agent): dispatch OpenCode ACP tasks from
-  Pine UI", open, fetched) currently modifies the same ACP surface
-  (`Pine/Agent/Adapters/OpenCodeACPNativeBridge.swift` and
-  `Pine/ProjectRegistry.swift` among its files). Stacking a v2 probe on the
-  same files before #1848 lands would duplicate review and risk both. When
-  the probe is built, the first maintained v2 peers to exercise are the
-  standalone `claude-agent-acp` v0.109.1 artifact and/or `codex-acp` v2.9.0,
-  mapping the section 3 v2 surface; unsupported peer behavior stays explicit.
-  Assumption (labeled): #1848 merges without changing the ACP wire surface;
-  the deferral rests on file overlap, not on that content.
+- **The opt-in ACP v2 probe code is landed in the #1846 code slice** (this
+  record's follow-up). The recorded dependency, **PR #1848**, merged to main
+  as `a2a5a7355` (2026-11-24), unblocking the deferral. The probe
+  (`PineTests/ACPv2ProbeTests.swift`) exercises the first maintained v2 peer
+  shape — the standalone `claude-agent-acp` v0.109.1 artifact — with an
+  opt-in real-binary `initialize` handshake (env-gated like the other
+  real-binary probes, never run by default in CI) plus the always-on
+  deterministic v2 wire-strictness and surface-mapping tests; unsupported
+  peer behavior stays explicit. Outcomes: section 7.
 - **Direct dependency adoption is not chosen now.** `aptove/swift-sdk`
   v0.2.3 remains the best first **probe candidate** for a native Swift ACP
   client behind the existing adapter boundary (no Node/Rust/Electron;
@@ -215,11 +214,90 @@ be confirmed against `schema-v2.0.0-beta.3` before any code.
 | Dated comparison with exact revisions, licenses, runtimes, protocol versions, capability gaps | Satisfied — section 2 |
 | Per-plane decision (dependency / adapter reuse / shared primitives / native fallback), no runtime or dependency added | Satisfied — section 3; this record adds none |
 | Chosen approach preserves routing, one-shot permissions, cancellation, uncertain delivery, recovery, native config ownership, Pine-observed checks | Satisfied as a recorded boundary — section 3; execution proof stays with the probes |
-| Shared contract probe covering OpenCode and Kimi; evaluate official Codex/Claude adapters against #1723/#1727 | Not performed here (code/execution work); the shared wire contract tests and the adapter rows above are the starting point |
+| Shared contract probe covering OpenCode and Kimi; evaluate official Codex/Claude adapters against #1723/#1727 | Performed in the #1846 code slice: `PineTests/ACPSharedContractProbeTests.swift` drives the same scenario table through both transports with real outcomes; per-transport results and the real-binary run results: section 7. The official Codex/Claude adapter evaluations remain the section 2.3 rows plus the consumed #1852 decision (Claude) and the v2 probe's real-binary result (section 7) |
 | Record whether #1811/PR #1843 is reused unchanged / incrementally consolidated / revised | Satisfied — section 4 |
-| Opt-in ACP v2 probe code against a maintained v2 adapter | Deferred to a follow-up with the PR #1848 dependency recorded — section 4 |
+| Opt-in ACP v2 probe code against a maintained v2 adapter | Landed in the #1846 code slice: opt-in real-binary v2 `initialize` probe plus always-on deterministic v2 wire/surface tests — `PineTests/ACPv2ProbeTests.swift`; run results: section 7 |
 | ACP v1 stays the interoperability baseline; v2 opt-in, prepared in parallel, semantics not weakened | Satisfied — section 3 dual-stack route |
 | Findings linked back to #1729, #1811, #1765 and affected provider issues | Satisfied — section 5 |
+
+## 7. Probe outcomes (2026-11-24/25, #1846 code slice)
+
+Evidence for this section only: local runs on macOS 27.2.1 (26B131),
+Xcode 27.2 (27B52), SDK 27.2 (26B118), worktree base `34244744c`, branch
+`feat/1846-acp-v2-probes-2`. Sections 1–6 keep their original evidence
+limits. The probe code lives in `PineTests/ACPSharedContractProbeTests.swift`
+and `PineTests/ACPv2ProbeTests.swift`.
+
+### 7.1 Shared contract probe (OpenCode + Kimi)
+
+`ACPSharedContractProbeTests` drives the same `AgentProviderContractSuite`
+scenario table through both ACP v1 transports — real wire codec, connection
+bookkeeping, and session actors for each. The OpenCode fixture machinery was
+moved out of `OpenCodeACPTests.swift` into shared
+`PineTests/OpenCodeACPTestSupport.swift` (private typealiases keep the
+merged #1843 suite's call sites intact) so both merged suites and the probe
+drive one fixture, not copies. Real outcomes, 2026-11-24 23:20 run:
+
+| Scenario | OpenCode | Kimi |
+| --- | --- | --- |
+| question | pass | pass |
+| approval | pass | pass |
+| continuation | pass | pass |
+| cancellation | pass | pass |
+| malformed-duplicate-stale | pass | pass |
+| reconnect | unsupported — ACP v1 transport loss has no ordered replay; exact explicit load is a new attempt and never restores pending delivery | unsupported — same reason |
+| relaunch | pass | pass |
+| evidence-fencing | pass | pass |
+| backpressure | pass | pass |
+| secret-bearing-payloads | pass | pass |
+
+The test asserts cross-transport parity: both ACP v1 transports classify
+every scenario identically (pass/unsupported). Result:
+`Test run with 5 tests in 2 suites passed` (log `/tmp/pine-1846-focused6.log`).
+
+Real-binary slice (the existing per-provider opt-in smokes): **not run** —
+installed versions differ from the exact pins (the smokes' first gate):
+`opencode v2.4.0` vs pin `2.3.2`; `kimi 2.7.2` vs pin `2.6.2`; re-pinning
+goes through a fresh dated observation. The opt-in runs themselves were
+additionally blocked on this host: the XCTest control session timed out
+(120 s) while five or more concurrent `xcodebuild test` sessions from other
+work owned the desktop test runner — a canary run of the pre-existing,
+unchanged `PineTests/GoToLineTests` hung identically (2026-11-25 00:10;
+result bundles in the derived-data Logs/Test). Full `PineTests` was not run
+locally for the same reason; it remains the CI cross-runtime gate.
+`codex-cli 0.172.0` is installed but Codex is the native app-server plane
+(#1723), not an ACP v1 transport of this probe.
+
+### 7.2 Opt-in ACP v2 probe
+
+`ACPv2ProbeTests`. Spec basis cited exactly: ACP Preview schema
+**v2.0.0-beta.3** (release commit `94824f1`, 2026-11-21) plus the official
+v2 protocol pages (overview, initialization, session-setup, prompt-lifecycle)
+fetched 2026-11-24 ([S17]).
+
+- **Deterministic part (always runs, no binary): passed 3/3** (2026-11-24
+  23:20, same log). It confirms the section-3 hypothesis by code: the shared
+  framer and request-ID type host the v2 wire with strictness only — batches
+  are fenced, explicit null IDs fenced, missing error fields fenced, and the
+  v2 `initialize` negotiation frames (`protocolVersion` 2, `capabilities`/
+  `info` shape, -32022 code retained — the error `data` object is dropped by
+  the Pine envelope by design) and the section-3 surfaces (`messageId`
+  acceptance, `state_update` with `stopReason` and the `background` list,
+  `replay_complete`, `idempotencyKey`, `replayFrom`) all round-trip the
+  shared envelope.
+- **Real-binary part (opt-in `PINE_RUN_ACP_V2_SMOKE=1`): skipped by
+  default; not run on this host.** No v2-capable ACP agent binary is
+  present: `claude-agent-acp` and `claude` are not installed (search paths
+  `/opt/homebrew/bin`, `/usr/local/bin` checked 2026-11-24). Requires the
+  standalone `claude-agent-acp` v0.109.1 artifact (or an equivalent
+  maintained v2 agent) for the first v2 peer run; `codex-acp` v2.9.0 is not
+  run either (requires an authorized npm runtime). The in-test opt-in run is
+  additionally blocked by the test-host control-session timeout above.
+  Unsupported peer behavior (v1-only or -32022 answers) is recorded by the
+  probe as an explicit failure, never a silent skip.
+- **No new dependencies.** The probe uses only Pine's own shared wire;
+  Aptove v0.2.3 remains the recorded probe candidate, not an adopted
+  dependency (section 4).
 
 ## Source appendix
 
@@ -241,3 +319,4 @@ Fetched **2026-11-23** unless noted:
 - [S14] T3: [t3code LICENSE](https://raw.githubusercontent.com/pingdotgg/t3code/main/LICENSE) (MIT); [provider-acp package PR #17354](https://github.com/pingdotgg/t3code/pull/17354) (merged 2026-10-09)
 - [S15] PR records (fetched 2026-11-23): [PR #1843](https://github.com/batonogov/pine/pull/1843) (merged 2026-11-22), [PR #1848](https://github.com/batonogov/pine/pull/1848) (open)
 - [S16] #1846 initial reuse audit (issue comment, 2026-11-22): <https://github.com/batonogov/pine/issues/1846>
+- [S17] ACP v2 protocol pages (fetched 2026-11-24, cited by section 7.2): [Overview](https://agentclientprotocol.com/protocol/v2/overview), [Initialization](https://agentclientprotocol.com/protocol/v2/initialization), [Session Setup](https://agentclientprotocol.com/protocol/v2/session-setup), [Prompt Lifecycle](https://agentclientprotocol.com/protocol/v2/prompt-lifecycle); pinned schema revision: [schema-v2.0.0-beta.3](https://github.com/agentclientprotocol/agent-client-protocol/releases/tag/schema-v2.0.0-beta.3) (commit `94824f1`)
