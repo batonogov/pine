@@ -366,6 +366,8 @@ struct AgentTaskCheckExecutorIntegrationTests {
                 }
             })
         }
+        // 30 s ceiling: the 15 s budget flaked under loaded CI runners
+        // (5 failures across #1850/#1852 with every other test green).
         #expect(await waitUntilMainActor({ entered.withLock { $0 } }, ceiling: .seconds(30)))
         if replacePlan {
             #expect(await executor.approve(
@@ -774,7 +776,9 @@ struct AgentTaskCheckExecutorIntegrationTests {
         )
         #expect(await executor.approve(taskID: prepared.task.id, plan: prepared.plan, environment: prepared.environment))
         let operation = Task { await prepared.verify(executor) }
-        #expect(await waitUntilMainActor({ entered.withLock { $0 } }, ceiling: .seconds(15)))
+        // 30 s ceiling: the 15 s budget flaked under loaded CI runners
+        // (5 failures across #1850/#1852 with every other test green).
+        #expect(await waitUntilMainActor({ entered.withLock { $0 } }, ceiling: .seconds(30)))
         #expect(await executor.revoke(taskID: prepared.task.id) == false)
         release.signal()
         let result = await operation.value
