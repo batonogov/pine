@@ -271,9 +271,29 @@ final class AgentInboxPopoverCoordinator: NSObject, NSPopoverDelegate,
         return popover
     }
 
+    #if PINE_TEST_HOST
+    /// TEMPORARY diagnostic trace for the #1854 reopen regression — removes
+    /// with the fix. The XCUITest process prints this file to the job log.
+    private func inboxTrace(_ message: String) {
+        let url = URL(fileURLWithPath: "/tmp/pine-inbox-trace.log")
+        let line = "[inbox-trace] \(Date()) self=\(ObjectIdentifier(self)) \(message)\n"
+        guard let data = line.data(using: .utf8) else { return }
+        if let handle = try? FileHandle(forWritingTo: url) {
+            handle.seekToEndOfFile()
+            handle.write(data)
+            try? handle.close()
+        } else {
+            try? data.write(to: url)
+        }
+    }
+    #endif
+
     func attach(to anchor: AgentInboxPopoverAnchorView) {
         self.anchor = anchor
         isAttached = true
+        #if PINE_TEST_HOST
+        inboxTrace("attach window=\(anchor.window?.title ?? "nil") isClosing=\(state.isClosing)")
+        #endif
         updateRegistration(for: anchor.window)
     }
 
@@ -302,6 +322,10 @@ final class AgentInboxPopoverCoordinator: NSObject, NSPopoverDelegate,
             bindingIsPresented: bindingIsPresented,
             isPopoverShown: isPopoverShown
         )
+        #if PINE_TEST_HOST
+        let write = resolution.bindingIsPresented.map(String.init) ?? "nil"
+        inboxTrace("update b=\(bindingIsPresented) s=\(isPopoverShown) c=\(state.isClosing) fx=\(resolution.effect) w=\(write)")
+        #endif
         // The AppKit half is safe here: it touches no SwiftUI state, and
         // delaying a close would leave the popover on screen for a whole turn
         // after the binding said it was gone.
@@ -377,6 +401,9 @@ final class AgentInboxPopoverCoordinator: NSObject, NSPopoverDelegate,
     }
 
     func presentAgentInbox() {
+        #if PINE_TEST_HOST
+        inboxTrace("presentAgentInbox binding=\(bindingIsPresented) shown=\(isPopoverShown) isClosing=\(state.isClosing)")
+        #endif
         apply(state.routerRequestedPresentation(
             bindingIsPresented: bindingIsPresented,
             isPopoverShown: isPopoverShown
@@ -409,6 +436,10 @@ final class AgentInboxPopoverCoordinator: NSObject, NSPopoverDelegate,
             dismissalGestureMonitor = nil
             dismissedBySameGesture = now() - uptime < Self.dismissalRecordStaleAfter
         }
+        #if PINE_TEST_HOST
+        let unserved = state.hasUnservedRouterRequest
+        inboxTrace("toggle b=\(bindingIsPresented) s=\(isPopoverShown) c=\(state.isClosing) g=\(dismissedBySameGesture) u=\(unserved)")
+        #endif
         apply(state.toggleButtonToggled(
             bindingIsPresented: bindingIsPresented,
             isPopoverShown: isPopoverShown,
@@ -417,6 +448,10 @@ final class AgentInboxPopoverCoordinator: NSObject, NSPopoverDelegate,
     }
 
     func detach() {
+        #if PINE_TEST_HOST
+        let lastWrite = lastWrittenIsPresented.map(String.init) ?? "nil"
+        inboxTrace("detach c=\(state.isClosing) u=\(state.hasUnservedRouterRequest) b=\(lastWrite)")
+        #endif
         isAttached = false
         focusChoiceMonitor.map(NSEvent.removeMonitor)
         focusChoiceMonitor = nil
@@ -453,6 +488,9 @@ final class AgentInboxPopoverCoordinator: NSObject, NSPopoverDelegate,
     /// on the same anchor while the first is still leaving — with only one
     /// strong reference between them.
     func popoverWillClose(sender: AnyObject?) {
+        #if PINE_TEST_HOST
+        inboxTrace("willClose senderMatches=\(sender === popover) isClosing=\(state.isClosing)")
+        #endif
         guard let popover, sender === popover else { return }
         if let event = currentEvent() { recordFocusChoice(event) }
         // An AppKit-initiated dismissal arrives with `isClosing` still down —
@@ -529,6 +567,9 @@ final class AgentInboxPopoverCoordinator: NSObject, NSPopoverDelegate,
         // A popover this anchor already replaced can still report its own
         // close. Acting on it would drop the reference to the live one,
         // leaving an Inbox that nothing can close.
+        #if PINE_TEST_HOST
+        inboxTrace("didClose senderMatches=\(sender === popover) isClosing=\(state.isClosing) popoverSet=\(popover != nil)")
+        #endif
         guard let current = popover, sender === current else { return }
         retireClosedPopover()
     }
@@ -551,6 +592,9 @@ final class AgentInboxPopoverCoordinator: NSObject, NSPopoverDelegate,
         // that this verdict would lower the binding on.
         NativeCommandDelivery.deferToNextMainRunLoop { [weak self] in
             guard let self else { return }
+            #if PINE_TEST_HOST
+            inboxTrace("settleHop shown=\(self.isPopoverShown) binding=\(self.bindingIsPresented)")
+            #endif
             self.isCloseSettling = false
             self.apply(self.state.settledClose(
                 bindingIsPresented: self.bindingIsPresented,
@@ -566,6 +610,9 @@ final class AgentInboxPopoverCoordinator: NSObject, NSPopoverDelegate,
     /// the popover is never created against a binding that still reads
     /// `false`.
     private func apply(_ resolution: State.Resolution) {
+        #if PINE_TEST_HOST
+        inboxTrace("apply effect=\(resolution.effect) write=\(resolution.bindingIsPresented.map(String.init) ?? "nil")")
+        #endif
         writeBinding(resolution.bindingIsPresented)
         performEffect(resolution.effect)
     }
