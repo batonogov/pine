@@ -24,6 +24,7 @@ struct AgentTaskDiscoveryReportTests {
         transport: AgentTaskDiscoveryReport.TransportObservation = .unknown,
         authentication: AgentTaskDiscoveryReport.AuthenticationObservation = .unknown,
         sessionStart: AgentTaskDiscoveryReport.SessionStartObservation = .notAttempted,
+        configurationCapabilities: AgentTaskConfigurationCapabilities = .unknown,
         effectiveModel: AgentTaskEffectiveSettingObservation = .unknown,
         effectiveReasoningEffort: AgentTaskEffectiveSettingObservation = .unknown,
         effectivePermissions: AgentTaskEffectiveSettingObservation = .unknown,
@@ -39,6 +40,7 @@ struct AgentTaskDiscoveryReportTests {
             transport: transport,
             authentication: authentication,
             sessionStart: sessionStart,
+            configurationCapabilities: configurationCapabilities,
             effectiveModel: effectiveModel,
             effectiveReasoningEffort: effectiveReasoningEffort,
             effectivePermissions: effectivePermissions,
@@ -322,6 +324,27 @@ struct AgentTaskDiscoveryReportTests {
         #expect(unobserved.effectiveModel == .unknown)
         #expect(unobserved.effectiveReasoningEffort == .unknown)
         #expect(unobserved.effectivePermissions == .unknown)
+    }
+
+    @Test func configurationCapabilitiesAreObservationsNotReadinessOrEffectiveValues() throws {
+        let capability = try AgentTaskConfigurationCapability(
+            key: .model, state: .probed, overridableScopes: [.session], effectiveReadback: true
+        )
+        let capabilities = try AgentTaskConfigurationCapabilities(model: capability)
+        let observed = try readyBase()
+        let withCapabilities = try report(
+            identity: .resolved(resolvedPath),
+            version: .supported(try DetectedVendorVersion("1.2.3")),
+            transport: .negotiated(
+                transport: .ownedStandardIO, capabilities: try negotiatedProfile()
+            ),
+            authentication: .authenticated(origin: .inheritNative, accountLabel: nil),
+            configurationCapabilities: capabilities
+        )
+        #expect(observed.configurationCapabilities == .unknown)
+        #expect(withCapabilities.configurationCapabilities == capabilities)
+        #expect(withCapabilities.effectiveModel == .unknown)
+        #expect(withCapabilities.readiness == observed.readiness)
     }
 
     @Test func effectiveSettingsCannotBeConfirmedWithoutAResolvedExecutable() throws {

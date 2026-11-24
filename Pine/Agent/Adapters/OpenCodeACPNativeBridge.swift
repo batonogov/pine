@@ -257,6 +257,7 @@ nonisolated final class OpenCodeACPNativeFactory: AgentAdapterFactory, @unchecke
     let maximumProfile: AdapterCapabilityProfile
     private let materials: OpenCodeACPNativeMaterials
     private let consumed = Mutex(false)
+    private let recordedObservation = Mutex<AdapterProbeResult?>(nil)
 
     static func descriptor(factoryID: AdapterFactoryID? = nil) throws -> AdapterDescriptor {
         try AdapterDescriptor(
@@ -290,7 +291,7 @@ nonisolated final class OpenCodeACPNativeFactory: AgentAdapterFactory, @unchecke
         try Task.checkCancellation()
         try await materials.prepareLaunch(materials.sessionDeadline)
         try Task.checkCancellation()
-        return try AdapterProbeResult(
+        let observation = try AdapterProbeResult(
             detectedVendorVersion: DetectedVendorVersion(OpenCodeACPSession.pinnedVersion),
             detectedSchema: DetectedVendorVersion("ACP 1"),
             offeredProfiles: [maximumProfile],
@@ -298,11 +299,16 @@ nonisolated final class OpenCodeACPNativeFactory: AgentAdapterFactory, @unchecke
                 minimum: Self.contractVersion, maximum: Self.contractVersion
             )
         )
+        recordedObservation.withLock { $0 = observation }
+        return observation
     }
 
     func makeSession(_ request: AgentAdapterSessionRequest) async throws -> any AgentAdapterSession {
         try Task.checkCancellation()
         guard request.resumeFrom == nil else { throw AdapterSessionError.checkpointNotSupported }
+        guard let observation = recordedObservation.withLock({ $0 }) else {
+            throw AdapterSessionError.contractMismatch
+        }
         guard consumed.withLock({ value in
             guard !value else { return false }
             value = true
@@ -344,6 +350,12 @@ nonisolated final class OpenCodeACPNativeFactory: AgentAdapterFactory, @unchecke
             cwd: materials.workingDirectory.path,
             deadline: materials.sessionDeadline,
             loadSession: materials.loadSession,
+            discovery: OpenCodeACPSession.DiscoveryInput(
+                selectedExecutable: materials.ownership.policy.selectedExecutable,
+                versionProbe: observation.detectedVendorVersion,
+                factoryAdmission: observation,
+                environmentProvenance: materials.ownership.policy.environmentProvenance
+            ),
             native: native,
             beforeStartWrite: { try materials.ownership.validate() },
             revokeOwnership: { Task { await native.invalidate() } },
