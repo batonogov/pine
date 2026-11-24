@@ -509,7 +509,11 @@ struct ClaudeCodeACPNativeBridgeTests {
             )
             guard case .eligible(let policy) = AgentTaskNativeLaunchPolicy.evaluate(
                 taskID: reservation.taskID, runID: runID, bindingID: binding.id,
-                selection: selection, permissions: permissions, provenance: testLaunchProvenance
+                selection: selection, permissions: permissions,
+                configurationCapabilities: try AgentTaskConfigurationCapabilities(
+                    transportAdvertised: [AgentTaskConfigurationCapability(key: .permissions, state: .probed)]
+                ),
+                provenance: testLaunchProvenance
             ) else { throw AgentTaskNativeAdmissionError.invalidPolicy }
             let validator = ClaudeCodeNativeBindingValidator(binding: binding, lease: lease)
             let ownership = try AgentTaskNativeOwnership(
