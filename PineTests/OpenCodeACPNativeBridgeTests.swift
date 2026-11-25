@@ -435,11 +435,179 @@ struct OpenCodeACPNativeBridgeTests {
         let remaining = await runOnBackground { UserTaskProcessInspector.identity(for: identity.processID) }
         #expect(remaining == nil || remaining != identity)
     }
+
+    /// New-owner exact-session restore (#1811): owner A binds the exact
+    /// session and settles one turn; a clean stop leaves the journal
+    /// `.unavailable` and the run stale. A fresh composition (the new
+    /// process) admits the restore under a new runtime-fresh binding and
+    /// loads the exact recorded session ID — never `session/new` — then
+    /// continues the same session with explicit input.
+    @Test func newOwnerRestoresExactSessionThroughComposition() async throws {
+        let fixture = try await OpenCodeNativeFixture(mode: .loop)
+        defer { fixture.teardown() }
+        try await fixture.session.start()
+        let controls = try fixture.controls()
+        _ = try await controls.dispatch(.submitInstruction("First request"), beforeDispatch: {})
+        try #require(await waitUntilMainActor {
+            fixture.task()?.nativeDispatch?.phase == .parentSettlementUnknown
+        })
+        let settled = await fixture.provider().snapshot()
+        #expect(settled.state == .unverified && settled.result == "result-1")
+        let exact = try #require(settled.nativeSession)
+        #expect(exact.rawValue == "ses_native")
+        await fixture.session.stop(deadline: .now.advanced(by: .seconds(2)))
+        #expect(fixture.task()?.nativeDispatch?.phase == .unavailable)
+        #expect(fixture.task()?.runs.last?.liveness == .stale)
+
+        let taskID = fixture.taskID
+        let runID = try #require(fixture.task()?.runs.last?.id)
+        let binding = AgentTaskEnvironmentBinding.nativeBindingForTesting(
+            taskID: taskID, runID: runID
+        )
+        let project = AgentTaskProjectIdentity(
+            canonicalProjectPath: fixture.root.path, canonicalWorktreePath: fixture.root.path
+        )
+        let lease = try #require(await runOnBackground {
+            RecentAgentTaskFilesystemValidator.validationLease(for: project, expectedProof: nil)
+        })
+        let validator = OpenCodeNativeBindingValidator(binding: binding, lease: lease)
+        let selection = AgentTaskNativeLaunchPolicy.Selection(
+            agentID: try AgentID(migratingLegacyStableIdentifier: "openCode"),
+            selectedExecutable: URL(fileURLWithPath: "/selected/opencode")
+        )
+        guard case .eligible(let policy) = AgentTaskNativeLaunchPolicy.evaluate(
+            taskID: taskID, runID: runID, bindingID: binding.id, selection: selection,
+            provenance: testLaunchProvenance
+        ) else { throw AgentTaskNativeAdmissionError.invalidPolicy }
+        let ownership = try await fixture.tasks.prepareNativeRestore(
+            policy: policy, binding: binding, bindings: validator
+        )
+        // The composition derives the exact reference from the durable
+        // identity, not from any caller guess.
+        #expect(try OpenCodeACPNativeComposition.restoreReference(for: fixture.task()) == exact)
+
+        // Owner B: new pipes, new fake server, new composition. The restore
+        // owner must receive session/load with the exact ID.
+        let input = Pipe()
+        let output = Pipe()
+        let errorPipe = Pipe()
+        let peerErrorPipe = Pipe()
+        let channel = try CodexAppServerStdioChannel(
+            standardInput: input.fileHandleForWriting,
+            standardOutput: output.fileHandleForReading,
+            standardError: errorPipe.fileHandleForReading,
+            requireJSONRPCVersion: true
+        )
+        let peer = try CodexAppServerStdioChannel(
+            standardInput: output.fileHandleForWriting,
+            standardOutput: input.fileHandleForReading,
+            standardError: peerErrorPipe.fileHandleForReading,
+            requireJSONRPCVersion: true
+        )
+        errorPipe.fileHandleForWriting.closeFile()
+        peerErrorPipe.fileHandleForWriting.closeFile()
+        let processIdentity = UserTaskProcessIdentity(
+            processID: 91_812, startSeconds: 1_700_000_100, startMicroseconds: 0
+        )
+        let receipt = AgentTaskOwnedProcessReceipt.nativeReceiptForTesting(
+            identity: processIdentity, ownership: ownership,
+            inspectIdentity: { pid in pid == processIdentity.processID ? processIdentity : nil }
+        )
+        let server = OpenCodeNativeServer()
+        let materials = OpenCodeACPNativeMaterials(
+            registry: fixture.tasks, ownership: ownership,
+            workingDirectory: fixture.root,
+            sessionDeadline: .now.advanced(by: .seconds(30)), loadSession: exact,
+            spawn: { _ in
+                OpenCodeACPNativeMaterials.Spawn(
+                    child: OpenCodeACPOwnedChild(
+                        channel: channel, processIdentity: processIdentity,
+                        close: { channel.close() }, stop: { _ in peer.close() }
+                    ), receipt: receipt
+                )
+            }
+        )
+        let serverTask = Task.detached {
+            await OpenCodeNativeFixture.serve(peer, mode: .load,
+                                              tasks: fixture.tasks, taskID: taskID, server: server)
+        }
+        defer {
+            serverTask.cancel()
+            channel.close()
+            peer.close()
+        }
+        let composition = OpenCodeACPNativeComposition(tasks: fixture.tasks)
+        let restored = try await composition.compose(materials)
+        try await restored.start()
+        let snapshot = try #require(restored.snapshot)
+        #expect(snapshot.state == .idle)
+        #expect(snapshot.nativeSession?.rawValue == exact.rawValue)
+        #expect(server.loadedSessionIDs == [exact.rawValue])
+        #expect(fixture.task()?.nativeDispatch?.phase == .parentSettlementUnknown)
+        #expect(fixture.task()?.nativeDispatch?.conversation?.opaqueIdentifier == exact.rawValue)
+        #expect(fixture.task()?.runs.last?.liveness == .live)
+        #expect(fixture.task()?.runs.last?.process.processGeneration == 2)
+
+        // Explicit input continues the exact restored session.
+        _ = try await restored.submit("Recall the earlier choice")
+        try #require(await waitUntilMainActor {
+            restored.snapshot?.state == .unverified
+        })
+        #expect(restored.snapshot?.result == "restored-result")
+        #expect(restored.snapshot?.nativeSession?.rawValue == exact.rawValue)
+        #expect(server.promptSessionIDs == [exact.rawValue])
+        await restored.stop(deadline: .now.advanced(by: .seconds(2)))
+        #expect(fixture.task()?.nativeDispatch?.phase == .unavailable)
+        #expect(fixture.task()?.runs.last?.liveness == .stale)
+    }
+
+    /// Restore fails closed before any spawn: no observed run has no exact
+    /// identity to load, at admission and at the composition reference gate.
+    /// (The indeterminate last-input journal case is fenced at the pure
+    /// journal level: `restoreRebindPhase` refuses `.unavailable` whose last
+    /// submission is an unacknowledged intent.)
+    @Test func restoreRefusesMissingIdentityBeforeAnySpawn() async throws {
+        let fixture = try await OpenCodeNativeFixture(mode: .loop)
+        defer { fixture.teardown() }
+        let taskID = fixture.taskID
+        let runID = try #require(fixture.task()?.nativeDispatch?.runID)
+        let binding = AgentTaskEnvironmentBinding.nativeBindingForTesting(
+            taskID: taskID, runID: runID
+        )
+        let project = AgentTaskProjectIdentity(
+            canonicalProjectPath: fixture.root.path, canonicalWorktreePath: fixture.root.path
+        )
+        let lease = try #require(await runOnBackground {
+            RecentAgentTaskFilesystemValidator.validationLease(for: project, expectedProof: nil)
+        })
+        let validator = OpenCodeNativeBindingValidator(binding: binding, lease: lease)
+        let selection = AgentTaskNativeLaunchPolicy.Selection(
+            agentID: try AgentID(migratingLegacyStableIdentifier: "openCode"),
+            selectedExecutable: URL(fileURLWithPath: "/selected/opencode")
+        )
+        guard case .eligible(let policy) = AgentTaskNativeLaunchPolicy.evaluate(
+            taskID: taskID, runID: runID, bindingID: binding.id, selection: selection,
+            provenance: testLaunchProvenance
+        ) else { throw AgentTaskNativeAdmissionError.invalidPolicy }
+        await #expect(throws: AgentTaskNativeAdmissionError.invalidPolicy) {
+            _ = try await fixture.tasks.prepareNativeRestore(
+                policy: policy, binding: binding, bindings: validator
+            )
+        }
+        await #expect(throws: OpenCodeACPError.unavailable) {
+            _ = try OpenCodeACPNativeComposition.restoreReference(for: fixture.task())
+        }
+        // No restore owner was admitted: the fresh-launch owner is still the
+        // only registered owner, and no server ever saw a session/load.
+        #expect(fixture.task()?.nativeDispatch?.phase == .launchIntent)
+        #expect(fixture.server.loadedSessionIDs.isEmpty)
+    }
 }
 
 private enum OpenCodeNativeMode {
     case loop, question, cancel, lateChild, cancelRace
     case ackRace, cancelLateQuestion, cancelRaceQuestion
+    case load
 }
 
 nonisolated private final class OpenCodeNativeServer: Sendable {
@@ -447,6 +615,7 @@ nonisolated private final class OpenCodeNativeServer: Sendable {
     let acknowledgementRace = AsyncContinuationGate()
     private let promptIDs = Mutex<[String]>([])
     private let promptText = Mutex<[String]>([])
+    private let loadIDs = Mutex<[String]>([])
     private let phases = Mutex<[String]>([])
     private let answers = Mutex<[AgentEventJSON]>([])
     private let admissionIdentity = Mutex<UserTaskProcessIdentity?>(nil)
@@ -454,6 +623,7 @@ nonisolated private final class OpenCodeNativeServer: Sendable {
     private let terminalReplies = Mutex(0)
     var promptSessionIDs: [String] { promptIDs.withLock { $0 } }
     var promptTexts: [String] { promptText.withLock { $0 } }
+    var loadedSessionIDs: [String] { loadIDs.withLock { $0 } }
     var phaseAtPrompt: [String] { phases.withLock { $0 } }
     var questionAnswers: [AgentEventJSON] { answers.withLock { $0 } }
     var spawnedIdentity: UserTaskProcessIdentity? { admissionIdentity.withLock { $0 } }
@@ -461,6 +631,9 @@ nonisolated private final class OpenCodeNativeServer: Sendable {
     var terminalReplyCount: Int { terminalReplies.withLock { $0 } }
     func recordSpawnedIdentity(_ identity: UserTaskProcessIdentity) {
         admissionIdentity.withLock { $0 = identity }
+    }
+    func recordLoad(_ id: String) {
+        loadIDs.withLock { $0.append(id) }
     }
     func recordPrompt(_ id: String, text: String, phase: String) {
         promptIDs.withLock { $0.append(id) }
@@ -724,7 +897,7 @@ nonisolated private struct OpenCodeNativeFixture: Sendable {
         try? FileManager.default.removeItem(at: root)
     }
 
-    private static func serve(
+    fileprivate static func serve(
         _ peer: CodexAppServerStdioChannel, mode: OpenCodeNativeMode,
         tasks: AgentTaskRegistry, taskID: UUID, server: OpenCodeNativeServer
     ) async {
@@ -749,6 +922,20 @@ nonisolated private struct OpenCodeNativeFixture: Sendable {
                     try await write(.response(id, result: .object([
                         "sessionId": .string("ses_native"), "configOptions": .array([])
                     ])), to: peer)
+                case .request(let id, "session/load", let params):
+                    let fields = try OpenCodeACPWire.object(params)
+                    let requested = try OpenCodeACPWire.string(fields["sessionId"])
+                    server.recordLoad(requested)
+                    guard requested == "ses_native" else {
+                        try await write(.failure(id, code: -32602), to: peer)
+                        continue
+                    }
+                    // session/load replays saved session/update messages
+                    // before its reply; they are historical, not live.
+                    try await write(chunk("replayed-history"), to: peer)
+                    try await write(.response(id, result: .object([
+                        "sessionId": .string("ses_native"), "configOptions": .array([])
+                    ])), to: peer)
                 case .request(let id, "session/prompt", let params):
                     promptID = id
                     promptCount += 1
@@ -765,6 +952,9 @@ nonisolated private struct OpenCodeNativeFixture: Sendable {
                     switch mode {
                     case .loop:
                         try await write(chunk("result-\(promptCount)"), to: peer)
+                        try await write(.response(id, result: .object(["stopReason": .string("end_turn")])), to: peer)
+                    case .load:
+                        try await write(chunk("restored-result"), to: peer)
                         try await write(.response(id, result: .object(["stopReason": .string("end_turn")])), to: peer)
                     case .question:
                         try await write(.request(.string("native-question"), method: "elicitation/create",

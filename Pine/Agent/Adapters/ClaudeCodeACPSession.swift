@@ -80,6 +80,12 @@ actor ClaudeCodeACPSession: AgentAdapterControlledSession, CustomStringConvertib
     private let promptResponded: @Sendable (State) async throws -> ResponseDisposition
     private let loadSession: VendorReference?
     private let native: ClaudeCodeACPNativeControl?
+    /// Launch-boundary observation for the discovery report; nil when the
+    /// session owner cannot attribute the executable.
+    private let discovery: ClaudeCodeACPConfigurationDiscovery.Input?
+    /// Read-only discovery observation produced from the pinned adapter
+    /// identity and the session setup response.
+    private(set) var discoveryReport: AgentTaskDiscoveryReport?
     private var nativeSubmission: ClaudeCodeACPNativeSubmission?
     private var nativeResponseClaimedID: UUID?
     // Reserved for the shared projection; this ACP v1 slice negotiates no
@@ -125,7 +131,8 @@ actor ClaudeCodeACPSession: AgentAdapterControlledSession, CustomStringConvertib
          beforeStartWrite: @escaping @Sendable () throws -> Void,
          revokeOwnership: @escaping @Sendable () -> Void,
          sessionBound: @escaping @Sendable (VendorReference) async throws -> Void,
-         promptResponded: @escaping @Sendable (State) async throws -> ResponseDisposition) throws {
+         promptResponded: @escaping @Sendable (State) async throws -> ResponseDisposition,
+         discovery: ClaudeCodeACPConfigurationDiscovery.Input? = nil) throws {
         guard request.resumeFrom == nil else { throw AdapterSessionError.checkpointNotSupported }
         guard request.contract.profile == (try Self.profile()),
               request.contract.agentID.value == "claudeCode",
@@ -146,6 +153,7 @@ actor ClaudeCodeACPSession: AgentAdapterControlledSession, CustomStringConvertib
         self.promptResponded = promptResponded
         self.loadSession = loadSession
         self.native = native
+        self.discovery = discovery
     }
 
     nonisolated static func profile() throws -> AdapterCapabilityProfile {
@@ -233,6 +241,21 @@ actor ClaudeCodeACPSession: AgentAdapterControlledSession, CustomStringConvertib
                 throw ClaudeCodeACPError.invalidProtocol
             }
             nativeSession = sessionID
+            // Without a launch-boundary input the session cannot attribute the
+            // observation to a resolved executable, so it produces no report.
+            if let discovery {
+                do {
+                    discoveryReport = try ClaudeCodeACPConfigurationDiscovery.report(
+                        input: discovery,
+                        sessionConfigOptions: fields["configOptions"],
+                        sessionStarted: true
+                    )
+                } catch {
+                    // A malformed observation is a negative observation, never a
+                    // fabricated capability: the report stays nil.
+                    discoveryReport = nil
+                }
+            }
             try await sessionBound(VendorReference(role: .conversation, value: sessionID))
             guard state == .starting else { throw ClaudeCodeACPError.unavailable }
             state = .idle
@@ -824,6 +847,9 @@ actor ClaudeCodeACPSession: AgentAdapterControlledSession, CustomStringConvertib
         sentResponses.removeAll()
         sentMessages.removeAll()
         nativeSubmission = nil
+        // The observation belongs to the live session: a stopped session
+        // must not leave a stale report for a future view wiring.
+        discoveryReport = nil
         request.controlAuthority.revoke()
         revokeOwnership()
         ownedTransport?.close()

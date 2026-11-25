@@ -313,6 +313,18 @@ is recorded in [#1811](https://github.com/batonogov/pine/issues/1811)
 attention, review, Ready, recovery, and evidence semantics while documenting
 real capability differences.
 
+Status on `main` (2026-11-24; in development — none of this is in the latest
+release): the OpenCode V2 ACP adapter is integrated (#1843), dispatchable from
+the Pine UI (#1848), and fail-closed on configuration capabilities (#1850);
+the Claude Code official ACP adapter is integrated as composition only
+(#1852); required ADE checks execute with bound plans and command grants
+(#1842); explicit Verify composes an independent adapter-backed reviewer with
+a bounded correction loop, with Ready settlement coordinator-only (#1851).
+Still outstanding: the required OpenCode end-to-end proof — an authenticated
+real-model journey through request, feedback, and recovery — the
+Ready-result and try-the-result flows (#1853), the remaining sequence
+adapters (Codex, Kimi), and Command-mode execution.
+
 Then demonstrate at least three independent same-repository tasks with validated
 routing and a documented concurrency limit `N`, including honest `N+1` queueing
 or deferral, without a fleet-management UI. Broaden delegation, detected-only
@@ -335,9 +347,12 @@ dates.
 The README, the landing page and all nine landing translations, and the in-app
 Help in all nine locales now carry the selected direction.
 [#1730](https://github.com/batonogov/pine/issues/1730) tracks the remaining
-surfaces: the GitHub About description and topics change only with
-authorization (prepared in
-[1730-github-about-proposal.md](1730-github-about-proposal.md)), and the
+surfaces: the GitHub About description and topics were applied with
+authorization on 2026-11-21 (proposal in
+[1730-github-about-proposal.md](1730-github-about-proposal.md); the
+description matches the landing meta description, the homepage remains
+https://batonogov.github.io/pine, and `ade` is among the 20 topics, verified
+with `gh repo view --json description,homepageUrl,repositoryTopics`), and the
 released-UI screenshots are audited in
 [1730-screenshot-audit.md](1730-screenshot-audit.md) and refreshed only when
 the corresponding ADE UI ships. Do not remove accurate released-editor Help

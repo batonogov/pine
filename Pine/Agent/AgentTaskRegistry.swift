@@ -1227,11 +1227,73 @@ final class AgentTaskRegistry {
         return ownership
     }
 
+    /// Explicit new-owner exact-session restore admission (#1811). Unlike
+    /// `prepareNativeLaunch` (first owner, no observed run) this re-admits the
+    /// SAME logical attempt under a new runtime-fresh binding after the
+    /// previous owner is gone. It grants no input replay: the journal keeps
+    /// its phase and exact conversation; only the bindingID advances. A live
+    /// recorded run, a missing or foreign session identity, an unobserved
+    /// attempt, or a retired/foreign phase refuses before any spawn.
+    func prepareNativeRestore(
+        policy: AgentTaskNativeLaunchPolicy, binding: AgentTaskEnvironmentBinding,
+        bindings: any AgentTaskNativeBindingValidator
+    ) async throws -> AgentTaskNativeOwnership {
+        guard !isTerminating, !nativePreparing.contains(policy.taskID), nativeOwners[policy.taskID] == nil,
+              let task = task(for: policy.taskID), task.route.surface == .ownedProcess,
+              task.lifecycle == .paused, task.runs.count == 1,
+              task.runs.last?.id == policy.runID,
+              task.runs.last?.liveness != .live,
+              let vendorIdentity = task.runs.last?.vendorIdentity,
+              vendorIdentity.provider == policy.agentID.value,
+              let checkpoint = task.nativeDispatch, checkpoint.runID == policy.runID,
+              checkpoint.conversation?.opaqueIdentifier == vendorIdentity.opaqueIdentifier,
+              checkpoint.isRestoreEligible,
+              task.descriptor.typeIdentifier == policy.agentID.value,
+              binding.taskID == policy.taskID, binding.id == policy.bindingID else {
+            throw AgentTaskNativeAdmissionError.invalidPolicy
+        }
+        nativePreparing.insert(task.id)
+        defer { nativePreparing.remove(task.id) }
+        guard await prepareDurableWork(in: task.project) else { throw AgentTaskNativeAdmissionError.persistenceUnavailable }
+        let filesystem = try await bindings.revalidate(binding)
+        guard !isTerminating, !Task.isCancelled, self.task(for: task.id) == task else {
+            throw AgentTaskNativeAdmissionError.staleOwner
+        }
+        let ownership = try AgentTaskNativeOwnership(
+            policy: policy, binding: binding, filesystem: filesystem, bindings: bindings,
+            environment: ProcessInfo.processInfo.environment, explicitRestore: true,
+            restoreResponded: checkpoint.submissions.last?.phase == .responseObserved
+        )
+        guard let index = taskIndex(for: task.id), var checkpoint = task.nativeDispatch else {
+            throw AgentTaskNativeAdmissionError.staleOwner
+        }
+        checkpoint.bindingID = binding.id
+        // The journal re-enters its documented post-session phase at
+        // admission (as prepareNativeLaunch moves .reserved -> .launchIntent),
+        // so the runtime is current before the restored owner even spawns.
+        // The sessionBound rebind later is then an exact-identity no-op.
+        checkpoint.phase = checkpoint.restoreRebindPhase() ?? checkpoint.phase
+        nativeOwners[task.id] = ownership
+        tasks[index].nativeDispatch = checkpoint
+        tasks[index].updatedAt = max(tasks[index].updatedAt, Date())
+        markDirty(task.project)
+        guard await flushPersistence(project: task.project) == .saved,
+              !isTerminating, !Task.isCancelled, nativeOwners[task.id] === ownership,
+              self.task(for: task.id)?.nativeDispatch == checkpoint else {
+            invalidateNativeOwnership(ownership)
+            throw AgentTaskNativeAdmissionError.persistenceUnavailable
+        }
+        return ownership
+    }
+
     func bindNativeSource(
         _ ownership: AgentTaskNativeOwnership, registry: AgentAdapterRegistry, session: any AgentAdapterSession
     ) throws {
+        let task = task(for: ownership.policy.taskID)
+        let checkpoint = task?.nativeDispatch
+        let restoreAdmitted = task?.runs.count == 1 && (checkpoint?.isRestoreEligible ?? false)
         guard nativeOwners[ownership.policy.taskID] === ownership, !isTerminating,
-              task(for: ownership.policy.taskID)?.nativeDispatch?.phase == .launchIntent,
+              checkpoint?.phase == .launchIntent || restoreAdmitted,
               session.contract.agentID == ownership.policy.agentID,
               session.contract.profile.transport == .ownedStandardIO,
               session.contract.profile.minimumAuthentication == .ownedChildPipe else {
@@ -1247,8 +1309,25 @@ final class AgentTaskRegistry {
         let taskID = ownership.policy.taskID
         guard await waitForNativeCheckpoint(ownership) else { throw AgentTaskNativeAdmissionError.staleOwner }
         guard nativeOwners[taskID] === ownership, nativeSessions[taskID] != nil, !isTerminating,
-              let task = task(for: taskID), task.nativeDispatch?.phase == .launchIntent,
-              task.runs.isEmpty else { throw AgentTaskNativeAdmissionError.staleOwner }
+              let task = task(for: taskID) else { throw AgentTaskNativeAdmissionError.staleOwner }
+        // Two documented admissions: the first owner (no observed run,
+        // launchIntent) or an explicit exact-session restore (the same observed
+        // attempt, non-live, exact recorded conversation, restore-eligible
+        // phase). Nothing else admits a process.
+        let restoring = !task.runs.isEmpty
+        if restoring {
+            guard task.runs.count == 1, task.runs.last?.id == ownership.policy.runID,
+                  task.runs.last?.liveness != .live,
+                  let checkpoint = task.nativeDispatch,
+                  checkpoint.isRestoreEligible,
+                  checkpoint.conversation?.opaqueIdentifier == task.runs.last?.vendorIdentity?.opaqueIdentifier else {
+                throw AgentTaskNativeAdmissionError.staleOwner
+            }
+        } else {
+            guard task.nativeDispatch?.phase == .launchIntent else {
+                throw AgentTaskNativeAdmissionError.staleOwner
+            }
+        }
         nativeCheckpointWrites.insert(taskID)
         defer { nativeCheckpointWrites.remove(taskID) }
         do { try await ownership.bindProcess(receipt) } catch {
@@ -1263,12 +1342,30 @@ final class AgentTaskRegistry {
         let identity = receipt.identity
         let started = Date(timeIntervalSince1970: Double(identity.startSeconds) + Double(identity.startMicroseconds) / 1_000_000)
         let observed = max(Date(), max(task.updatedAt, started))
-        let process = AgentProcessEvidence(processIdentifier: identity.processID, processGeneration: 1,
-            startIdentifier: "\(identity.processID):\(identity.startSeconds):\(identity.startMicroseconds)",
-            observedStartedAt: started, startIsAuthoritative: true)
+        let startIdentifier = "\(identity.processID):\(identity.startSeconds):\(identity.startMicroseconds)"
         var updated = task
-        updated.runs = [AgentTaskRun(AgentTaskRunInput(id: ownership.policy.runID, terminalID: nil, process: process,
-            status: .init(state: .idle, liveness: .live, observedAt: observed)))]
+        if restoring {
+            // New physical incarnation of the SAME logical attempt: the
+            // recorded process evidence is replaced, never duplicated. The
+            // generation advances so stale facts of the prior incarnation
+            // keep their fencing key.
+            var run = task.runs[task.runs.count - 1]
+            run.process = AgentProcessEvidence(processIdentifier: identity.processID,
+                processGeneration: run.process.processGeneration + 1,
+                startIdentifier: startIdentifier,
+                observedStartedAt: started, startIsAuthoritative: true)
+            run.state = .idle
+            run.liveness = .live
+            run.lastObservedAt = observed
+            run.endedAt = nil
+            updated.runs = [run]
+        } else {
+            updated.runs = [AgentTaskRun(AgentTaskRunInput(id: ownership.policy.runID, terminalID: nil,
+                process: AgentProcessEvidence(processIdentifier: identity.processID, processGeneration: 1,
+                    startIdentifier: startIdentifier,
+                    observedStartedAt: started, startIsAuthoritative: true),
+                status: .init(state: .idle, liveness: .live, observedAt: observed)))]
+        }
         updated.lifecycle = .active
         updated.route.availability = .background
         updated.updatedAt = observed

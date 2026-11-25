@@ -228,6 +228,13 @@ actor KimiACPSession: AgentAdapterReviewingSession, CustomStringConvertible,
     /// Teardown ran exactly once: settle/failure set `.unknown` inline before
     /// calling, so a state check cannot express idempotency here.
     private var connectionLost = false
+    /// Launch-boundary observation for the discovery report; nil when the
+    /// session owner cannot attribute the executable.
+    private let discovery: KimiACPConfigurationDiscovery.Input?
+    /// Read-only discovery observation produced from the pinned initialize
+    /// gate and the session setup response. Effective values stay unknown
+    /// without a resolved executable.
+    private(set) var discoveryReport: AgentTaskDiscoveryReport?
 
     /// `load`/`resume`/`fork` are explicit exact-ID actions, never
     /// latest-session lookup. Their gate must revalidate cwd/configuration
@@ -240,7 +247,8 @@ actor KimiACPSession: AgentAdapterReviewingSession, CustomStringConvertible,
          revokeOwnership: @escaping @Sendable () -> Void,
          sessionBound: @escaping @Sendable (VendorReference) async throws -> Void,
          promptResponded: @escaping @Sendable (State) async throws -> ResponseDisposition,
-         accountGate: @escaping @Sendable () throws -> Bool) throws {
+         accountGate: @escaping @Sendable () throws -> Bool,
+         discovery: KimiACPConfigurationDiscovery.Input? = nil) throws {
         try action.validate()
         guard request.resumeFrom == nil else { throw AdapterSessionError.checkpointNotSupported }
         guard request.contract.profile == (try Self.profile()),
@@ -263,6 +271,7 @@ actor KimiACPSession: AgentAdapterReviewingSession, CustomStringConvertible,
         self.sessionBound = sessionBound
         self.promptResponded = promptResponded
         self.accountGate = accountGate
+        self.discovery = discovery
     }
 
     /// ACP delivers session updates without a lifecycle sequence or replay
@@ -541,6 +550,24 @@ actor KimiACPSession: AgentAdapterReviewingSession, CustomStringConvertible,
         }
         nativeSession = sessionID
         effectiveConfig = try KimiACPConfigOptions.parse(fields["configOptions"])
+        // Without a launch-boundary input the session cannot attribute the
+        // observation to a resolved executable, so it produces no report:
+        // the shared model forbids claiming transport/session state without
+        // an identity.
+        if let discovery {
+            do {
+                discoveryReport = try KimiACPConfigurationDiscovery.report(
+                    input: discovery,
+                    requiresAuthentication: identity.requiresAuthentication,
+                    sessionConfigOptions: fields["configOptions"],
+                    sessionStarted: true
+                )
+            } catch {
+                // A malformed observation is a negative observation, never a
+                // fabricated capability: the report stays nil.
+                discoveryReport = nil
+            }
+        }
         mapper = try KimiACPTaskMapper(connectionID: connection.identity, sessionID: sessionID)
         try await sessionBound(VendorReference(role: .conversation, value: sessionID))
     }
@@ -1011,6 +1038,9 @@ actor KimiACPSession: AgentAdapterReviewingSession, CustomStringConvertible,
         for item in sentResponses.values { item.fence.revoke() }
         pending.removeAll()
         sentResponses.removeAll()
+        // The observation belongs to the live session: a stopped session
+        // must not leave a stale report for a future view wiring.
+        discoveryReport = nil
         mapper?.close()
         connection.close()
         request.controlAuthority.revoke()
