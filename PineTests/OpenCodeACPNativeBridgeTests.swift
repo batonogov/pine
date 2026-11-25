@@ -221,8 +221,18 @@ struct OpenCodeACPNativeBridgeTests {
             fixture.task()?.nativeDispatch?.phase == .cancellationConfirmed
         })
         // The late question follows the cancellation response on the wire.
-        // Wait for its terminal reply before reading the provider snapshot.
-        try #require(await waitUntilMainActor { fixture.server.terminalReplyCount == 1 })
+        // Wait for the session to record its terminal answer (state level,
+        // not the wire count) before reading the provider snapshot.
+        let deadline = ContinuousClock.now.advanced(by: .seconds(5))
+        var terminalAnswerRecorded = false
+        while !terminalAnswerRecorded {
+            terminalAnswerRecorded = !(await fixture.provider().snapshot().submittedQuestions.isEmpty)
+            if !terminalAnswerRecorded {
+                if ContinuousClock.now >= deadline { break }
+                await Task.yield()
+            }
+        }
+        #expect(terminalAnswerRecorded)
         let snapshot = await fixture.provider().snapshot()
         #expect(snapshot.parentOutcome == .cancelled)
         // The late question is answered terminally on the wire; the session

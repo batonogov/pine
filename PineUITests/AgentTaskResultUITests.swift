@@ -41,16 +41,15 @@ final class AgentTaskResultUITests: PineUITestCase {
         XCTAssertTrue(primary.waitForExistence(timeout: 5))
         XCTAssertTrue(primary.isEnabled)
 
-        // On CI the app is not frontmost and nothing clicks the fixture
-        // window first, so it is not key and key events route nowhere.
-        // Clicking the disabled stop button makes the window key without
-        // activating a control.
-        element("agentTaskResultStop").click()
+        // On CI the app is not frontmost when the walk starts: the launch
+        // activation happens before the fixture window exists, so key
+        // events route nowhere. Re-activate now: the fixture is the app's
+        // only window, and it keeps key status across re-activation.
+        app.activate()
 
         // Walk the focus loop and try to activate with Space. The fixture
-        // window's only enabled control is the primary action (the stop
-        // button is disabled without an onStop), so Space evidence is
-        // proof the loop reaches it. The `hasFocus` snapshot predicate
+        // window's only control is the primary action, so Space evidence
+        // is proof the loop reaches it. The `hasFocus` snapshot predicate
         // cannot be relied on in this hosting window: a predicate the
         // runtime cannot evaluate never matches, which reads as a
         // permanent "not focused" (see SidebarCollapseFlakeProbeUITests).
