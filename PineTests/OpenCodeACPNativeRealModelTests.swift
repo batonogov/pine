@@ -364,9 +364,7 @@ nonisolated struct OpenCodeRealModelFixture: Sendable {
             "plugins": [],
         ]
         let configData = try JSONSerialization.data(withJSONObject: config, options: [.sortedKeys])
-        try String(data: configData, encoding: .utf8)!.write(
-            toFile: project.appendingPathComponent("opencode.json").path, atomically: true, encoding: .utf8
-        )
+        try configData.write(to: project.appendingPathComponent("opencode.json"), options: .atomic)
         try git(["init", "-b", "main"])
         try git(["add", "."])
         try git([
