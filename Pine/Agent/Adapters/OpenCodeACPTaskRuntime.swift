@@ -17,6 +17,9 @@ final class OpenCodeACPTaskRuntime: CustomStringConvertible, CustomDebugStringCo
     private(set) var snapshot: OpenCodeACPSession.Snapshot?
     private(set) var lastDispatch: AgentAdapterControlDispatch?
     private(set) var isDispatching = false
+    /// The session's read-only discovery observation, available once the
+    /// session has started. Drives the contextual "How to run" surface.
+    private(set) var discoveryReport: AgentTaskDiscoveryReport?
 
     @ObservationIgnored private let owner: any AgentAdapterSession
     @ObservationIgnored private let provider: OpenCodeACPSession
@@ -73,6 +76,7 @@ final class OpenCodeACPTaskRuntime: CustomStringConvertible, CustomDebugStringCo
             await stop(deadline: .now.advanced(by: .seconds(2)))
             throw OpenCodeACPError.unavailable
         }
+        discoveryReport = await provider.discoveryReport
         active = true
     }
 
@@ -153,6 +157,7 @@ final class OpenCodeACPTaskRuntime: CustomStringConvertible, CustomDebugStringCo
         stopped = true
         active = false
         snapshot = nil
+        discoveryReport = nil
         await owner.stop(deadline: deadline)
     }
 }

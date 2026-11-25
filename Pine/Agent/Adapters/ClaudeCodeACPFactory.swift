@@ -30,6 +30,9 @@ nonisolated struct ClaudeCodeACPFactory: AgentAdapterFactory {
     let id: AdapterFactoryID
     /// Nil keeps this adapter unavailable until an authorized pinned observation.
     let observation: AdapterProbeResult?
+    /// Launch-boundary observation for the session's discovery report; nil
+    /// until the task-owner wiring supplies the validated executable.
+    var discovery: ClaudeCodeACPConfigurationDiscovery.Input? = nil
     let admit: @Sendable (AgentAdapterSessionRequest) async throws -> ClaudeCodeACPAdmission
 
     func probe() async throws -> AdapterProbeResult {
@@ -52,7 +55,8 @@ nonisolated struct ClaudeCodeACPFactory: AgentAdapterFactory {
                 request: request, launch: admission.launch, cwd: admission.cwd,
                 deadline: admission.deadline, loadSession: admission.loadSession,
                 beforeStartWrite: admission.beforeStartWrite, revokeOwnership: admission.revokeOwnership,
-                sessionBound: admission.sessionBound, promptResponded: admission.promptResponded
+                sessionBound: admission.sessionBound, promptResponded: admission.promptResponded,
+                discovery: discovery
             )
             await admission.sessionCreated(session)
             try Task.checkCancellation()

@@ -35,6 +35,78 @@ struct ClaudeCodeACPTests {
         await fixture.session.stop(deadline: .now.advanced(by: .seconds(1)))
     }
 
+    /// #1765: the session setup `configOptions` observation fills the
+    /// read-only discovery report. The fixture factory supplies the
+    /// launch-boundary input, so the report attributes the resolved
+    /// executable, the pinned version, and the confirmed effective values
+    /// from the observed `currentValue`s.
+    @Test func sessionSetupConfigOptionsFillTheDiscoveryReport() async throws {
+        let fixture = try await fixture(sessionNewResult: .object([
+            "sessionId": .string("ses_fixture"),
+            "configOptions": .array([
+                .object([
+                    "id": .string("model"), "name": .string("Model"),
+                    "category": .string("model"), "type": .string("select"),
+                    "currentValue": .string("default"),
+                    "options": .array([
+                        .object(["value": .string("default"), "name": .string("Default")])
+                    ]),
+                ]),
+                .object([
+                    "id": .string("effort"), "name": .string("Effort"),
+                    "category": .string("thought_level"), "type": .string("select"),
+                    "currentValue": .string("default"),
+                    "options": .array([
+                        .object(["value": .string("default"), "name": .string("Default")])
+                    ]),
+                ]),
+                .object([
+                    "id": .string("mode"), "name": .string("Mode"),
+                    "category": .string("mode"), "type": .string("select"),
+                    "currentValue": .string("auto"),
+                    "options": .array([
+                        .object(["value": .string("auto"), "name": .string("Auto")])
+                    ]),
+                ]),
+            ]),
+        ]))
+        defer { fixture.transport.close() }
+        try await fixture.session.start()
+        let report = await fixture.concrete.discoveryReport
+        #expect(report != nil)
+        #expect(report?.sessionStart == .started)
+        #expect(report?.executableIdentity == .resolved(
+            URL(fileURLWithPath: "/opt/homebrew/bin/claude-agent-acp", isDirectory: false)))
+        #expect(report?.executableVersion == .supported(
+            try DetectedVendorVersion(ClaudeCodeACPSession.pinnedVersion)))
+        #expect(report?.effectiveModel == .confirmed("default"))
+        #expect(report?.effectivePermissions == .confirmed("auto"))
+        #expect(report?.configurationCapabilities.model.state == .probed)
+        #expect(report?.configurationCapabilities.reasoningEffort.state == .probed)
+        #expect(report?.configurationCapabilities.permissions.state == .probed)
+        // The report belongs to the live session: stopping clears it so a
+        // future view wiring cannot render a stale observation.
+        await fixture.session.stop(deadline: .now.advanced(by: .seconds(1)))
+        #expect(await fixture.concrete.discoveryReport == nil)
+    }
+
+    /// #1765 review: a shape-malformed `configOptions` payload (not an array)
+    /// is a throwing observation — the session stays healthy but produces no
+    /// report at all, never a floor report from a half-observed peer.
+    @Test func malformedConfigOptionsKeepTheSessionButDropTheReport() async throws {
+        let fixture = try await fixture(sessionNewResult: .object([
+            "sessionId": .string("ses_fixture"),
+            "configOptions": .object(["id": .string("model")]),
+        ]))
+        defer { fixture.transport.close() }
+        try await fixture.session.start()
+        // The session itself is healthy and bound despite the malformed
+        // observation: only the report is dropped.
+        #expect(await fixture.concrete.snapshot().nativeSession != nil)
+        #expect(await fixture.concrete.discoveryReport == nil)
+        await fixture.session.stop(deadline: .now.advanced(by: .seconds(1)))
+    }
+
     @Test(arguments: [false, true])
     func owningToolCompletionRequiresExactBytesForPendingAndSubmittedAsks(submitted: Bool) async throws {
         let events = Mutex<[ValidatedAgentEvent]>([])
@@ -1038,6 +1110,7 @@ struct ClaudeCodeACPTests {
     private func fixture(
         loadSession: VendorReference? = nil, rejectLoad: Bool = false, fenceResponse: Bool = false,
         initializeResult: AgentEventJSON? = nil, authNotificationsBetweenBootstrap: Bool = false,
+        sessionNewResult: AgentEventJSON? = nil,
         deadline: ContinuousClock.Instant = .now.advanced(by: .seconds(30)),
         ingest: @escaping AgentAdapterRegistry.Downstream = { _ in .accepted }
     ) async throws -> ACPFixture {
@@ -1050,7 +1123,8 @@ struct ClaudeCodeACPTests {
                                                        maximum: .init(major: 1, minor: 1))
         let transport = ACPFakeTransport(
             rejectLoad: rejectLoad, initializeResult: initializeResult,
-            authNotificationsBetweenBootstrap: authNotificationsBetweenBootstrap
+            authNotificationsBetweenBootstrap: authNotificationsBetweenBootstrap,
+            sessionNewResult: sessionNewResult
         )
         let recorder = ACPSessionRecorder()
         let factory = ACPFixtureFactory(id: factoryID, transport: transport, recorder: recorder,
@@ -1292,7 +1366,13 @@ nonisolated private struct ACPFixtureFactory: AgentAdapterFactory {
                                offeredProfiles: [profile], offeredContractVersions: versions)
     }
     func makeSession(_ request: AgentAdapterSessionRequest) async throws -> any AgentAdapterSession {
-        let factory = ClaudeCodeACPFactory(id: id, observation: try await probe()) { _ in
+        let factory = ClaudeCodeACPFactory(
+            id: id, observation: try await probe(),
+            discovery: ClaudeCodeACPConfigurationDiscovery.Input(
+                selectedExecutable: URL(fileURLWithPath: "/opt/homebrew/bin/claude-agent-acp", isDirectory: false),
+                environmentProvenance: .inheritedPineProcess
+            )
+        ) { _ in
             ClaudeCodeACPAdmission(launch: { _ in
                 transport.markLaunched()
                 return transport
@@ -1324,14 +1404,17 @@ nonisolated private final class ACPFakeTransport: ClaudeCodeACPTransport, Sendab
     private let rejectLoad: Bool
     private let initializeResult: AgentEventJSON?
     private let authNotificationsBetweenBootstrap: Bool
+    private let sessionNewResult: AgentEventJSON?
     init(
         rejectLoad: Bool = false,
         initializeResult: AgentEventJSON? = nil,
-        authNotificationsBetweenBootstrap: Bool = false
+        authNotificationsBetweenBootstrap: Bool = false,
+        sessionNewResult: AgentEventJSON? = nil
     ) {
         self.rejectLoad = rejectLoad
         self.initializeResult = initializeResult
         self.authNotificationsBetweenBootstrap = authNotificationsBetweenBootstrap
+        self.sessionNewResult = sessionNewResult
     }
     var launchCount: Int { state.withLock { $0.launches } }
     var lastReadDeadline: ContinuousClock.Instant? { state.withLock { $0.lastReadDeadline } }
@@ -1396,7 +1479,9 @@ nonisolated private final class ACPFakeTransport: ClaudeCodeACPTransport, Sendab
                     ])))
                 }
             } else if method == "session/new" {
-                push(.response(id, result: .object(["sessionId": .string("ses_fixture")])))
+                push(.response(id, result: sessionNewResult ?? .object([
+                    "sessionId": .string("ses_fixture")
+                ])))
             } else if method == "session/load" {
                 if rejectLoad {
                     push(.failure(id, code: -32602))

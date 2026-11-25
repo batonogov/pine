@@ -211,6 +211,49 @@ Deliberate boundaries:
 - MCP inheritance is not recorded because Pine forwards no MCP servers
   (`mcpServers: []` on every session call).
 
+## Configuration capability observations (#1765)
+
+Per-setting execution capability is recorded with the shared
+`AgentTaskConfigurationCapabilities` model: `researched` (documented at the
+pinned version, not observed by Pine), `probed` (observed on a live pinned
+connection, no apply/readback cycle), `supported` (override applied and its
+effective value read back — none claimed yet), `unsupported`, and `unknown`.
+Transport observation beats the version floor; a setting absent from both
+stays unknown. Every state below is produced from actual session observations
+and stays fail-closed: a malformed or missing observation degrades to the
+floor or unknown, never to a manufactured capability.
+
+| Adapter (pinned) | model | reasoning effort | permissions | Effective-value readback |
+| --- | --- | --- | --- | --- |
+| Codex `0.169.0` (app-server) | researched floor; probed only when `model/list` is observed **with a non-empty catalog** at session start (native catalog options enumerated) | researched floor; probed only when the observed catalog carries `supportedReasoningEfforts` | researched floor (documented per-thread `approvalPolicy`/`sandbox`); probed only when `config/read` carries `approval_policy` or `sandbox_mode` | `config/read` confirms effective `model`, `model_reasoning_effort`, `approval_policy`(+`sandbox_mode`) as native labels; an empty catalog or config keeps the floor |
+| Kimi `2.6.2` (ACP) | researched floor (re-probed 2026-11-17: `session/new` auth-gated); observed `configOptions` entry `model` (select) → probed | researched floor; observed `thinking` (select) → probed | researched floor; observed `mode` (select — the session permission mode: ask / never-ask / plan, per the CLI reference) → probed | ACP `currentValue` of an observed option is readback evidence for that setting only |
+| Claude adapter `0.109.1` (ACP) | researched floor (v0.109.1 source-reviewed 2026-11-23; no real handshake claimed); observed `model` option (category `model`; present only when the gateway lists models) → probed | researched floor; observed `effort` option (category `thought_level`; present only when the model supports effort) → probed | researched floor; observed `mode` option (category `mode`, "Session permission mode"; always present) → probed | ACP `currentValue` of an observed option is readback evidence for that setting only |
+| OpenCode `2.3.x` (ACP, #1850) | observed ACP `configOptions` → probed | observed → probed | unknown (OpenCode's `mode` is a primary agent, never mapped) | deferred in #1850; `currentValue` is validated but not yet recovered |
+
+Evidence notes:
+
+- Codex: `model/list`, `config/read`, and per-thread `approvalPolicy`/`sandbox`
+  are verified against the pinned `rust-v0.169.0` protocol sources
+  (non-mutating reads; `config/read` answers with the effective config after
+  layering). The installed-machine version may differ from the pin; the
+  session always re-admits the exact pinned image before the connection
+  exists.
+- Kimi: the documented `model`/`thinking`/`mode` option IDs come from the
+  Kimi ACP reference (the `set_config_option` "unified model / thinking /
+  mode picker dispatcher") and the pinned fixture (`mode`, `currentValue:
+  "ask"`). Pine never calls `session/set_config_option` in this slice, so no
+  overridable scope is claimed and no override is ever applied.
+- Claude: the option set (and that `agent`, `fast_mode`, and `ultracode` are
+  not Pine settings) comes from the reviewed v0.109.1 adapter source. The
+  adapter's `auth/status_update` pushes carry no Pine authentication evidence,
+  so the report's authentication stays unknown.
+- No adapter in this slice applies session-local overrides: the contextual
+  "How to run" surface (inside the task surface, not a permanent settings
+  pane, per #1760) therefore shows confirmed effective values where the
+  adapter reports them, "uses agent settings" where the setting is
+  researched/probed/supported, and "the CLI controls this" where the state is
+  unknown or unsupported. Override application remains deferred.
+
 ## Lifecycle and evidence contract (#1722)
 
 The tier decides what the shared ADE lifecycle/evidence contract can

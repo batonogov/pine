@@ -389,7 +389,11 @@ nonisolated final class ClaudeCodeACPNativeFactory: AgentAdapterFactory, @unchec
                     executableVersion: ClaudeCodeACPSession.pinnedVersion
                 )), ownership: materials.ownership)
             },
-            promptResponded: { _ in .recorded }
+            promptResponded: { _ in .recorded },
+            discovery: ClaudeCodeACPConfigurationDiscovery.Input(
+                selectedExecutable: materials.ownership.policy.selectedExecutable,
+                environmentProvenance: materials.ownership.policy.environmentProvenance
+            )
         )
         await materials.sessionCreated(session)
         return session
