@@ -29,16 +29,21 @@ nonisolated struct AgentTaskNativeDispatch: Codable, Equatable, Sendable,
     static let maximumSubmissions = 32
     /// The journal phase an explicit exact-session restore rebind (#1811)
     /// returns to, or nil when no documented post-session state can be
-    /// re-entered (an indeterminate last-input state). Restore is then
-    /// refused, never guessed.
+    /// re-entered. Admitted-but-dead-end journal states (a recorded intent
+    /// that never settled, an unknown input outcome, a confirmed
+    /// cancellation, or a failed operation) refuse restore: no submission
+    /// transition applies there and checkControl blocks answering. Restore
+    /// is only eligible when the last submission is nil, .acknowledged, or
+    /// .responseObserved — otherwise it is refused, never guessed.
     static func restoreRebindPhase(from phase: Phase, submissions: [Submission]) -> Phase? {
-        guard phase != .reserved, phase != .launchIntent else { return nil }
+        guard phase != .reserved, phase != .launchIntent,
+              phase != .inputIntent, phase != .inputUnknown,
+              phase != .cancellationConfirmed, phase != .operationFailed else { return nil }
         guard phase == .unavailable else { return phase }
         switch submissions.last?.phase {
         case nil: return .sessionBound
         case .acknowledged, .responseObserved: return .parentSettlementUnknown
-        case .unknown: return .inputUnknown
-        case .intent: return nil
+        case .intent, .unknown: return nil
         }
     }
 

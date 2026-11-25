@@ -245,6 +245,8 @@ struct AgentTaskNativeDispatchTests {
         #expect(AgentTaskNativeDispatch.restoreRebindPhase(
             from: withAck.phase, submissions: withAck.submissions
         ) == .parentSettlementUnknown)
+        // An unknown input outcome has no documented re-entry either:
+        // restore is refused, never guessed.
         var withUnknown = try launchedJournal()
             .applying(.sessionBound(identity))
             .applying(.initialInputIntent)
@@ -253,7 +255,10 @@ struct AgentTaskNativeDispatchTests {
             .applying(.unavailable)
         #expect(AgentTaskNativeDispatch.restoreRebindPhase(
             from: withUnknown.phase, submissions: withUnknown.submissions
-        ) == .inputUnknown)
+        ) == nil)
+        #expect(!AgentTaskNativeDispatch.isRestoreEligible(
+            withUnknown.phase, submissions: withUnknown.submissions
+        ))
         // An indeterminate last input (recorded intent, never acknowledged,
         // then invalidated) has no documented re-entry: restore is refused,
         // never guessed.
@@ -266,6 +271,33 @@ struct AgentTaskNativeDispatchTests {
         ) == nil)
         #expect(!AgentTaskNativeDispatch.isRestoreEligible(
             withIntent.phase, submissions: withIntent.submissions
+        ))
+        // Admitted-but-dead-end journal phases refuse at admission: no
+        // rebind, no eligibility.
+        var deadIntent = try launchedJournal()
+            .applying(.sessionBound(identity))
+            .applying(.initialInputIntent)
+        #expect(deadIntent.phase == .inputIntent)
+        #expect(AgentTaskNativeDispatch.restoreRebindPhase(
+            from: deadIntent.phase, submissions: deadIntent.submissions
+        ) == nil)
+        #expect(!AgentTaskNativeDispatch.isRestoreEligible(
+            deadIntent.phase, submissions: deadIntent.submissions
+        ))
+        let failed = try deadIntent.applying(.operationFailed)
+        #expect(failed.phase == .operationFailed)
+        #expect(AgentTaskNativeDispatch.restoreRebindPhase(
+            from: failed.phase, submissions: failed.submissions
+        ) == nil)
+        #expect(!AgentTaskNativeDispatch.isRestoreEligible(
+            failed.phase, submissions: failed.submissions
+        ))
+        let cancelled = try failed.applying(.cancellationConfirmed)
+        #expect(AgentTaskNativeDispatch.restoreRebindPhase(
+            from: cancelled.phase, submissions: cancelled.submissions
+        ) == nil)
+        #expect(!AgentTaskNativeDispatch.isRestoreEligible(
+            cancelled.phase, submissions: cancelled.submissions
         ))
     }
 

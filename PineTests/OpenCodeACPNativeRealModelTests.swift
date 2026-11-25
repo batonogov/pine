@@ -137,6 +137,7 @@ struct OpenCodeACPNativeRealModelTests {
             managedRoot: fixture.managedRoot
         )
         let runtimeA = try #require(projectsA.openCodeRuntime(for: taskID))
+        defer { Task { await runtimeA.stop(deadline: .now.advanced(by: .seconds(10))) } }
         try #require(await Self.observe(runtimeA) { runtimeA.snapshot?.state == .unverified })
         let exactSession = try #require(runtimeA.snapshot?.nativeSession)
         await runtimeA.stop(deadline: .now.advanced(by: .seconds(10)))
@@ -201,6 +202,7 @@ struct OpenCodeACPNativeRealModelTests {
             managedRoot: fixture.managedRoot
         )
         let runtimeA = try #require(projectsA.openCodeRuntime(for: taskID))
+        defer { Task { await runtimeA.stop(deadline: .now.advanced(by: .seconds(10))) } }
         try #require(await Self.observe(runtimeA) { runtimeA.snapshot?.state == .unverified })
         await runtimeA.stop(deadline: .now.advanced(by: .seconds(10)))
 
