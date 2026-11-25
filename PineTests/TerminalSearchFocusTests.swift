@@ -2,8 +2,8 @@
 //  TerminalSearchFocusTests.swift
 //  PineTests
 //
-//  Issue #1523 — ⌘F must move first responder into the terminal search
-//  field, Return/Shift+Return must navigate matches, and Escape must close
+//  Issue #1523 — presenting terminal search must move first responder into
+//  its field, Return/Shift+Return must navigate matches, and Escape must close
 //  the bar and hand first responder back to the terminal.
 //
 
@@ -26,7 +26,7 @@ struct TerminalSearchFocusTests {
 
     // MARK: - Focus intent state machine
 
-    @Test("Cmd+F opens the bar, requests field focus, and cancels terminal focus")
+    @Test("Presenting search opens the bar, requests field focus, and cancels terminal focus")
     func presentSearchClaimsFocusFromTerminal() throws {
         let state = TerminalPaneState()
         let tab = state.addTab(workingDirectory: nil)
@@ -43,7 +43,7 @@ struct TerminalSearchFocusTests {
         #expect(state.pendingFocusRequestID == nil)
     }
 
-    @Test("Cmd+F while the bar is already open re-requests focus")
+    @Test("Presenting search while the bar is already open re-requests focus")
     func repeatedPresentSearchIssuesDistinctRequests() throws {
         let state = TerminalPaneState()
         _ = state.addTab(workingDirectory: nil)
@@ -200,7 +200,7 @@ struct TerminalSearchFocusTests {
 
     // MARK: - Real AppKit first responder round trip
 
-    @Test("First responder moves into the field on Cmd+F and back on Escape")
+    @Test("First responder moves into the field on search presentation and back on Escape")
     func firstResponderRoundTripBetweenTerminalAndSearchField() throws {
         let state = TerminalPaneState()
         let tab = state.addTab(workingDirectory: nil)
@@ -222,11 +222,11 @@ struct TerminalSearchFocusTests {
         contentView.addSubview(field)
         defer { window.orderOut(nil) }
 
-        // Before ⌘F the terminal owns first responder.
+        // Before search presentation the terminal owns first responder.
         #expect(window.makeFirstResponder(terminalStandIn))
         #expect(window.firstResponder === terminalStandIn)
 
-        // ⌘F — production drives the very same coordinator from updateNSView.
+        // Production drives the very same coordinator from updateNSView.
         state.presentSearch()
         let searchRequestID = try #require(state.searchFocusRequestID)
         field.focusCoordinator.update(

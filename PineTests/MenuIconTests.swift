@@ -32,7 +32,7 @@ struct MenuIconTests {
         (MenuIcons.revealProjectInFinder, "Reveal Project in Finder"),
         (MenuIcons.newTerminalTab, "New Terminal Tab"),
         (MenuIcons.toggleComment, "Toggle Comment"),
-        (MenuIcons.findInProject, "Find in Project"),
+        (MenuIcons.find, "Find in Terminal"),
         (MenuIcons.nextChange, "Next Change"),
         (MenuIcons.previousChange, "Previous Change"),
         (MenuIcons.switchBranch, "Switch Branch"),

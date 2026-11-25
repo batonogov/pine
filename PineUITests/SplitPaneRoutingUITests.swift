@@ -22,10 +22,6 @@
 //    1. The tab context menu binds to the per-pane `tabManager` (PaneLeafView),
 //       not `activeTabManager` — so Close All Tabs from a context menu is
 //       per-pane by construction, independent of routing.
-//    2. The Go-to-Line overlay appears whenever any tab is active, so its
-//       presence does not prove routing — and cursor movement (the actual
-//       routing effect) is unverifiable via XCUITest due to the
-//       GutterTextView keyboard-input limitation (see .agents/rules/ui-tests.md).
 //
 //  XCUITest cannot create editor-pane splits via drag-and-drop (SwiftUI's
 //  onDrag/onDrop relies on the macOS pasteboard system, which synthetic
@@ -253,40 +249,4 @@ final class SplitPaneRoutingUITests: PineUITestCase {
         )
     }
 
-    // MARK: - Test: Go to Line opens from non-primary pane (availability smoke)
-
-    /// Smoke test: focuses the secondary pane and triggers Go to Line via the
-    /// Edit menu, verifying the overlay is reachable from a non-primary pane.
-    /// This is a UI availability check — the overlay appears whenever any tab
-    /// is active, so its presence does not prove routing. The actual routing
-    /// (pendingGoToLine lands in the active pane, not primary) is verified at
-    /// the unit level by `SplitPaneRoutingTests.goToLineOnGoToRoutesToActivePane`.
-    func testGoToLineAvailableFromNonPrimaryPane() throws {
-        launchAndRestoreSplit()
-
-        XCTAssertTrue(waitForExistence(editorTab("utils.swift"), timeout: 10))
-
-        // Ensure the secondary pane is focused by clicking its tab.
-        editorTab("utils.swift").click()
-
-        // Trigger Go to Line via Edit menu (typeKey is unreliable, see ui-tests.md).
-        clickMenuBarItem("Edit")
-        let goToLineItem = app.menuItems["Go to Line…"]
-        XCTAssertTrue(
-            waitForExistence(goToLineItem, timeout: 5),
-            "Go to Line menu item should exist in Edit menu"
-        )
-        goToLineItem.click()
-
-        // The NSPanel-backed command overlay must appear. This is an
-        // availability check, not a routing proof (see file header).
-        let overlay = commandOverlay("goToLineOverlay")
-        XCTAssertTrue(
-            waitForExistence(overlay, timeout: 5),
-            "Go to Line overlay should be reachable from the non-primary pane"
-        )
-
-        // Dismiss.
-        app.typeKey(.escape, modifierFlags: [])
-    }
 }

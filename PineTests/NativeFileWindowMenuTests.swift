@@ -647,14 +647,14 @@ struct NativeFileWindowMenuTests {
 
         let shadowingRegistry = UserKeybindingRegistry()
         try Data(
-            #"[{"command": "toggleComment", "key": "cmd+p"}]"#.utf8
+            #"[{"command": "toggleComment", "key": "cmd+option+p"}]"#.utf8
         ).write(to: keybindingsFile)
         #expect(
             (await shadowingRegistry.load(from: keybindingsFile)).outcome
                 == .loaded
         )
         #expect(
-            shadowingRegistry.effectiveChord(for: .quickOpen) == nil
+            shadowingRegistry.effectiveChord(for: .commandPalette) == nil
         )
         #expect(
             shadowingRegistry.effectiveChord(for: .closeTab)

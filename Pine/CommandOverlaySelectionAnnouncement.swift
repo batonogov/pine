@@ -89,9 +89,9 @@ final class CommandOverlaySelectionAnnouncer {
     }
 }
 
-/// Localized semantic projection shared by Quick Open, Command Palette, and
-/// Symbol Navigator. Views keep their native search-field focus and existing
-/// row actions; only the highlighted-row feedback is projected here.
+/// Localized semantic projection shared by command overlays. Views keep their
+/// native search-field focus and existing row actions; only the highlighted-row
+/// feedback is projected here.
 enum CommandOverlaySelectionAnnouncement {
     static func resultSummary(
         count: Int,
@@ -112,16 +112,6 @@ enum CommandOverlaySelectionAnnouncement {
             selectedRow: selectedRow,
             locale: locale
         )
-    }
-
-    static func quickOpenRow(
-        fileName: String,
-        relativePath: String
-    ) -> String {
-        guard relativePath != fileName, !relativePath.isEmpty else {
-            return fileName
-        }
-        return "\(fileName), \(relativePath)"
     }
 
     static func commandPaletteRow(
@@ -146,19 +136,5 @@ enum CommandOverlaySelectionAnnouncement {
             )
         }
         return parts.joined(separator: ", ")
-    }
-
-    static func symbolRow(
-        kind: String,
-        name: String,
-        line: Int,
-        locale: Locale = .current
-    ) -> String {
-        Strings.commandOverlaySymbol(
-            kind: kind,
-            name: name,
-            line: line,
-            locale: locale
-        )
     }
 }

@@ -27,8 +27,8 @@ plus the language, appearance, and accessibility settings used.
    tabs expose localized names and their default action. Start an agent in a
    terminal and confirm both the tab and the terminal itself announce the
    agent and its state, not just the tab's name.
-4. Open Quick Open, Symbol Navigator, Command Palette, and Agent Inbox. Check
-   the search field, selected result, empty state, and actionable rows. On an
+4. Open Command Palette and Agent Inbox. Check the search field, selected
+   result, empty state, and actionable rows. On an
    Inbox row, confirm the rotor offers Mark as Read / Mark as Unread and that
    it names the direction that row is going.
 5. Split a pane. Confirm the divider announces as a splitter with its current
@@ -42,9 +42,8 @@ plus the language, appearance, and accessibility settings used.
 8. Repeat the visual pass in light and dark appearance. With Differentiate
     Without Color enabled, confirm status and selection do not rely on color
     alone; with Reduce Motion enabled, confirm transitions are immediate; with
-    Reduce Transparency enabled, confirm overlays and panels (Quick Open,
-    Command Palette, toasts) fall back to
-    opaque backgrounds and stay legible over bright content.
+    Reduce Transparency enabled, confirm overlays and panels (Command Palette,
+    toasts) fall back to opaque backgrounds and stay legible over bright content.
 
 ## Physical-keyboard journey
 

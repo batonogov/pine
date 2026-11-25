@@ -77,7 +77,7 @@ final class ScrollPerformanceTests: XCTestCase {
     }
 
     /// Benchmarks viewport layout for a 100K-line file at random positions
-    /// (simulates jump-scrolling via scrollbar or Go to Line).
+    /// (simulates jump-scrolling via scrollbar or a source-location link).
     func testViewportLayoutAtRandomPositions100kLines() throws {
         let code = generateCode(lines: 100_000)
         let (textView, _, layoutManager) = try createTextSystem(text: code)

@@ -23,8 +23,8 @@ struct UserConfigurationReloadTests {
             """
             {
               "keybindings": [
-                {"command": "quickOpen", "key": "cmd+p"},
-                {"command": "findInFile", "key": "command+shift+f"}
+                {"command": "commandPalette", "key": "cmd+p"},
+                {"command": "toggleComment", "key": "command+shift+f"}
               ]
             }
             """,
@@ -35,14 +35,14 @@ struct UserConfigurationReloadTests {
         #expect(envelopeReport.outcome == .loaded)
         #expect(envelopeReport.activeEntryCount == 2)
         #expect(envelopeReport.diagnostics.isEmpty)
-        #expect(registry.entries.map { $0.command } == [.quickOpen, .findInFile])
+        #expect(registry.entries.map { $0.command } == [.commandPalette, .toggleComment])
         #expect(registry.entries[1].chord.modifiers == [.command, .shift])
         #expect(registry.entries[1].chord.key == "f")
 
         try write(
             """
             [
-              {"command": "goToLine", "key": "ctrl+l"}
+              {"command": "save", "key": "ctrl+l"}
             ]
             """,
             to: file
@@ -51,7 +51,7 @@ struct UserConfigurationReloadTests {
         let arrayReport = await registry.load(from: file)
         #expect(arrayReport.outcome == .loaded)
         #expect(arrayReport.activeEntryCount == 1)
-        #expect(registry.entries.map { $0.command } == [.goToLine])
+        #expect(registry.entries.map { $0.command } == [.save])
     }
 
     @Test func invalidKeybindingsRejectTheWholeDocument() async throws {
@@ -61,7 +61,7 @@ struct UserConfigurationReloadTests {
         let registry = UserKeybindingRegistry()
         try write(
             """
-            [{"command": "quickOpen", "key": "cmd+p"}]
+            [{"command": "commandPalette", "key": "cmd+p"}]
             """,
             to: file
         )
@@ -71,10 +71,10 @@ struct UserConfigurationReloadTests {
             """
             [
               {"command": "notACommand", "key": "cmd+y"},
-              {"command": "findInFile", "key": "cmd+hyper+f"},
-              {"command": "goToLine", "key": "command+shift+g"},
+              {"command": "toggleComment", "key": "cmd+hyper+f"},
+              {"command": "save", "key": "command+shift+g"},
               {"command": "toggleComment", "key": "SHIFT+command+G"},
-              {"command": "quickOpen", "key": "cmd++p"}
+              {"command": "commandPalette", "key": "cmd++p"}
             ]
             """,
             to: file
@@ -97,7 +97,7 @@ struct UserConfigurationReloadTests {
             .duplicateChord(value: "SHIFT+command+G", firstEntryNumber: 3)
         ))
         #expect(report.diagnostics.map(\.entryNumber) == [1, 2, 4, 5])
-        #expect(registry.entries.map { $0.command } == [.quickOpen])
+        #expect(registry.entries.map { $0.command } == [.commandPalette])
     }
 
     @Test func duplicateCommandBindingsRejectAtomically() async throws {
@@ -107,7 +107,7 @@ struct UserConfigurationReloadTests {
         let registry = UserKeybindingRegistry()
 
         try write(
-            #"[{"command": "findInFile", "key": "cmd+f"}]"#,
+            #"[{"command": "toggleComment", "key": "cmd+f"}]"#,
             to: file
         )
         #expect((await registry.load(from: file)).outcome == .loaded)
@@ -115,8 +115,8 @@ struct UserConfigurationReloadTests {
         try write(
             """
             [
-              {"command": "quickOpen", "key": "cmd+k"},
-              {"command": "quickOpen", "key": "cmd+option+k"}
+              {"command": "commandPalette", "key": "cmd+k"},
+              {"command": "commandPalette", "key": "cmd+option+k"}
             ]
             """,
             to: file
@@ -125,9 +125,9 @@ struct UserConfigurationReloadTests {
 
         #expect(report.outcome == .rejected)
         #expect(report.diagnostics.map(\.reason).contains(
-            .duplicateCommand(id: "quickOpen", firstEntryNumber: 1)
+            .duplicateCommand(id: "commandPalette", firstEntryNumber: 1)
         ))
-        #expect(registry.entries.map(\.command) == [.findInFile])
+        #expect(registry.entries.map(\.command) == [.toggleComment])
     }
 
     @Test func safeDirectCommandsLoadWhileUnsafeChordsAreRejected() async throws {
@@ -139,8 +139,8 @@ struct UserConfigurationReloadTests {
             """
             [
               {"command": "toggleMinimap", "key": "cmd+k"},
-              {"command": "quickOpen", "key": "f"},
-              {"command": "goToLine", "key": "cmd+c"}
+              {"command": "commandPalette", "key": "f"},
+              {"command": "save", "key": "cmd+c"}
             ]
             """,
             to: file
@@ -172,7 +172,7 @@ struct UserConfigurationReloadTests {
               {"command": "showProblems", "key": "cmd+shift+x"},
               {"command": "nextDiagnostic", "key": "cmd+option+down"},
               {"command": "previousDiagnostic", "key": "cmd+option+up"},
-              {"command": "quickOpen", "key": "cmd+p"}
+              {"command": "commandPalette", "key": "cmd+p"}
             ]
             """,
             to: file
@@ -184,8 +184,43 @@ struct UserConfigurationReloadTests {
         #expect(report.diagnostics.isEmpty)
         #expect(report.activeEntryCount == 1)
         #expect(
-            registry.effectiveChord(for: .quickOpen)
+            registry.effectiveChord(for: .commandPalette)
                 == UserKeybindingRegistry.parse("cmd+p")
+        )
+    }
+
+    @Test func retiredSearchCommandsDoNotRejectOtherBindings() async throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let file = directory.appendingPathComponent("keybindings.json")
+        let registry = UserKeybindingRegistry()
+        try write(
+            """
+            [
+              {"command": "quickOpen", "key": "cmd+p"},
+              {"command": "findInProject", "key": "cmd+shift+f"},
+              {"command": "findInFile", "key": "cmd+f"},
+              {"command": "findAndReplace", "key": "cmd+option+f"},
+              {"command": "findNext", "key": "cmd+g"},
+              {"command": "findPrevious", "key": "cmd+shift+g"},
+              {"command": "useSelectionForFind", "key": "cmd+e"},
+              {"command": "goToLine", "key": "cmd+l"},
+              {"command": "symbolNavigator", "key": "not a chord"},
+              {"command": "commandPalette", "key": "cmd+option+p"}
+            ]
+            """,
+            to: file
+        )
+
+        let report = await registry.load(from: file)
+
+        #expect(report.outcome == .loaded)
+        #expect(report.diagnostics.isEmpty)
+        #expect(report.activeEntryCount == 1)
+        #expect(registry.entries.map(\.command) == [.commandPalette])
+        #expect(
+            registry.effectiveChord(for: .commandPalette)
+                == UserKeybindingRegistry.parse("cmd+option+p")
         )
     }
 
@@ -198,8 +233,8 @@ struct UserConfigurationReloadTests {
         try write(
             """
             [
-              {"command": "quickOpen", "key": "f8"},
-              {"command": "findInFile", "key": "shift+f8"}
+              {"command": "commandPalette", "key": "f8"},
+              {"command": "toggleComment", "key": "shift+f8"}
             ]
             """,
             to: file
@@ -211,11 +246,11 @@ struct UserConfigurationReloadTests {
         #expect(report.diagnostics.isEmpty)
         #expect(report.activeEntryCount == 2)
         #expect(
-            registry.effectiveChord(for: .quickOpen)
+            registry.effectiveChord(for: .commandPalette)
                 == UserKeybindingRegistry.parse("f8")
         )
         #expect(
-            registry.effectiveChord(for: .findInFile)
+            registry.effectiveChord(for: .toggleComment)
                 == UserKeybindingRegistry.parse("shift+f8")
         )
     }
@@ -228,10 +263,10 @@ struct UserConfigurationReloadTests {
         try write(
             """
             [
-              {"command": "quickOpen", "key": "cmd+return"},
-              {"command": "goToLine", "key": "ctrl+esc"},
-              {"command": "findInFile", "key": "cmd+up"},
-              {"command": "findNext", "key": "cmd+delete"}
+              {"command": "commandPalette", "key": "cmd+return"},
+              {"command": "save", "key": "ctrl+esc"},
+              {"command": "toggleComment", "key": "cmd+up"},
+              {"command": "nextChange", "key": "cmd+delete"}
             ]
             """,
             to: file
@@ -299,11 +334,11 @@ struct UserConfigurationReloadTests {
             keyCode: 117
         ))
 
-        #expect(registry.command(for: returnEvent) == .quickOpen)
-        #expect(registry.command(for: escapeEvent) == .goToLine)
-        #expect(registry.command(for: keypadReturnEvent) == .quickOpen)
-        #expect(registry.command(for: upArrowEvent) == .findInFile)
-        #expect(registry.command(for: forwardDeleteEvent) == .findNext)
+        #expect(registry.command(for: returnEvent) == .commandPalette)
+        #expect(registry.command(for: escapeEvent) == .save)
+        #expect(registry.command(for: keypadReturnEvent) == .commandPalette)
+        #expect(registry.command(for: upArrowEvent) == .toggleComment)
+        #expect(registry.command(for: forwardDeleteEvent) == .nextChange)
         #expect(UserKeybindingRegistry.keyToken(
             keyCode: 0,
             charactersIgnoringModifiers: "P"
@@ -341,7 +376,7 @@ struct UserConfigurationReloadTests {
         let registry = UserKeybindingRegistry()
         try write(
             """
-            [{"command": "quickOpen", "key": "cmd+p"}]
+            [{"command": "commandPalette", "key": "cmd+p"}]
             """,
             to: file
         )
@@ -357,7 +392,7 @@ struct UserConfigurationReloadTests {
         } else {
             Issue.record("Expected malformed-document diagnostic")
         }
-        #expect(registry.entries.map { $0.command } == [.quickOpen])
+        #expect(registry.entries.map { $0.command } == [.commandPalette])
 
         try FileManager.default.removeItem(at: file)
         try FileManager.default.createDirectory(at: file, withIntermediateDirectories: false)
@@ -368,7 +403,7 @@ struct UserConfigurationReloadTests {
         } else {
             Issue.record("Expected unreadable-file diagnostic")
         }
-        #expect(registry.entries.map { $0.command } == [.quickOpen])
+        #expect(registry.entries.map { $0.command } == [.commandPalette])
     }
 
     @Test func missingKeybindingsApplyAnEmptyRegistry() async throws {
@@ -378,7 +413,7 @@ struct UserConfigurationReloadTests {
         let registry = UserKeybindingRegistry()
         try write(
             """
-            [{"command": "quickOpen", "key": "cmd+p"}]
+            [{"command": "commandPalette", "key": "cmd+p"}]
             """,
             to: file
         )
@@ -515,7 +550,7 @@ struct UserConfigurationReloadTests {
         )
         try write(
             """
-            [{"command": "quickOpen", "key": "cmd+p"}]
+            [{"command": "commandPalette", "key": "cmd+p"}]
             """,
             to: keybindingsFile
         )
@@ -548,7 +583,7 @@ struct UserConfigurationReloadTests {
         #expect(report.keybindings.activeEntryCount == 1)
         #expect(report.diagnostics.count == 1)
         #expect(manager.tasks.tasks.map(\.id) == ["build", "test"])
-        #expect(manager.keybindings.entries.map { $0.command } == [.quickOpen])
+        #expect(manager.keybindings.entries.map { $0.command } == [.commandPalette])
         #expect(manager.lastReloadReport == report)
     }
 

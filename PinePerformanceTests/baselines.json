@@ -22,14 +22,6 @@
             "baseline_seconds": 0.015,
             "description": "1000 blocks x 5 lines each"
         },
-        "StructuralProviderPerformanceTests/testLargeRegexSymbolSnapshot": {
-            "baseline_seconds": 0.850,
-            "description": "Regex symbol fallback over a 5000-line Swift snapshot"
-        },
-        "StructuralProviderPerformanceTests/testRegexSymbolSnapshotAfterIncrementalEdit": {
-            "baseline_seconds": 0.145,
-            "description": "Regex symbol fallback after a small edit in a 2000-line Swift snapshot"
-        },
         "SyntaxHighlighterPerformanceTests/testFullHighlight500Lines": {
             "baseline_seconds": 0.010,
             "description": "Full syntax highlight of 500-line Swift file"
@@ -93,46 +85,6 @@
         "GitStatusParserPerformanceTests/testNextChangeLine": {
             "baseline_seconds": 0.001,
             "description": "Next change line lookup across 300 positions"
-        },
-        "ProjectSearchPerformanceTests/testSearchSingleLargeFile": {
-            "baseline_seconds": 0.005,
-            "description": "Search 5000-line file for common term"
-        },
-        "ProjectSearchPerformanceTests/testSearchSingleFileCaseSensitive": {
-            "baseline_seconds": 0.005,
-            "description": "Case-sensitive search in 5000-line file"
-        },
-        "ProjectSearchPerformanceTests/testSearchAcross200Files": {
-            "baseline_seconds": 0.050,
-            "description": "Search across 200 files (50 lines each)"
-        },
-        "ProjectSearchPerformanceTests/testSearchAcross500Files": {
-            "baseline_seconds": 0.100,
-            "description": "Search across 500 files (30 lines each)"
-        },
-        "ProjectSearchPerformanceTests/testCollectSearchableFiles": {
-            "baseline_seconds": 0.010,
-            "description": "Collect searchable files from 500-file tree"
-        },
-        "ProjectSearchPerformanceTests/testSearchLargeProject1000Files": {
-            "baseline_seconds": 0.500,
-            "description": "Search 1000 files (100 lines each) for common term"
-        },
-        "ProjectSearchPerformanceTests/testSearchLargeProjectCaseSensitive": {
-            "baseline_seconds": 0.300,
-            "description": "Case-sensitive search across 500 files"
-        },
-        "ProjectSearchPerformanceTests/testSearchRareTermLargeProject": {
-            "baseline_seconds": 0.200,
-            "description": "Search for rare term in 1000-file project"
-        },
-        "ProjectSearchPerformanceTests/testCollectSearchableFilesLargeTree": {
-            "baseline_seconds": 0.020,
-            "description": "Collect files from 1200-file directory tree"
-        },
-        "ProjectSearchPerformanceTests/testSearchHighMatchDensity": {
-            "baseline_seconds": 0.300,
-            "description": "Search 200 files with high match density"
         },
         "EditRehighlightPerformanceTests/testInsertLineAndRehighlight2000Lines": {
             "baseline_seconds": 0.005,
@@ -237,10 +189,6 @@
         "EditorStressTests/testRapidSaveCycles": {
             "baseline_seconds": 0.100,
             "description": "100 update+save cycles on single tab"
-        },
-        "EditorStressTests/testThroughputSearchAndHighlight": {
-            "baseline_seconds": 0.050,
-            "description": "Combined highlight + project search throughput"
         },
         "EditorStressTests/testFileWatcherRapidStartStop": {
             "baseline_seconds": 0.050,

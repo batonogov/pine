@@ -2,14 +2,14 @@
 //  SplitPaneRoutingTests.swift
 //  PineTests
 //
-//  Regression coverage for issues #971 and #998: commands, search results,
+//  Regression coverage for issues #971 and #998: commands, source locations,
 //  status bar, inline diff, change navigation, and go-to requests must
 //  route through the *active* editor pane's TabManager — never the
 //  project's primary TabManager — when a split layout is active.
 //
 //  These tests verify the underlying routing primitives and project-level
-//  helpers that ContentView, PaneLeafView, GitAndNotificationObserver, and
-//  SearchResultsView rely on. SwiftUI view bodies themselves are not
+//  helpers that ContentView, PaneLeafView, and GitAndNotificationObserver
+//  rely on. SwiftUI view bodies themselves are not
 //  instantiated here; instead we exercise the data-flow contracts the
 //  views consume so regressions in routing surface as unit-test failures
 //  rather than only as UI misbehavior.
@@ -124,25 +124,6 @@ struct SplitPaneRoutingTests {
     }
 
     // MARK: - #971: pendingGoToLine routing reaches active pane
-
-    @Test("SearchResultsView target resolves to active pane's TabManager")
-    func searchResultsTargetActivePane() throws {
-        let f = try makeSplitWithTwoPanes()
-        let pm = f.pm
-        let secondTM = f.secondTM
-
-        // Simulate SearchResultsView.openMatch → openTabAndGoToLine on active.
-        let newURL = URL(fileURLWithPath: "/tmp/pine-search-result-\(UUID().uuidString).swift")
-        try "x".write(to: newURL, atomically: true, encoding: .utf8)
-        pm.activeTabManager.openTabAndGoToLine(url: newURL, line: 7)
-
-        // The tab and pending line must land in the active (second) pane.
-        #expect(secondTM.tabs.contains(where: { $0.url == newURL }))
-        #expect(secondTM.pendingGoToLine == 7)
-        // Primary must not have received the request.
-        #expect(pm.primaryTabManager.tabs.contains(where: { $0.url == newURL }) == false)
-        #expect(pm.primaryTabManager.pendingGoToLine == nil)
-    }
 
     @Test("pendingGoToLine on active pane is observable per-pane (PaneLeafView contract)")
     func pendingGoToLineObservablePerPane() throws {
@@ -321,37 +302,6 @@ struct SplitPaneRoutingTests {
         #expect(secondTM.tabs.contains(where: { $0.url == url }))
         #expect(secondTM.pendingGoToLine == 3)
         #expect(pm.primaryTabManager.tabs.contains(where: { $0.url == url }) == false)
-    }
-
-    // MARK: - #971: symbol navigator posts an offset that resolves via active pane
-
-    @Test("symbolNavigate offset resolves to active pane's tab content")
-    func symbolNavigateUsesActiveTabContent() throws {
-        let f = try makeSplitWithTwoPanes()
-        let pm = f.pm
-        let firstTM = f.firstTM
-        let secondTM = f.secondTM
-
-        // Give each pane distinct content so the offset→line mapping differs.
-        firstTM.updateContent("a\nb\nc\nd\n")
-        secondTM.updateContent("x\ny\nz\n")
-
-        // Active pane is the second; the resolver (mirroring ContentView's
-        // symbolNavigate handler) must use secondTM's active tab content.
-        guard let activeTab = pm.activeTabManager.activeTab else {
-            Issue.record("Active tab missing")
-            return
-        }
-        #expect(activeTab.content == "x\ny\nz\n")
-
-        let line = ContentView.lineNumber(forOffset: 2, in: activeTab.content)
-        #expect(line == 2)
-        // The same offset in the primary pane's content would also map to
-        // line 2 here, but the resolver must read active content — verified
-        // by the `activeTab.content == "x\ny\nz\n"` assertion above.
-        pm.activeTabManager.pendingGoToLine = line
-        #expect(secondTM.pendingGoToLine == 2)
-        #expect(firstTM.pendingGoToLine == nil)
     }
 
     // MARK: - #998: primary remains usable when active diverges
@@ -575,39 +525,19 @@ struct SplitPaneRoutingTests {
                 "primary pane's tab content must be untouched by active-pane inline diff")
     }
 
-    // MARK: - #971: GoToLineView.onGoTo + symbolNavigate routing (review F4)
+    // MARK: - #971: line-only source-location compatibility facade
     //
-    // Both the GoToLineView onGoTo closure and the .symbolNavigate handler end
-    // with `activeTabManager.pendingGoToLine = line`. Pin the routing contract.
+    // Revision-owned diagnostic navigation uses `pendingGoToLocation` and
+    // preserves its column independently.
 
-    @Test("Go-to-Line onGoTo routes to the active pane's pendingGoToLine")
-    func goToLineOnGoToRoutesToActivePane() throws {
-        let f = try makeSplitWithTwoPanes()
-        let pm = f.pm
-        let firstTM = f.firstTM
-        let secondTM = f.secondTM
-
-        // Mirror the onGoTo closure body: `activeTabManager.pendingGoToLine = line`.
-        pm.activeTabManager.pendingGoToLine = 17
-
-        #expect(secondTM.pendingGoToLine == 17, "go-to-line must land in the active pane")
-        #expect(firstTM.pendingGoToLine == nil, "primary pane must not receive go-to-line")
-    }
-
-    // MARK: - #971: Go-to-Line column-discard contract (review F5)
-    //
-    // The Go-to-Line sheet still routes through the line-only compatibility
-    // facade. Revision-owned diagnostic navigation uses
-    // `pendingGoToLocation` and preserves its column independently.
-
-    @Test("pendingGoToLine is line-only; column is discarded on go-to-line")
-    func goToLineRoutesLineOnlyDiscardsColumn() throws {
+    @Test("pendingGoToLine is line-only; column is discarded")
+    func lineOnlySourceLocationDiscardsColumn() throws {
         let f = try makeSplitWithTwoPanes()
         let pm = f.pm
         let secondTM = f.secondTM
 
-        // The onGoTo closure writes only `line`; the compatibility setter
-        // intentionally clears any previously pending column.
+        // The line-only compatibility setter intentionally clears any
+        // previously pending column.
         pm.activeTabManager.pendingGoToLine = 9
         #expect(secondTM.pendingGoToLine == 9)
         #expect(secondTM.pendingGoToLocation?.column == nil)

@@ -84,7 +84,7 @@ Run a single test class:
 ```bash
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
   xcodebuild CODE_SIGN_IDENTITY=- CODE_SIGNING_ALLOWED=YES -skipPackagePluginValidation test -project Pine.xcodeproj -scheme Pine \
-  -destination 'platform=macOS' -only-testing:PineTests/GoToLineTests
+  -destination 'platform=macOS' -only-testing:PineTests/CommandOverlayRouterTests
 ```
 
 ### UI tests

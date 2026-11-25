@@ -37,7 +37,6 @@ struct ContentView: View {
     @State var columnVisibility: NavigationSplitViewVisibility = .all
     @State var lineDiffs: [GitLineDiff] = []
     @State var didRestoreSession = false
-    @State var isSearchPresented = false
     @State var recoveryEntries: [(UUID, RecoveryEntry)] = []
     @State var showRecoveryDialog = false
     /// Set when the sheet is being re-presented with the snapshots a restore
@@ -67,7 +66,7 @@ struct ContentView: View {
     @AppStorage("wordWrapEnabled", store: PineStorageContext.defaults) var isWordWrapEnabled = true
 
     /// The TabManager for the currently focused editor pane. Use this for
-    /// any menu command, go-to request, search result, status bar binding,
+    /// any menu command, source-location request, status bar binding,
     /// or diff/inline-diff action that should target the active editor.
     /// Falls back to ``primaryTabManager`` when no editor pane is focused
     /// (e.g. terminals-only layout), matching ``ProjectManager/activeTabManager``.
@@ -88,8 +87,8 @@ struct ContentView: View {
 
     var body: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
-            SidebarSearchableContent(
-                selectedNode: $selectedNode,
+            SidebarView(
+                selectedFile: $selectedNode,
                 onFileOpen: { node, disposition in
                     handleFileSelection(node, disposition: disposition)
                 }
@@ -131,10 +130,6 @@ struct ContentView: View {
             ToastOverlay()
         }
         .modifier(UserTaskRunPresenter(store: projectManager.taskRunStore))
-        .modifier(ProjectSearchModifier(
-            projectManager: projectManager,
-            isSearchPresented: $isSearchPresented
-        ))
         .frame(minWidth: 800, minHeight: 500)
         .navigationTitle(windowChrome.title)
         .toolbar {
@@ -227,7 +222,6 @@ struct ContentView: View {
             // (content already present) do nothing.
             seedInitialTerminalIfNeeded(disposition: disposition)
             syncSidebarSelection()
-            applySearchQueryFromEnvironment()
             #if DEBUG
             seedAccessibilityDirtyBufferIfNeeded()
             #endif
@@ -284,10 +278,10 @@ struct ContentView: View {
             )
         }
         // MARK: - Command overlays (#975)
-        // Quick Open, Symbol Navigator, Go to Line, and Command Palette route
-        // through a single document-scoped router so at most one overlay is
-        // active per window. The shared container renders whichever flow the
-        // router reports, replacing any prior presentation deterministically.
+        // Command Palette and Agent Attention route through a single
+        // document-scoped router so at most one overlay is active per window.
+        // The shared container renders whichever flow the router reports,
+        // replacing any prior presentation deterministically.
         .modifier(CommandOverlayContainer(
             router: commandOverlayRouter,
             projectManager: projectManager
@@ -352,9 +346,7 @@ struct ContentView: View {
         ))
         .onChange(of: workspace.rootURL) { _, _ in
             lineDiffs = []
-            projectManager.quickOpenProvider.invalidateIndex()
             projectManager.saveSession()
-            applySearchQueryFromEnvironment()
         }
         .onChange(of: activeTabManager.activeTabID) { _, _ in
             syncSidebarSelection()
@@ -392,11 +384,6 @@ struct ContentView: View {
         }
         .modifier(GitAndNotificationObserver(
             lineDiffs: $lineDiffs,
-            columnVisibility: $columnVisibility,
-            isSearchPresented: $isSearchPresented,
-            onPresentGoToLine: {
-                commandOverlayRouter.present(.goToLine)
-            },
             onRefreshLineDiffs: { refreshLineDiffs() },
             onRefreshBlame: { refreshBlame() },
             onOpenNewProject: { openNewProject() },

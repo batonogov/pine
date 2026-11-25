@@ -13,13 +13,14 @@ import SwiftUI
 /// The window's title is permanently hidden (#1643), and on macOS 26/27 a
 /// hidden title collapses the region `.primaryAction` used to anchor into:
 /// the inbox button packs into the leading cluster beside the
-/// project-switcher pill, while the `NSSearchToolbarItem` from `.searchable`
-/// keeps its trailing anchoring alone. A flexible space immediately before
-/// the button restores the trailing cluster — but no SwiftUI declaration
-/// produces one there: on a split-view toolbar `ToolbarSpacer` always sorts
-/// after `.primaryAction` items, and a `Spacer()` inside a `ToolbarItem`
-/// additionally emits a second flex before the search field, which would
-/// float the button mid-window (all verified against a live toolbar).
+/// project-switcher pill. (Before R4 removed the search field, the
+/// `NSSearchToolbarItem` from `.searchable` kept its trailing anchoring
+/// alone, which is why the pin historically anchored on it.) A flexible
+/// space immediately before the button restores the trailing cluster — but
+/// no SwiftUI declaration produces one there: on a split-view toolbar
+/// `ToolbarSpacer` always sorts after `.primaryAction` items, and a
+/// `Spacer()` inside a `ToolbarItem` additionally emits a second flex, which
+/// would float the button mid-window (all verified against a live toolbar).
 nonisolated enum AgentInboxToolbarLayout {
     /// One step towards the pinned order. Applying corrections until nil is
     /// returned normalizes every reachable state.
@@ -32,25 +33,37 @@ nonisolated enum AgentInboxToolbarLayout {
     /// sits immediately before the trailing content item.
     ///
     /// The trailing content item is the first non-flexible item left of the
-    /// search field — today the inbox button, the only `.primaryAction`. The
-    /// rule deliberately never names identifiers: SwiftUI's toolbar item
+    /// search field when one exists; with the search field gone (Pine 3.0
+    /// R4) it is the last non-flexible item — the toolbar's own trailing
+    /// edge. Today the item is the inbox button, the only `.primaryAction`.
+    /// The rule deliberately never names identifiers: SwiftUI's toolbar item
     /// identifiers are random per session.
     static func correction(in items: [NSToolbarItem]) -> Correction? {
-        guard let searchIndex = items.firstIndex(where: {
-            $0 is NSSearchToolbarItem
-        }) else { return nil }
         let isFlex = { items[$0].itemIdentifier == .flexibleSpace }
-        // First non-flexible item left of the search field.
-        var content = searchIndex - 1
-        while content > 0, isFlex(content) { content -= 1 }
-        guard content >= 1, !isFlex(content) else { return nil }
-        // A stray flexible space between the content item and the search
-        // field (SwiftUI's sort puts declared spacers there) goes first:
+        let searchIndex = items.firstIndex(where: {
+            $0 is NSSearchToolbarItem
+        })
+        var content: Int
+        if let searchIndex {
+            // First non-flexible item left of the search field.
+            content = searchIndex - 1
+            while content > 0, isFlex(content) { content -= 1 }
+            guard content >= 1, !isFlex(content) else { return nil }
+        } else {
+            // No search anchor: the trailing edge is the toolbar's end.
+            guard let last = items.indices.reversed().first(where: {
+                !isFlex($0)
+            }) else { return nil }
+            content = last
+        }
+        // A stray flexible space between the content item and the anchor
+        // (SwiftUI's sort puts declared spacers there) goes first:
         // removing and re-deriving moves it rather than multiplying it.
-        for index in (content + 1)..<searchIndex where isFlex(index) {
+        let anchor = searchIndex ?? items.count
+        for index in (content + 1)..<anchor where isFlex(index) {
             return .removeFlexibleSpace(at: index)
         }
-        if isFlex(content - 1) { return nil }
+        if content > 0, isFlex(content - 1) { return nil }
         return .insertFlexibleSpace(at: content)
     }
 

@@ -22,8 +22,8 @@
 //  Fix: every `.onReceive` handler that mutates observable state in
 //  `ContentView.swift` and `GitAndNotificationObserver.swift` now wraps the
 //  mutation in `DispatchQueue.main.async { ... }` via an extracted handler
-//  method (`handleCloseTab`, `handleShowProjectSearch`, `handleGoToLine`,
-//  `handleFileRenamed`, `handleFileDeleted`, `handleOpenFileAtLine` in
+//  method (`handleCloseTab`, `handleFileRenamed`, `handleFileDeleted`,
+//  `handleOpenFileAtLine` in
 //  GitAndNotificationObserver; inline-async in ContentView). Breaking the
 //  synchronous reentrancy lets the button-action callstack unwind first.
 //
@@ -162,68 +162,17 @@ struct OnReceiveReentrancyTests {
 
     // MARK: - Production-code coverage: real handler methods don't mutate synchronously (#1051)
     //
-    // These tests exercise the ACTUAL handler methods added in this PR
-    // (handleShowProjectSearch, handleFileDeleted), not an abstract model —
-    // so removing `DispatchQueue.main.async` from them turns the test red.
-    // Both handlers are testable outside a view hierarchy because they touch
-    // only @Binding/callback parameters (not @Environment). The other
-    // handlers (handleGoToLine, handleOpenFileAtLine, handleFileRenamed)
-    // read @Environment (controlActiveState,
-    // projectManager) and are covered by the abstract contract tests above.
+    // This test exercises the ACTUAL handler method, not an abstract model —
+    // so removing `DispatchQueue.main.async` from it turns the test red.
+    // The other handlers (handleOpenFileAtLine, handleFileRenamed) read
+    // @Environment (controlActiveState, projectManager) and are covered by
+    // the abstract contract tests above.
 
     /// Records writes to a value through a `Binding`, so the test can assert
     /// *when* a handler mutated state (synchronously vs next runloop).
     private final class Box<T> {
         var value: T
         init(_ value: T) { self.value = value }
-    }
-
-    @Test("handleShowProjectSearch does not mutate bindings synchronously (#1051)")
-    func handleShowProjectSearchDeferred() async throws {
-        let visibilityBox = Box<NavigationSplitViewVisibility?>(nil)
-        let searchBox = Box<Bool>(false)
-        let columnVisibility = Binding<NavigationSplitViewVisibility>(
-            get: { visibilityBox.value ?? .detailOnly },
-            set: { visibilityBox.value = $0 }
-        )
-        let isSearchPresented = Binding<Bool>(
-            get: { searchBox.value },
-            set: { searchBox.value = $0 }
-        )
-
-        // Memberwise init omits @Environment properties (they are injected by
-        // SwiftUI, not passed at construction). These two handlers never read
-        // @Environment, so the uninitialized environment values are unused.
-        let observer = GitAndNotificationObserver(
-            lineDiffs: .constant([]),
-            columnVisibility: columnVisibility,
-            isSearchPresented: isSearchPresented,
-            onPresentGoToLine: {},
-            onRefreshLineDiffs: { },
-            onRefreshBlame: { },
-            onOpenNewProject: { },
-            onCloseProject: { },
-            onHandleFileDeletion: { _ in },
-            onHandleExternalChanges: { _ in },
-            onNavigateToChange: { _ in },
-            onInlineDiffAction: { _ in }
-        )
-
-        // Invoke the real production handler — as `.onReceive` would.
-        observer.handleShowProjectSearch()
-
-        // Contract: NO synchronous mutation.
-        #expect(searchBox.value == false,
-                "handleShowProjectSearch must not set isSearchPresented synchronously (#1051)")
-        #expect(visibilityBox.value == nil,
-                "handleShowProjectSearch must not set columnVisibility synchronously (#1051)")
-
-        // Drain: both mutations must land on the next runloop.
-        try await drainRunloop()
-        #expect(searchBox.value == true,
-                "handleShowProjectSearch must set isSearchPresented on the next runloop")
-        #expect(visibilityBox.value == .all,
-                "handleShowProjectSearch must set columnVisibility to .all on the next runloop")
     }
 
     @Test("handleFileDeleted does not invoke callback synchronously (#1051)")
@@ -233,9 +182,6 @@ struct OnReceiveReentrancyTests {
 
         let observer = GitAndNotificationObserver(
             lineDiffs: .constant([]),
-            columnVisibility: .constant(.all),
-            isSearchPresented: .constant(false),
-            onPresentGoToLine: {},
             onRefreshLineDiffs: { },
             onRefreshBlame: { },
             onOpenNewProject: { },

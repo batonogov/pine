@@ -46,12 +46,8 @@ struct AccessibilityLocalizationMatrixTests {
         "terminal.hide",
         "terminal.maximize",
         "terminal.restore",
-        "menu.quickOpen",
-        "quickOpen.placeholder",
         "menu.commandPalette",
         "commandPalette.placeholder",
-        "menu.symbolNavigator",
-        "symbolNavigator.placeholder",
         // Agent Inbox, save/Quit decisions, and updates.
         "menu.agentInbox",
         "agentInbox.empty",

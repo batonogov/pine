@@ -39,9 +39,6 @@ struct HelpBookShortcutTableTests {
         // material.
         .newFile, .openFile, .commandPalette, .closeTab, .closeProject,
         .closeWindow, .saveAll, .saveAs, .duplicate,
-        // Find stepping and selection feed: the table lists the entry
-        // points (Find, Find and Replace), not the steppers.
-        .findNext, .findPrevious, .useSelectionForFind,
         // Diff navigation and folding: dense families behind the Edit menu.
         .acceptChange, .revertChange, .foldCode, .unfoldCode, .foldAll,
         .unfoldAll,
@@ -79,9 +76,6 @@ struct HelpBookShortcutTableTests {
     /// The commands whose row title must equal the localized menu title
     /// (minus the table's omitted ellipsis) — the renames of #1564.
     private static let titleKeysByCommand: [UserCommand: String] = [
-        .findInFile: "menu.find",
-        .goToLine: "menu.goToLine",
-        .symbolNavigator: "menu.symbolNavigator",
         .togglePreview: "menu.togglePreview",
         .toggleMinimap: "menu.toggleMinimap",
         .toggleWordWrap: "menu.toggleWordWrap",
@@ -167,7 +161,7 @@ struct HelpBookShortcutTableTests {
     /// The derivation above must never silently collapse to nothing.
     @Test("the expected table covers a meaningful set of commands")
     func expectedRowsAreNonTrivial() {
-        #expect(Self.expectedSingleRowCommands.count >= 10)
+        #expect(Self.expectedSingleRowCommands.count >= 5)
         #expect(!Self.literalChords.isEmpty)
     }
 

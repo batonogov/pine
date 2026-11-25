@@ -85,7 +85,7 @@ xcodebuild CODE_SIGN_IDENTITY=- CODE_SIGNING_ALLOWED=YES -skipPackagePluginValid
 xcodebuild CODE_SIGN_IDENTITY=- CODE_SIGNING_ALLOWED=YES test -skipPackagePluginValidation -project Pine.xcodeproj -scheme Pine -derivedDataPath "$DERIVED_DATA" -destination 'platform=macOS' -only-testing:PineTests
 xcodebuild CODE_SIGN_IDENTITY=- CODE_SIGNING_ALLOWED=YES test -skipPackagePluginValidation -project Pine.xcodeproj -scheme Pine -derivedDataPath "$DERIVED_DATA" -destination 'platform=macOS' -only-testing:PineUITests
 # Focused iteration: replace the suite with the relevant Swift Testing/XCTest type.
-xcodebuild CODE_SIGN_IDENTITY=- CODE_SIGNING_ALLOWED=YES test -skipPackagePluginValidation -project Pine.xcodeproj -scheme Pine -derivedDataPath "$DERIVED_DATA" -destination 'platform=macOS' -only-testing:PineTests/GoToLineTests
+xcodebuild CODE_SIGN_IDENTITY=- CODE_SIGNING_ALLOWED=YES test -skipPackagePluginValidation -project Pine.xcodeproj -scheme Pine -derivedDataPath "$DERIVED_DATA" -destination 'platform=macOS' -only-testing:PineTests/CommandOverlayRouterTests
 # When relevant; performance benchmarks are not part of the ordinary CI gate.
 xcodebuild CODE_SIGN_IDENTITY=- CODE_SIGNING_ALLOWED=YES test -skipPackagePluginValidation -project Pine.xcodeproj -scheme Pine -derivedDataPath "$DERIVED_DATA" -destination 'platform=macOS' -only-testing:PinePerformanceTests
 swiftlint

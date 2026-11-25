@@ -5,9 +5,9 @@
 //  Issue #1008 — structural intelligence (ADR 0001, #1182).
 //
 //  Defines the normalised, provider-agnostic models and protocols consumed by
-//  `FoldRangeCalculator`, `SymbolNavigatorView`, and bracket matching. These
-//  seams let one structural provider own a feature for a single immutable
-//  document revision, with deterministic fallback to the local calculator.
+//  `FoldRangeCalculator` and bracket matching. These seams let one structural
+//  provider own a feature for a single immutable document revision, with
+//  deterministic fallback to the local calculator.
 //
 //  All types are pure data/protocol definitions with no new dependency.
 //  `nonisolated` opts out of the project-wide MainActor default isolation so
@@ -105,39 +105,6 @@ nonisolated final class StructuralGeneration: @unchecked Sendable {
 /// generation token became shared by every structural feature.
 typealias FoldGeneration = StructuralGeneration
 
-// MARK: - Document symbols
-
-/// Coarse symbol classification used by the regex provider.
-nonisolated enum SymbolKind: String, Sendable, Equatable {
-    case function
-    case `class`
-    case `struct`
-    case `enum`
-    case interface
-    case namespace
-    case property
-    case variable
-    case other
-}
-
-/// A hierarchical document symbol. Normalised so the Symbol Navigator and a
-/// future structural provider share one model. UTF-16 `NSRange` based.
-nonisolated struct DocumentSymbolNode: Sendable, Equatable {
-    let name: String
-    let kind: SymbolKind
-    /// Full span of the symbol (UTF-16 code units).
-    let range: NSRange
-    /// The span to select when navigating to the symbol.
-    let selectionRange: NSRange
-    let children: [DocumentSymbolNode]
-}
-
-/// A symbol provider owns document symbols for one revision.
-nonisolated protocol SymbolProviding: Sendable {
-    func canProvide(for snapshot: DocumentSnapshot) -> Bool
-    func symbols(for snapshot: DocumentSnapshot) async -> [DocumentSymbolNode]?
-}
-
 // MARK: - Brackets
 
 /// Immutable input for bounded bracket matching. Syntax-derived comment and
@@ -150,7 +117,7 @@ nonisolated struct BracketSnapshot: Sendable, Equatable {
 
 /// Provider seam for bracket navigation/highlighting. The production provider
 /// remains Pine's bounded local matcher; this seam keeps its coordinates tied
-/// to the same immutable snapshot model as folds and symbols.
+/// to the same immutable snapshot model as folds.
 nonisolated protocol BracketProviding: Sendable {
     func canProvide(for snapshot: DocumentSnapshot) -> Bool
     func highlight(for snapshot: BracketSnapshot) -> BracketHighlightResult?

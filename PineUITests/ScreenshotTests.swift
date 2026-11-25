@@ -392,7 +392,7 @@ final class ScreenshotTests: PineUITestCase {
         - Syntax highlighting for 37 languages
         - Split editor and terminal panes
         - Git context and live agent activity
-        - Minimap, folding, and project search
+        - Minimap and folding
 
         ## Getting Started
 

@@ -37,7 +37,7 @@ struct CommandPaletteView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            QuickOpenSearchField(
+            CommandOverlaySearchField(
                 text: $searchText,
                 placeholder: String(localized: "commandPalette.placeholder"),
                 accessibility: CommandOverlayTextFieldAccessibility(

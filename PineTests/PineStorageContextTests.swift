@@ -89,21 +89,17 @@ struct PineStorageContextTests {
         }
     }
 
-    @Test("The unchanged release-smoke launch contract and normal search remain accepted")
+    @Test("The unchanged release-smoke launch contract remains accepted")
     func ordinaryReleaseSmokeContract() {
         let arguments = [
             "--disable-agent-detection", "--disable-metal", "--disable-quick-terminal", "--disable-terminal-seeding",
             "-ApplePersistenceIgnoreState", "YES", "-AppleLanguages", "(en)", "-AppleLocale", "en_US",
         ]
-        var environment = [
+        let environment = [
             "HOME": "/owned/fixture-home", "CFFIXED_USER_HOME": "/owned/fixture-home", "TMPDIR": "/owned/fixture-home/tmp",
             "PINE_DISABLE_AGENT_DETECTION": "1", "PINE_DISABLE_METAL": "1", "PINE_DISABLE_QUICK_TERMINAL": "1",
             "PINE_OPEN_PROJECT": "/owned/fixture-project",
         ]
-        #expect(PineStorageContext.launchIsSafe(
-            testHost: false, bundleIdentifier: "io.github.batonogov.pine", arguments: arguments, environment: environment
-        ))
-        environment["PINE_SEARCH_QUERY"] = "normal query"
         #expect(PineStorageContext.launchIsSafe(
             testHost: false, bundleIdentifier: "io.github.batonogov.pine", arguments: arguments, environment: environment
         ))
