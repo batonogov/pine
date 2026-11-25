@@ -61,6 +61,9 @@ struct AgentTaskNativeLaunchPolicyTests {
         guard case .eligible(let policy) = AgentTaskNativeLaunchPolicy.evaluate(
             taskID: taskID, runID: runID, bindingID: bindingID, selection: selection,
             model: modelOverride,
+            configurationCapabilities: try AgentTaskConfigurationCapabilities(
+                transportAdvertised: [AgentTaskConfigurationCapability(key: .model, state: .probed)]
+            ),
             provenance: AgentTaskLaunchProvenance(
                 authenticationOrigin: .inheritNative,
                 environmentProvenance: .inheritedPineProcess
@@ -189,6 +192,9 @@ struct AgentTaskNativeLaunchPolicyTests {
         let nextTask = AgentTaskNativeLaunchPolicy.evaluate(
             taskID: futureTaskID, runID: UUID(), bindingID: bindingID, selection: selection,
             model: futureDefault,
+            configurationCapabilities: try AgentTaskConfigurationCapabilities(
+                transportAdvertised: [AgentTaskConfigurationCapability(key: .model, state: .probed)]
+            ),
             provenance: AgentTaskLaunchProvenance(
                 authenticationOrigin: .inheritNative,
                 environmentProvenance: .inheritedPineProcess
@@ -226,5 +232,75 @@ struct AgentTaskNativeLaunchPolicyTests {
         }
         #expect(policy.authenticationOrigin == .launchEnvironment)
         #expect(policy.environmentProvenance == .explicitExternal)
+    }
+
+    @Test func explicitOverridesFailClosedForUnknownOrUnsupportedCapabilities() throws {
+        let executable = AgentTaskNativeLaunchPolicy.Selection(
+            agentID: try AgentID(migratingLegacyStableIdentifier: "openCode"),
+            selectedExecutable: URL(fileURLWithPath: "/selected/opencode", isDirectory: false)
+        )
+        let override = try AgentTaskNativeSettingSelection.explicit(nativeValue: "native-value", scope: .session)
+        #expect(AgentTaskNativeLaunchPolicy.evaluate(
+            taskID: UUID(), runID: UUID(), bindingID: UUID(), selection: executable,
+            model: override,
+            provenance: AgentTaskLaunchProvenance(
+                authenticationOrigin: .inheritNative,
+                environmentProvenance: .inheritedPineProcess
+            )
+        ) == .blocked(.capabilityUnavailable(.model)))
+        for key in AgentTaskConfigurationSettingKey.allCases {
+            for state in [AgentTaskConfigurationCapability.State.unsupported, .unknown] {
+                let capabilities = try AgentTaskConfigurationCapabilities(
+                    transportAdvertised: [AgentTaskConfigurationCapability(key: key, state: state)]
+                )
+                let result = AgentTaskNativeLaunchPolicy.evaluate(
+                    taskID: UUID(), runID: UUID(), bindingID: UUID(), selection: executable,
+                    model: key == .model ? override : AgentTaskNativeSettingSelection(),
+                    reasoningEffort: key == .reasoningEffort ? override : AgentTaskNativeSettingSelection(),
+                    permissions: key == .permissions ? override : AgentTaskNativeSettingSelection(),
+                    configurationCapabilities: capabilities,
+                    provenance: AgentTaskLaunchProvenance(
+                        authenticationOrigin: .inheritNative,
+                        environmentProvenance: .inheritedPineProcess
+                    )
+                )
+                #expect(result == .blocked(.capabilityUnavailable(key)))
+            }
+        }
+    }
+
+    @Test func inheritanceNeedsNoCapabilityAndPositiveEvidenceAllowsOverride() throws {
+        let executable = AgentTaskNativeLaunchPolicy.Selection(
+            agentID: try AgentID(migratingLegacyStableIdentifier: "openCode"),
+            selectedExecutable: URL(fileURLWithPath: "/selected/opencode", isDirectory: false)
+        )
+        let provenance = AgentTaskLaunchProvenance(
+            authenticationOrigin: .inheritNative,
+            environmentProvenance: .inheritedPineProcess
+        )
+        guard case .eligible = AgentTaskNativeLaunchPolicy.evaluate(
+            taskID: UUID(), runID: UUID(), bindingID: UUID(), selection: executable,
+            configurationCapabilities: .unknown, provenance: provenance
+        ) else {
+            Issue.record("Native inheritance must not require an override capability")
+            return
+        }
+        let override = try AgentTaskNativeSettingSelection.explicit(nativeValue: "native-value", scope: .session)
+        for state in [
+            AgentTaskConfigurationCapability.State.researched, .probed, .supported,
+        ] {
+            let capabilities = try AgentTaskConfigurationCapabilities(
+                transportAdvertised: [AgentTaskConfigurationCapability(
+                    key: .model, state: state, effectiveReadback: state == .supported
+                )]
+            )
+            guard case .eligible = AgentTaskNativeLaunchPolicy.evaluate(
+                taskID: UUID(), runID: UUID(), bindingID: UUID(), selection: executable,
+                model: override, configurationCapabilities: capabilities, provenance: provenance
+            ) else {
+                Issue.record("Researched, probed, and supported states remain representable")
+                return
+            }
+        }
     }
 }

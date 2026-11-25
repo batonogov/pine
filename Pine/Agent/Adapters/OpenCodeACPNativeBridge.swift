@@ -257,6 +257,7 @@ nonisolated final class OpenCodeACPNativeFactory: AgentAdapterFactory, @unchecke
     let maximumProfile: AdapterCapabilityProfile
     private let materials: OpenCodeACPNativeMaterials
     private let consumed = Mutex(false)
+    private let recordedObservation = Mutex<AdapterProbeResult?>(nil)
 
     static func descriptor(factoryID: AdapterFactoryID? = nil) throws -> AdapterDescriptor {
         try AdapterDescriptor(
@@ -290,7 +291,7 @@ nonisolated final class OpenCodeACPNativeFactory: AgentAdapterFactory, @unchecke
         try Task.checkCancellation()
         try await materials.prepareLaunch(materials.sessionDeadline)
         try Task.checkCancellation()
-        return try AdapterProbeResult(
+        let observation = try AdapterProbeResult(
             detectedVendorVersion: DetectedVendorVersion(OpenCodeACPSession.pinnedVersion),
             detectedSchema: DetectedVendorVersion("ACP 1"),
             offeredProfiles: [maximumProfile],
@@ -298,11 +299,16 @@ nonisolated final class OpenCodeACPNativeFactory: AgentAdapterFactory, @unchecke
                 minimum: Self.contractVersion, maximum: Self.contractVersion
             )
         )
+        recordedObservation.withLock { $0 = observation }
+        return observation
     }
 
     func makeSession(_ request: AgentAdapterSessionRequest) async throws -> any AgentAdapterSession {
         try Task.checkCancellation()
         guard request.resumeFrom == nil else { throw AdapterSessionError.checkpointNotSupported }
+        guard let observation = recordedObservation.withLock({ $0 }) else {
+            throw AdapterSessionError.contractMismatch
+        }
         guard consumed.withLock({ value in
             guard !value else { return false }
             value = true
@@ -344,6 +350,12 @@ nonisolated final class OpenCodeACPNativeFactory: AgentAdapterFactory, @unchecke
             cwd: materials.workingDirectory.path,
             deadline: materials.sessionDeadline,
             loadSession: materials.loadSession,
+            discovery: OpenCodeACPSession.DiscoveryInput(
+                selectedExecutable: materials.ownership.policy.selectedExecutable,
+                versionProbe: observation.detectedVendorVersion,
+                factoryAdmission: observation,
+                environmentProvenance: materials.ownership.policy.environmentProvenance
+            ),
             native: native,
             beforeStartWrite: { try materials.ownership.validate() },
             revokeOwnership: { Task { await native.invalidate() } },
@@ -381,7 +393,12 @@ final class OpenCodeACPNativeComposition {
 
     func runtime(for taskID: UUID) -> OpenCodeACPTaskRuntime? { runtimes[taskID] }
 
-    func prepare(_ ownership: AgentTaskNativeOwnership) async throws -> OpenCodeACPTaskRuntime {
+    /// `loadSession` is the explicit exact-ID restore (#1811): when set, the
+    /// owned materials spawn the new owner against `session/load`, never
+    /// `session/new`. Production first-launches pass nil.
+    func prepare(
+        _ ownership: AgentTaskNativeOwnership, loadSession: VendorReference? = nil
+    ) async throws -> OpenCodeACPTaskRuntime {
         let taskID = ownership.policy.taskID
         if preparing.contains(taskID) {
             while preparing.contains(taskID), !Task.isCancelled {
@@ -412,7 +429,8 @@ final class OpenCodeACPNativeComposition {
             )
             let materials = OpenCodeACPNativeMaterials.owned(
                 registry: tasks, ownership: ownership, executable: executable,
-                workingDirectory: working, sessionDeadline: .opencodeACPUnbounded
+                workingDirectory: working, sessionDeadline: .opencodeACPUnbounded,
+                loadSession: loadSession
             )
             _ = try await compose(materials)
             guard let runtime = runtimes[taskID] else { throw OpenCodeACPError.unavailable }
@@ -421,6 +439,28 @@ final class OpenCodeACPNativeComposition {
             tasks.invalidateNativeOwnership(ownership)
             throw error
         }
+    }
+
+    /// Exact identity a restore may load, read from the task's own durable
+    /// evidence. Missing, foreign-provider, or malformed identity fails
+    /// closed before any spawn — never a latest-session or new-session guess.
+    static func restoreReference(for task: AgentTask?) throws -> VendorReference {
+        guard let identity = task?.runs.last?.vendorIdentity,
+              identity.provider == "openCode" else {
+            throw OpenCodeACPError.unavailable
+        }
+        return try VendorReference(role: .conversation, value: identity.opaqueIdentifier)
+    }
+
+    /// Explicit new-owner exact-session restore (#1811): a new owned ACP
+    /// process bound to the task's persisted exact native session ID. It
+    /// revalidates the original worktree cwd through the ownership binding
+    /// and the pinned executable through capture/version probe, and it
+    /// replays no input. The UI never reaches this through a guess: the
+    /// caller owns the admission (`prepareNativeRestore`).
+    func restoreSession(_ ownership: AgentTaskNativeOwnership) async throws -> OpenCodeACPTaskRuntime {
+        let reference = try Self.restoreReference(for: tasks.task(for: ownership.policy.taskID))
+        return try await prepare(ownership, loadSession: reference)
     }
 
     /// Shared by production preparation and deterministic composition tests.

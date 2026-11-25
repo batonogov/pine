@@ -1,0 +1,6 @@
+{"id":0,"jsonrpc":"2.0","result":{"agentCapabilities":{"loadSession":true,"mcpCapabilities":{"http":true,"sse":false},"promptCapabilities":{"embeddedContext":true,"image":true},"sessionCapabilities":{"additionalDirectories":{},"close":{},"delete":{},"fork":{},"list":{},"resume":{}}},"agentInfo":{"name":"@agentclientprotocol/claude-agent-acp","version":"0.109.1"},"authMethods":[],"protocolVersion":1}}
+{"id":1,"jsonrpc":"2.0","result":{"configOptions":[],"sessionId":"ses_fixture"}}
+{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"ses_fixture","update":{"availableCommands":[],"sessionUpdate":"available_commands_update"}}}
+{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"ses_fixture","update":{"content":{"text":"Fixture ","type":"text"},"sessionUpdate":"agent_message_chunk"}}}
+{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"ses_fixture","update":{"content":{"text":"result.","type":"text"},"sessionUpdate":"agent_message_chunk"}}}
+{"id":2,"jsonrpc":"2.0","result":{"stopReason":"end_turn"}}

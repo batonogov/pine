@@ -1,6 +1,6 @@
 #!/bin/sh
 # Sanitized fake OpenCode ACP agent for deterministic spawn tests.
-# It speaks the pinned v2.3.2 shapes; every reply is canned and spends no quota.
+# It speaks the pinned v2.4.0 shapes; every reply is canned and spends no quota.
 
 scenario="${2:-${1:-turn}}"
 answered_form=0
@@ -11,7 +11,7 @@ reply() {
   printf '%s\n' "$1"
 }
 
-INIT_RESULT='{"id":0,"jsonrpc":"2.0","result":{"agentCapabilities":{"_meta":{"opencode/child-session-updates":true},"loadSession":true},"agentInfo":{"name":"OpenCode","version":"2.3.2"},"protocolVersion":1}}'
+INIT_RESULT='{"id":0,"jsonrpc":"2.0","result":{"agentCapabilities":{"_meta":{"opencode/child-session-updates":true},"loadSession":true},"agentInfo":{"name":"OpenCode","version":"2.4.0"},"protocolVersion":1}}'
 NEW_RESULT='{"id":1,"jsonrpc":"2.0","result":{"configOptions":[],"sessionId":"ses_fake"}}'
 COMMANDS='{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"ses_fake","update":{"availableCommands":[],"sessionUpdate":"available_commands_update"}}}'
 CHUNK='{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"ses_fake","update":{"content":{"text":"Fixture result.","type":"text"},"sessionUpdate":"agent_message_chunk"}}}'

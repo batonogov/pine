@@ -1,5 +1,6 @@
 import CryptoKit
 import Foundation
+import Synchronization
 import Testing
 @testable import Pine
 
@@ -32,7 +33,25 @@ struct CodexAppServerNativeBridgeTests {
         await #expect(throws: AdapterSessionError.self) {
             try await fixture.session.start()
         }
+        // Discovery from the fixture's empty catalog and empty config:
+        // the documented floor holds, nothing is promoted, and the
+        // login-required account state is reported truthfully.
+        if let report = await fixture.sessionRecorder.value?.discoveryReport {
+            #expect(report.sessionStart == .started)
+            #expect(report.authentication == .loginRequired)
+            #expect(report.configurationCapabilities.model.state == .researched)
+            #expect(report.configurationCapabilities.reasoningEffort.state == .researched)
+            #expect(report.configurationCapabilities.permissions.state == .researched)
+            #expect(report.effectiveModel == .unknown)
+            #expect(report.effectiveReasoningEffort == .unknown)
+            #expect(report.effectivePermissions == .unknown)
+        } else {
+            Issue.record("The fixture observations did not produce a discovery report")
+        }
+        // The report belongs to the live session: stopping clears it so a
+        // future view wiring cannot render a stale observation.
         await fixture.session.stop(deadline: .now.advanced(by: .seconds(2)))
+        #expect(await fixture.sessionRecorder.value?.discoveryReport == nil)
     }
 
     @Test func approvalRoundTripIsOneShotThenTurnCompletes() async throws {
@@ -513,11 +532,36 @@ private actor NativeBridgeBindingValidator: AgentTaskNativeBindingValidator {
     }
 }
 
+nonisolated final class CodexSessionRecorder: Sendable {
+    private let session = Mutex<CodexAppServerNativeSession?>(nil)
+    var value: CodexAppServerNativeSession? { session.withLock { $0 } }
+    func set(_ value: CodexAppServerNativeSession) { session.withLock { $0 = value } }
+}
+
+/// Records the concrete session the production factory creates, because the
+/// registry hands tests only its `CoreBoundAdapterSession` wrapper.
+nonisolated private struct RecordingCodexNativeFactory: AgentAdapterFactory {
+    let underlying: CodexAppServerNativeFactory
+    let recorder: CodexSessionRecorder
+    var id: AdapterFactoryID { underlying.id }
+    func probe() async throws -> AdapterProbeResult {
+        try await underlying.probe()
+    }
+    func makeSession(_ request: AgentAdapterSessionRequest) async throws -> any AgentAdapterSession {
+        let session = try await underlying.makeSession(request)
+        if let concrete = session as? CodexAppServerNativeSession {
+            recorder.set(concrete)
+        }
+        return session
+    }
+}
+
 nonisolated private struct NativeBridgeFixture: Sendable {
     let tasks: AgentTaskRegistry
     let adapters: AgentAdapterRegistry
     let contract: NegotiatedAdapterContract
     let session: any AgentAdapterSession
+    let sessionRecorder: CodexSessionRecorder
     let taskID: UUID
     let recorder: CandidateRecorder
     let server: BridgeServerSignals
@@ -645,6 +689,8 @@ nonisolated private struct NativeBridgeFixture: Sendable {
         let factory = try CodexAppServerNativeFactory(
             materials: materials, factoryID: AdapterFactoryID(validating: "pine.codex.native-test")
         )
+        sessionRecorder = CodexSessionRecorder()
+        let wrappedFactory = RecordingCodexNativeFactory(underlying: factory, recorder: sessionRecorder)
         let adapterID = try AdapterID(validating: "pine:codex-native")
         let agentID = try AgentID(validating: "codex")
         let version = CodexAppServerNativeFactory.contractVersion
@@ -660,7 +706,7 @@ nonisolated private struct NativeBridgeFixture: Sendable {
                     adapterID: adapterID, agentID: agentID, factoryID: factory.id,
                     contractVersions: versions, maximumProfiles: [factory.maximumProfile]
                 ),
-                factory
+                wrappedFactory
             )]
         )
         let offer = try await adapters.probe(adapterID: adapterID)
@@ -712,6 +758,16 @@ nonisolated private struct NativeBridgeFixture: Sendable {
                 case .request(let id, "account/read", _):
                     try await peer.write(CodexAppServerMessage.response(id, result: .object([
                         "account": .null, "requiresOpenaiAuth": .bool(true)
+                    ])).encoded(), deadline: deadline)
+                case .request(let id, "model/list", _):
+                    // The fixture server lists no models: the session keeps the
+                    // documented floor state, exactly like a malformed reply.
+                    try await peer.write(CodexAppServerMessage.response(id, result: .object([
+                        "data": .array([]), "nextCursor": .null
+                    ])).encoded(), deadline: deadline)
+                case .request(let id, "config/read", _):
+                    try await peer.write(CodexAppServerMessage.response(id, result: .object([
+                        "config": .object([:]), "origins": .object([:])
                     ])).encoded(), deadline: deadline)
                 case .request(let id, "thread/start", _):
                     let thread = "thr_fixture"

@@ -22,7 +22,7 @@
 
 Pine reflects agent activity, file changes, diagnostics, and Git context across a fast native workspace without turning into another AI dashboard. Built with SwiftUI and AppKit for macOS 26 Liquid Glass — no Electron runtime.
 
-Current built-in integrations detect processes, not verified waiting or success.
+Current released integrations detect processes, not verified waiting or success.
 See the [compatibility matrix](docs/agent-compatibility.md) and its
 [dated capability audit](docs/cli-capability-evidence-2026-11-14.md) for the distinction
 between process detection, upstream interfaces, and verified Pine integration.
@@ -53,6 +53,12 @@ These capabilities are **direction, not current functionality**, until they ship
 - **Bounded parallelism** — independent same-repository tasks with validated routing and documented concurrency limits
 
 See the [Pine 3.0 product vision](docs/pine-3.0-product-vision.md) for the full direction.
+
+**In development, not in the latest release:** on `main`, the first structured
+adapter (OpenCode V2 ACP) is integrated and dispatchable from the app, explicit
+Verify with an independent adapter-backed reviewer is wired, and Ready-result
+delivery is in flight. The [compatibility matrix](docs/agent-compatibility.md)
+records exactly what each adapter proves.
 
 **Describe it. Try it. Refine it.** Explore the
 [interactive Pine 3 concept](https://batonogov.github.io/pine/#future):

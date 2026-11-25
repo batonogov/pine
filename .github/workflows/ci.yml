@@ -624,7 +624,7 @@ jobs:
             --workflow .github/workflows/ci.yml \
             --max-delta 3
 
-  # UI test shards — 7 shards × 2 OS axes = 14 jobs, 33-36 tests each (delta 3).
+  # UI test shards — 7 shards × 2 OS axes = 14 jobs, 34-36 tests each (delta 3).
   # To rebalance: count tests per class, redistribute so shards stay within ±3 tests.
   # List classes with: grep -r "func test" PineUITests/ | sed 's/:.*//' | sort | uniq -c | sort -rn
   # shard-name is a real matrix axis (not only an include key): an include
@@ -665,7 +665,7 @@ jobs:
               -only-testing:PineUITests/SidebarCollapseFlakeProbeUITests
               -only-testing:PineUITests/NativeFileWindowMenuUITests
               -only-testing:PineUITests/AgentAttentionKeyboardUITests
-          # Shard 3 — Navigation (35 tests; accessibility matrix skips here)
+          # Shard 3 — Navigation (36 tests; accessibility matrix skips here)
           - shard-name: "Navigation"
             test-classes: >-
               -only-testing:PineUITests/GoToLineTabOverflowExternalChangesUITests
@@ -673,6 +673,7 @@ jobs:
               -only-testing:PineUITests/EditorTabNavigationTests
               -only-testing:PineUITests/DiffNavigationUITests
               -only-testing:PineUITests/AccessibilityLocalizationSmokeTests
+              -only-testing:PineUITests/OpenCodeRealModelJourneyUITests
           # Shard 4 — Editor Chrome (35 tests)
           - shard-name: "Editor Chrome"
             test-classes: >-

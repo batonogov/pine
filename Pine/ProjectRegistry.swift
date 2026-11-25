@@ -1291,11 +1291,14 @@ final class ProjectRegistry {
 
     /// Application-lifetime durable agent identity across every project.
     let agentTasks: AgentTaskRegistry
-    /// The existing app owner retains OpenCode runtimes; this is not a task store.
+    /// The existing app owner retains provider runtimes; this is not a task store.
     @ObservationIgnored private lazy var openCodeNativeComposition =
         OpenCodeACPNativeComposition(tasks: agentTasks)
     @ObservationIgnored private let openCodeNativeBindings = AgentTaskEnvironmentBindings()
     @ObservationIgnored private var openCodeNativeObserver: NSObjectProtocol?
+    @ObservationIgnored private lazy var claudeCodeNativeComposition =
+        ClaudeCodeACPNativeComposition(tasks: agentTasks)
+    @ObservationIgnored private var claudeCodeNativeObserver: NSObjectProtocol?
     @ObservationIgnored
     weak var quickTerminalAgentRouter: (any QuickTerminalAgentRouting)?
 
@@ -1508,11 +1511,28 @@ final class ProjectRegistry {
                 try? await self.openCodeNativeComposition.prepare(ownership)
             }
         }
+        claudeCodeNativeObserver = NotificationCenter.default.addObserver(
+            forName: .claudeCodeNativeOwnershipPrepared, object: nil, queue: nil
+        ) { [weak self] note in
+            guard let ownership = note.object as? AgentTaskNativeOwnership else { return }
+            Task { @MainActor [weak self] in
+                guard let self,
+                      let task = self.agentTasks.task(for: ownership.policy.taskID),
+                      task.descriptor.typeIdentifier == "claudeCode",
+                      task.descriptor.typeIdentifier == ownership.policy.agentID.value else {
+                    return
+                }
+                await self.claudeCodeNativeComposition.prepare(ownership)
+            }
+        }
     }
 
     isolated deinit {
         if let openCodeNativeObserver {
             NotificationCenter.default.removeObserver(openCodeNativeObserver)
+        }
+        if let claudeCodeNativeObserver {
+            NotificationCenter.default.removeObserver(claudeCodeNativeObserver)
         }
     }
 
@@ -1525,6 +1545,17 @@ final class ProjectRegistry {
         _ materials: OpenCodeACPNativeMaterials
     ) async throws -> OpenCodeACPTaskRuntime {
         try await openCodeNativeComposition.compose(materials)
+    }
+
+    func claudeCodeRuntime(for taskID: UUID) -> ClaudeCodeACPTaskRuntime? {
+        claudeCodeNativeComposition.runtime(for: taskID)
+    }
+
+    @discardableResult
+    func composeClaudeCodeRuntime(
+        _ materials: ClaudeCodeACPNativeMaterials
+    ) async throws -> ClaudeCodeACPTaskRuntime {
+        try await claudeCodeNativeComposition.compose(materials)
     }
 
     /// Explicit Request dispatch: durable intent and environment first, then
@@ -1593,6 +1624,44 @@ final class ProjectRegistry {
             throw OpenCodeACPError.unavailable
         }
         return reservation.taskID
+    }
+
+    /// Explicit exact-session restore for a new owner (#1811): re-adopts the
+    /// task's original worktree binding (original cwd revalidation), admits
+    /// the restore, and composes one owned ACP process bound to the task's
+    /// persisted exact native session ID. It replays no input, never falls
+    /// back to a new or latest session, and leaves the returned runtime
+    /// stopped until the caller starts it.
+    func restoreOpenCodeTaskSession(taskID: UUID) async throws -> OpenCodeACPTaskRuntime {
+        guard let task = agentTasks.task(for: taskID),
+              task.descriptor.typeIdentifier == "openCode",
+              let run = task.runs.last else {
+            throw OpenCodeACPError.unavailable
+        }
+        guard let binding = await agentTasks.reconcileReservedWorktree(
+            taskID: taskID, bindings: openCodeNativeBindings
+        ) else { throw OpenCodeACPError.unavailable }
+        let selected = await runOnBackground {
+            ExternalToolResolver.fromEnvironment().resolve(tool: "opencode").map {
+                URL(fileURLWithPath: $0)
+            }
+        }
+        guard let selected else { throw OpenCodeACPError.unavailable }
+        let selection = AgentTaskNativeLaunchPolicy.Selection(
+            agentID: try AgentID(migratingLegacyStableIdentifier: "openCode"),
+            selectedExecutable: selected
+        )
+        guard case .eligible(let policy) = AgentTaskNativeLaunchPolicy.evaluate(
+            taskID: taskID, runID: run.id, bindingID: binding.id, selection: selection,
+            provenance: AgentTaskLaunchProvenance(
+                authenticationOrigin: .inheritNative,
+                environmentProvenance: .inheritedPineProcess
+            )
+        ) else { throw OpenCodeACPError.unavailable }
+        let ownership = try await agentTasks.prepareNativeRestore(
+            policy: policy, binding: binding, bindings: openCodeNativeBindings
+        )
+        return try await openCodeNativeComposition.restoreSession(ownership)
     }
 
     private static func makeDefaultAgentTaskRegistry() -> AgentTaskRegistry {
