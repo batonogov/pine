@@ -33,8 +33,8 @@ nonisolated struct OpenCodeACPExecutableIdentity: Equatable, Sendable,
     }
 
     /// Observed `opencode --version` output of the pinned binary. Derived from
-    /// the single pinned version (re-probe 2026-11-21: CLI "opencode v2.3.2",
-    /// ACP agentInfo.version "2.3.2").
+    /// the single pinned version (re-probe 2026-11-24: CLI "opencode v2.4.0",
+    /// ACP agentInfo.version "2.4.0").
     static var supportedVersion: String { "opencode v\(OpenCodeACPSession.pinnedVersion)" }
     /// Literal argv; no shell interpretation is ever added.
     static let acpArguments = ["acp"]

@@ -196,13 +196,18 @@ actor OpenCodeACPSession: AgentAdapterControlledSession, CustomStringConvertible
     }
 
     /// SINGLE SOURCE OF TRUTH for the pinned OpenCode ADE version.
-    /// Re-probed 2026-11-21 (sanitized evidence:
-    /// $TMPDIR/opencode/pine-1811-real-probe/sanitized-result.json):
-    /// CLI `opencode --version` -> "opencode v2.3.2"; ACP initialize
-    /// agentInfo -> {name: "OpenCode", version: "2.3.2"}. The launch gate
+    /// Re-probed 2026-11-24 on Homebrew opencode 2.4.0 (sanitized evidence:
+    /// $TMPDIR/opencode/pine-1811-reprobe-240/): CLI `opencode --version` ->
+    /// "opencode v2.4.0"; ACP initialize agentInfo ->
+    /// {name: "OpenCode", version: "2.4.0"}; `loadSession` and the pinned
+    /// `_meta["opencode/child-session-updates"]` capability both advertised;
+    /// real-model (authenticated) session/new, form elicitation,
+    /// request_permission (allow_once), end_turn, cross-owner exact-ID
+    /// session/load with context intact, and -32602 missing-ID refusal all
+    /// observed on the binary. The launch gate
     /// (OpenCodeACPExecutableIdentity.supportedVersion) derives the CLI
     /// spelling from this constant; the handshake gate compares agentInfo.
-    nonisolated static let pinnedVersion = "2.3.2"
+    nonisolated static let pinnedVersion = "2.4.0"
 
     func start() async throws {
         guard state == .fresh else { throw OpenCodeACPError.invalidState }
@@ -519,7 +524,7 @@ actor OpenCodeACPSession: AgentAdapterControlledSession, CustomStringConvertible
                   promptContext != nil else { return }
             if promptID == nil {
                 // Root activity after the correlated response is late output of the
-                // settled turn. ACP 2.3.2 supplies no root-final boundary, so the text
+                // settled turn. ACP 2.4.0 supplies no root-final boundary, so the text
                 // can never start or pollute a result and input stays fenced.
                 inputFenced = true
                 await notify()
@@ -648,7 +653,7 @@ actor OpenCodeACPSession: AgentAdapterControlledSession, CustomStringConvertible
             guard options["allow_once"] != nil, options["reject_once"] != nil else {
                 throw OpenCodeACPError.invalidProtocol
             }
-        // Pinned-version contract (re-probe 2026-11-21, agent 2.3.2): during
+        // Pinned-version contract (re-probe 2026-11-24, agent 2.4.0): during
         // initialize and session/new the agent issues NO server->client
         // requests; the only documented requests during a turn are
         // elicitation/create and session/request_permission (child-session

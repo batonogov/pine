@@ -456,7 +456,7 @@ struct OpenCodeACPTests {
     }
 
     /// Child/root activity after the parent response has no turn to belong to.
-    /// ACP 2.3.2 supplies no root-final boundary, so the late text can never
+    /// ACP 2.4.0 supplies no root-final boundary, so the late text can never
     /// start a result and later input stays fenced.
     @Test func lateChildAndRootOutputAfterParentEndFencesFeedbackWithoutResult() async throws {
         let fixture = try await fixture()
@@ -774,7 +774,7 @@ struct OpenCodeACPTests {
     /// supervised `cat` child feeds the raw frames over real pipes through the
     /// JSONL framer with the ACP version requirement.
     @Test func pinnedTurnFixtureReplaysOverRealChannel() async throws {
-        let lines = try Self.fixtureLines("acp-opencode-v2.3.2-turn.jsonl")
+        let lines = try Self.fixtureLines("acp-opencode-v2.4.0-turn.jsonl")
         #expect(lines.count == 6)
         let work = try Self.tempDirectory()
         defer { try? FileManager.default.removeItem(at: work) }
@@ -802,7 +802,7 @@ struct OpenCodeACPTests {
     /// fences (versionless frame, corrupt JSON) close the framer; valid frames
     /// parse and the secret-bearing payload never reaches diagnostics.
     @Test func faultFramesFenceThroughRealChannelCodec() async throws {
-        let lines = try Self.fixtureLines("acp-opencode-v2.3.2-faults.jsonl")
+        let lines = try Self.fixtureLines("acp-opencode-v2.4.0-faults.jsonl")
         #expect(lines.count == 8)
         for index in lines.indices {
             let work = try Self.tempDirectory()
@@ -838,7 +838,7 @@ struct OpenCodeACPTests {
     /// Session-level fence outcomes for the same fault frames, plus the
     /// secret redaction assertion on every reflected state.
     @Test func sanitizedFaultFramesFenceWithoutLeakingSecrets() async throws {
-        let lines = try Self.fixtureLines("acp-opencode-v2.3.2-faults.jsonl")
+        let lines = try Self.fixtureLines("acp-opencode-v2.4.0-faults.jsonl")
         #expect(lines.count == 8)
         do {
             let fixture = try await fixture()

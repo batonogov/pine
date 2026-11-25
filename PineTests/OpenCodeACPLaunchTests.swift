@@ -107,6 +107,57 @@ struct OpenCodeACPLaunchTests {
         }
     }
 
+    /// The production spawner revalidates the original cwd: a materials
+    /// working directory that differs from the ownership binding's worktree
+    /// is refused before any process starts. This is the wrong-cwd negative
+    /// gate for new-owner exact-session restore (#1811).
+    @Test func spawnerRefusesCwdOutsideTheBindingBeforeSpawn() async throws {
+        let directory = try tempDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let binary = try copySystemBinary(into: directory)
+        let deadline = ContinuousClock.now.advanced(by: .seconds(30))
+        let identity = try await OpenCodeACPExecutableIdentity.capture(
+            selectedURL: binary, deadline: deadline
+        )
+        let taskID = UUID()
+        let runID = UUID()
+        let binding = AgentTaskEnvironmentBinding.nativeBindingForTesting(
+            taskID: taskID, runID: runID
+        )
+        let project = AgentTaskProjectIdentity(
+            canonicalProjectPath: directory.path, canonicalWorktreePath: directory.path
+        )
+        let lease = try #require(await runOnBackground {
+            RecentAgentTaskFilesystemValidator.validationLease(for: project, expectedProof: nil)
+        })
+        let validator = OpenCodeLaunchBindingValidator(binding: binding, lease: lease)
+        let selection = AgentTaskNativeLaunchPolicy.Selection(
+            agentID: try AgentID(migratingLegacyStableIdentifier: "openCode"),
+            selectedExecutable: binary
+        )
+        guard case .eligible(let policy) = AgentTaskNativeLaunchPolicy.evaluate(
+            taskID: taskID, runID: runID, bindingID: binding.id, selection: selection,
+            provenance: testLaunchProvenance
+        ) else { throw AgentTaskNativeAdmissionError.invalidPolicy }
+        let ownership = try await runOnBackground {
+            try AgentTaskNativeOwnership(
+                policy: policy, binding: binding, filesystem: lease, bindings: validator,
+                environment: ProcessInfo.processInfo.environment
+            )
+        }
+        // A working directory outside the bound worktree refuses before
+        // spawn, even for a validly captured pinned executable.
+        await #expect(throws: OpenCodeACPLaunchError.changed) {
+            _ = try await runOnBackground {
+                try OpenCodeACPNativeSpawner.spawn(
+                    ownership: ownership, executable: identity,
+                    workingDirectory: directory.appending(path: "elsewhere"),
+                    sessionDeadline: .now.advanced(by: .seconds(10))
+                )
+            }
+        }
+    }
+
     @Test func everyNonExitedSpawnPollTransfersReapingAndDeferredCleanup() async throws {
         for poll in [UserTaskProcessExitPoll.running, .waitFailed(Int32(ECHILD))] {
             let reaped = Mutex(false)
@@ -157,5 +208,19 @@ struct OpenCodeACPLaunchTests {
                 deadline: deadline, drainUntil: .now.advanced(by: .seconds(60)), arguments: []
             )
         }
+    }
+}
+
+private actor OpenCodeLaunchBindingValidator: AgentTaskNativeBindingValidator {
+    let binding: AgentTaskEnvironmentBinding
+    let lease: RecentAgentTaskFilesystemValidationLease
+    init(binding: AgentTaskEnvironmentBinding, lease: RecentAgentTaskFilesystemValidationLease) {
+        self.binding = binding
+        self.lease = lease
+    }
+    func revalidate(_ requested: AgentTaskEnvironmentBinding) async throws -> RecentAgentTaskFilesystemValidationLease {
+        guard requested == binding else { throw AgentTaskEnvironmentBindingError.staleBinding }
+        try requested.validateAuthority()
+        return lease
     }
 }

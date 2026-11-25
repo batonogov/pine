@@ -62,7 +62,7 @@ redacted).
 
 | File | What it owns |
 | --- | --- |
-| `Pine/Agent/Adapters/OpenCodeACPSession.swift` | The session actor, **ACP v1 only**: `initialize` with `protocolVersion` 1, `clientCapabilities.elicitation.form` and the pinned `_meta["opencode/child-session-updates"]` extension; agentInfo exact pin `OpenCode 2.3.2`; `session/new` and `session/load` (exact-ID explicit action, replay bounded, historical-not-live); child-session updates (`opencode/session/child_update` with parent/depth validation, turn-scoped tool attribution); `session/prompt`, `session/cancel`, one-shot permissions (`allow_once`/`reject_once`), form elicitation, uncertain-delivery fencing, and the explicit `unverified`/`unknown` settlement (no `succeeded`/`Ready` from ACP completion). |
+| `Pine/Agent/Adapters/OpenCodeACPSession.swift` | The session actor, **ACP v1 only**: `initialize` with `protocolVersion` 1, `clientCapabilities.elicitation.form` and the pinned `_meta["opencode/child-session-updates"]` extension; agentInfo exact pin `OpenCode 2.4.0` (re-probed 2026-11-24); `session/new` and `session/load` (exact-ID explicit action, replay bounded, historical-not-live); child-session updates (`opencode/session/child_update` with parent/depth validation, turn-scoped tool attribution); `session/prompt`, `session/cancel`, one-shot permissions (`allow_once`/`reject_once`), form elicitation, uncertain-delivery fencing, and the explicit `unverified`/`unknown` settlement (no `succeeded`/`Ready` from ACP completion). |
 | `Pine/Agent/Adapters/OpenCodeACPNativeBridge.swift` | Registry-owned launch materials, the literal-argv spawner, durable native ownership transitions (submission/cancellation/acknowledgement/response-observed/submission-unknown), the one-shot `OpenCodeACPNativeFactory`, and `OpenCodeACPNativeComposition` (runtime retention per task). |
 | `Pine/Agent/Adapters/OpenCodeACPLaunch.swift` | `OpenCodeACPExecutableIdentity` (SHA-256 plus stat stamp, process-image revalidation, `opencode --version` probe against the exact pin), `OpenCodeACPOwnedChild` (channel plus process-group stop/reap, stderr drain owned by the session lifetime), and the fixture-only launch path, which builds the shared channel with `requireJSONRPCVersion: true`. |
 | `Pine/Agent/Adapters/OpenCodeACPTransport.swift` | The transport seam; refuses any channel that does not require `jsonrpc: "2.0"`. Also `OpenCodeACPWire.encode` (mandatory `jsonrpc: "2.0"` re-serialization) and the shared validation helpers (bounded strings, session-ID charset). |
@@ -71,7 +71,7 @@ redacted).
 | `Pine/Agent/Adapters/OpenCodeACPFactory.swift` | Admission/probe gating; nil observation keeps the adapter unavailable until an authorized pinned observation exists. |
 
 Tests and fixtures: `PineTests/OpenCodeACP*Tests.swift` and
-`PineTests/Fixtures/AgentAdapters/acp-opencode-v2.3.2-turn.jsonl` /
+`PineTests/Fixtures/AgentAdapters/acp-opencode-v2.4.0-turn.jsonl` /
 `-faults.jsonl` (synthetic). The shared wire contract itself is exercised by
 `PineTests/ACPSharedWireContractTests.swift` (exact-UTF-8 string request IDs
 and independent connection caches across the shared Codex/Kimi/OpenCode
@@ -83,7 +83,7 @@ Already shared: the framer, the stdio channel, the request-ID type, the
 message envelope, the one-shot-response replay discipline, the fail-closed
 capability-validation pattern, and the exact-pin executable-identity pattern.
 Provider-specific and intentionally not shared: each adapter's `initialize`
-parameter pin (Kimi 2.6.2 vs OpenCode 2.3.2), the session-action surface
+parameter pin (Kimi 2.6.2 vs OpenCode 2.4.0), the session-action surface
 (Kimi `new`/`load`/`resume`/`fork` vs OpenCode `new`/`load`), permission and
 elicitation mapping, the OpenCode child-session `_meta` extension, and the
 Kimi account gate. The concrete duplication a consolidation could remove

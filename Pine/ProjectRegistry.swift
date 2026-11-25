@@ -1626,6 +1626,44 @@ final class ProjectRegistry {
         return reservation.taskID
     }
 
+    /// Explicit exact-session restore for a new owner (#1811): re-adopts the
+    /// task's original worktree binding (original cwd revalidation), admits
+    /// the restore, and composes one owned ACP process bound to the task's
+    /// persisted exact native session ID. It replays no input, never falls
+    /// back to a new or latest session, and leaves the returned runtime
+    /// stopped until the caller starts it.
+    func restoreOpenCodeTaskSession(taskID: UUID) async throws -> OpenCodeACPTaskRuntime {
+        guard let task = agentTasks.task(for: taskID),
+              task.descriptor.typeIdentifier == "openCode",
+              let run = task.runs.last else {
+            throw OpenCodeACPError.unavailable
+        }
+        guard let binding = await agentTasks.reconcileReservedWorktree(
+            taskID: taskID, bindings: openCodeNativeBindings
+        ) else { throw OpenCodeACPError.unavailable }
+        let selected = await runOnBackground {
+            ExternalToolResolver.fromEnvironment().resolve(tool: "opencode").map {
+                URL(fileURLWithPath: $0)
+            }
+        }
+        guard let selected else { throw OpenCodeACPError.unavailable }
+        let selection = AgentTaskNativeLaunchPolicy.Selection(
+            agentID: try AgentID(migratingLegacyStableIdentifier: "openCode"),
+            selectedExecutable: selected
+        )
+        guard case .eligible(let policy) = AgentTaskNativeLaunchPolicy.evaluate(
+            taskID: taskID, runID: run.id, bindingID: binding.id, selection: selection,
+            provenance: AgentTaskLaunchProvenance(
+                authenticationOrigin: .inheritNative,
+                environmentProvenance: .inheritedPineProcess
+            )
+        ) else { throw OpenCodeACPError.unavailable }
+        let ownership = try await agentTasks.prepareNativeRestore(
+            policy: policy, binding: binding, bindings: openCodeNativeBindings
+        )
+        return try await openCodeNativeComposition.restoreSession(ownership)
+    }
+
     private static func makeDefaultAgentTaskRegistry() -> AgentTaskRegistry {
         #if DEBUG
         let arguments = ProcessInfo.processInfo.arguments
