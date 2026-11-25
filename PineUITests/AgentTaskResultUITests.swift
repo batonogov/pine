@@ -23,7 +23,19 @@ final class AgentTaskResultUITests: PineUITestCase {
         XCTAssertTrue(app.staticTexts["Not accepted"].exists)
     }
 
-    func testPrimaryActionIsKeyboardReachable() {
+    func testPrimaryActionIsKeyboardReachable() throws {
+        // Tab only includes buttons in the focus loop when Full Keyboard
+        // Access is enabled; runners ship with it off, where the walk
+        // below would be a permanent no-op. CI's Navigation shard enables
+        // it (ci.yml); on other hosts skip rather than fail.
+        let keyboardAccess = UserDefaults(suiteName: "com.apple.universalaccess")?
+            .integer(forKey: "AppleKeyboardUIMode") ?? 0
+        guard keyboardAccess > 0 else {
+            throw XCTSkip(
+                "Full Keyboard Access is disabled; Tab cannot enter the button focus loop"
+            )
+        }
+
         launchResult()
         let primary = element("agentTaskResultPrimaryAction")
         XCTAssertTrue(primary.waitForExistence(timeout: 5))
