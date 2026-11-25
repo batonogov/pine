@@ -41,6 +41,12 @@ final class AgentTaskResultUITests: PineUITestCase {
         XCTAssertTrue(primary.waitForExistence(timeout: 5))
         XCTAssertTrue(primary.isEnabled)
 
+        // On CI the app is not frontmost and nothing clicks the fixture
+        // window first, so it is not key and key events route nowhere.
+        // Clicking the disabled stop button makes the window key without
+        // activating a control.
+        element("agentTaskResultStop").click()
+
         // Walk the focus loop and try to activate with Space. The fixture
         // window's only enabled control is the primary action (the stop
         // button is disabled without an onStop), so Space evidence is
