@@ -38,10 +38,12 @@ struct OpenCodeACPNativeRealModelTests {
         let projects = ProjectRegistry(agentTasks: tasks)
         let codeword = "PINE1811-\(UUID().uuidString.prefix(8).uppercased())"
         let taskID = try await projects.startOpenCodeTask(
-            instruction: "Remember the codeword \(codeword). Then ask me a form question with "
-                + "exactly one field named 'choice' with options 'keep' and 'drop', asking "
-                + "whether I want to keep the codeword. After I answer, create the file "
-                + "note.txt containing exactly the text ok. Then reply with exactly: REMEMBERED",
+            // First line becomes the task title (256-byte durable limit); keep it short.
+            instruction: "Remember the codeword \(codeword).\n"
+                + "Then ask me a form question with exactly one field named 'choice' "
+                + "with options 'keep' and 'drop', asking whether I want to keep the "
+                + "codeword. After I answer, create the file note.txt containing "
+                + "exactly the text ok. Then reply with exactly: REMEMBERED",
             project: fixture.identity,
             executable: Self.binary,
             managedRoot: fixture.managedRoot
@@ -215,7 +217,9 @@ struct OpenCodeACPNativeRealModelTests {
         await #expect(throws: OpenCodeACPError.providerFailure(-32602)) {
             try await runtimeB.start()
         }
-        #expect(runtimeB.snapshot?.state == .stopped)
+        // A refused start must leave no live session: the snapshot is absent
+        // (the provider emitted none before the refusal) or explicitly stopped.
+        #expect(runtimeB.snapshot == nil || runtimeB.snapshot?.state == .stopped)
         let journal = try #require(tasksB.task(for: taskID)?.nativeDispatch)
         #expect(journal.conversation?.opaqueIdentifier == "ses_definitely_missing_1811")
         #expect(tasksB.task(for: taskID)?.runs.count == 1)
@@ -241,11 +245,14 @@ struct OpenCodeACPNativeRealModelTests {
         throw OpenCodeACPError.unavailable
     }
 
-    /// Answers every form field with its first documented choice.
+    /// Answers every choice field with its first documented choice. Real
+    /// models do not always mark the field `required` in the requested schema
+    /// (2026-11-25: the `question` tool call arrived with an empty `required`
+    /// array); free-text-only forms remain unanswerable and still throw.
     private static func firstChoiceAnswers(for question: OpenCodeACPSession.Question) throws -> [String: [String]] {
         guard let form = question.form else { throw OpenCodeACPError.invalidAnswer }
         var answers: [String: [String]] = [:]
-        for (name, field) in form.fields where field.required {
+        for (name, field) in form.fields where field.choices != nil {
             guard let choice = field.choices?.first else {
                 throw OpenCodeACPError.invalidAnswer
             }
