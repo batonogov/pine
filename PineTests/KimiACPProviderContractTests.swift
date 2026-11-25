@@ -414,8 +414,13 @@ struct KimiACPProviderContractTests {
             do {
                 _ = try fx.mapper.noteRequest(.integer(200), method: "session/request_permission",
                                               params: overflow.params)
-                throw KimiACPWireError.capacity
-            } catch KimiACPWireError.capacity {}
+                // Reaching this throw means the cap is gone; it must not pass silently.
+                throw KimiACPWireError.invalidState
+            } catch KimiACPWireError.capacity {
+                // The cap holds: overflow fails closed.
+            } catch {
+                Issue.record("Expected the mapper cap to throw capacity, got \(error) instead")
+            }
             table["backpressure"] = .pass
         }
 

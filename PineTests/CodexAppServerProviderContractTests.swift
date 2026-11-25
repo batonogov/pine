@@ -348,7 +348,6 @@ struct CodexAppServerProviderContractTests {
             }
             #expect(attention.request.rawValue.utf8.count == 64)
             #expect(attention.request.rawValue.allSatisfy { "0123456789abcdef".contains($0) })
-            #expect(attention.request.rawValue != "60")
             // Foreign thread traffic is ignored.
             let foreignThread = CodexAppServerMessage.notification(method: "turn/completed", params: .object([
                 "threadId": .string("other-thread"),
@@ -390,8 +389,13 @@ struct CodexAppServerProviderContractTests {
             }
             do {
                 _ = try fx.mapper.map(approval(2000, turnID: "turn-b"), connection: fx.connectionID)
-                throw CodexAppServerWireError.capacityExceeded
-            } catch CodexAppServerWireError.capacityExceeded {}
+                // Reaching this throw means the cap is gone; it must not pass silently.
+                throw CodexAppServerWireError.invalidState
+            } catch CodexAppServerWireError.capacityExceeded {
+                // The cap holds: overflow fails closed.
+            } catch {
+                Issue.record("Expected the mapper cap to throw capacityExceeded, got \(error) instead")
+            }
             table["backpressure"] = .pass
         }
 
