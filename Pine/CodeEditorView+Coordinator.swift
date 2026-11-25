@@ -10,7 +10,6 @@
 //    • Content/font synchronization
 //    • Debounced syntax highlighting (edit + scroll paths)
 //    • Bracket matching highlight
-//    • Find & Replace routing
 //    • Send-to-terminal
 //    • External-reload handling
 //
@@ -861,58 +860,6 @@ extension CodeEditorView {
                   let gutterView = sv.documentView as? GutterTextView,
                   gutterView.window?.isKeyWindow == true else { return }
             gutterView.toggleComment()
-        }
-
-        // MARK: - Find & Replace (issue #275)
-
-        /// Sends a `performTextFinderAction` to the text view with the given action tag.
-        /// Internal access for testability.
-        func performFindAction(_ action: NSTextFinder.Action) {
-            guard let sv = scrollView,
-                  let textView = sv.documentView as? GutterTextView,
-                  textView.window?.isKeyWindow == true else { return }
-            let menuItem = NSMenuItem()
-            menuItem.tag = action.rawValue
-            textView.performTextFinderAction(menuItem)
-        }
-
-        @objc func handleFindInFile(_ notification: Notification) {
-            guard shouldHandleCommand(notification) else { return }
-            handleFindInFile()
-        }
-
-        @objc func handleFindAndReplace(_ notification: Notification) {
-            guard shouldHandleCommand(notification) else { return }
-            handleFindAndReplace()
-        }
-
-        @objc func handleFindNext(_ notification: Notification) {
-            guard shouldHandleCommand(notification), canStepFind() else { return }
-            handleFindNext()
-        }
-
-        @objc func handleFindPrevious(_ notification: Notification) {
-            guard shouldHandleCommand(notification), canStepFind() else { return }
-            handleFindPrevious()
-        }
-
-        @objc func handleUseSelectionForFind(_ notification: Notification) {
-            guard shouldHandleCommand(notification) else { return }
-            handleUseSelectionForFind()
-        }
-
-        func handleFindInFile() { performFindAction(.showFindInterface) }
-        func handleFindAndReplace() { performFindAction(.showReplaceInterface) }
-        func handleFindNext() { performFindAction(.nextMatch) }
-        func handleFindPrevious() { performFindAction(.previousMatch) }
-        func handleUseSelectionForFind() { performFindAction(.setSearchString) }
-
-        /// Whether the editor's find bar may take a ⌘G / ⇧⌘G step (#1551).
-        /// Find stepping is window-routed: while `FindStepTargetPolicy`
-        /// resolves it to a visible terminal search bar, the editor must
-        /// yield so the command is not double-stepped. Internal for testability.
-        func canStepFind() -> Bool {
-            parent.canHandleFindStepping?() ?? true
         }
 
         // MARK: - Send to Terminal (issue #311)

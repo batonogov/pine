@@ -21,11 +21,6 @@ struct GitAndNotificationObserver: ViewModifier {
     @Environment(ProjectManager.self) private var projectManager
     @Environment(\.controlActiveState) private var controlActiveState
     @Binding var lineDiffs: [GitLineDiff]
-    @Binding var columnVisibility: NavigationSplitViewVisibility
-    @Binding var isSearchPresented: Bool
-    /// Invoked when the Go to Line command is triggered. The presenter routes
-    /// this through the shared command-overlay router (#975).
-    var onPresentGoToLine: () -> Void
     var onRefreshLineDiffs: () -> Void
     var onOpenNewProject: () -> Void
     var onCloseProject: () -> Void
@@ -142,17 +137,6 @@ struct GitAndNotificationObserver: ViewModifier {
                 let result = projectManager.checkExternalChanges()
                 onHandleExternalChanges(result)
             }
-            .onReceive(NotificationCenter.default.publisher(for: .showProjectSearch)) { notification in
-                guard ContentView.shouldHandleTargetedCommand(
-                    notificationObject: notification.object,
-                    currentProject: projectManager,
-                    isKeyWindow: controlActiveState == .key
-                ) else { return }
-                handleShowProjectSearch()
-            }
-            .onReceive(NotificationCenter.default.publisher(for: .goToLine)) { notification in
-                handleGoToLine(notification)
-            }
             .onReceive(NotificationCenter.default.publisher(for: .openFileAtLine)) { notification in
                 handleOpenFileAtLine(notification)
             }
@@ -210,38 +194,14 @@ struct GitAndNotificationObserver: ViewModifier {
         }
     }
 
-    func handleShowProjectSearch() {
-        // Prime suspect for the Cmd+Shift+F crash: mutates two pieces of
-        // state (columnVisibility @Binding + isSearchPresented @Binding)
-        // and wraps one in withAnimation, maximising synchronous re-render.
-        DispatchQueue.main.async {
-            withAnimation(PineAnimation.quick) {
-                self.columnVisibility = .all
-            }
-            self.isSearchPresented = true
-        }
-    }
-
-    func handleGoToLine(_ notification: Notification) {
-        guard ContentView.shouldHandleTargetedCommand(
-            notificationObject: notification.object,
-            currentProject: projectManager,
-            isKeyWindow: controlActiveState == .key
-        ),
-              activeTabManager.activeTab != nil else { return }
-        DispatchQueue.main.async {
-            self.onPresentGoToLine()
-        }
-    }
-
     func handleOpenFileAtLine(_ notification: Notification) {
         guard let url = notification.userInfo?["url"] as? URL,
               let line = notification.userInfo?["line"] as? Int else { return }
         DispatchQueue.main.async {
             // Column is parsed and passed for future use; the current
             // navigation infrastructure is line-based (issue #949).
-            // Open into the focused pane so terminal ⌘-click and search
-            // results land in the editor the user is looking at (#971).
+            // Open into the focused pane so terminal ⌘-click lands in the
+            // editor the user is looking at (#971).
             self.activeTabManager.openTabAndGoToLine(url: url, line: line)
         }
     }
@@ -315,44 +275,5 @@ struct DocumentEditedTracker: NSViewRepresentable {
 
     func updateNSView(_ nsView: NSView, context: Context) {
         nsView.window?.isDocumentEdited = isEdited
-    }
-}
-
-// MARK: - Project search modifier
-
-/// Extracted modifier to reduce body complexity for the type-checker.
-struct ProjectSearchModifier: ViewModifier {
-    var projectManager: ProjectManager
-    @Binding var isSearchPresented: Bool
-
-    func body(content: Content) -> some View {
-        content
-            .searchable(
-                text: Bindable(projectManager.searchProvider).query,
-                isPresented: $isSearchPresented,
-                placement: .toolbar,
-                prompt: Strings.searchPlaceholder
-            )
-            .onChange(of: projectManager.searchProvider.query) { _, _ in
-                guard let rootURL = projectManager.rootURL else { return }
-                projectManager.searchProvider.search(in: rootURL)
-            }
-            .onAppear {
-                configureSearchToolbarItem()
-            }
-    }
-
-    /// Finds the NSSearchToolbarItem in the window toolbar and sets preferred width (Finder-style).
-    private func configureSearchToolbarItem() {
-        DispatchQueue.main.asyncAfter(deadline: .now() + UITimings.Delay.standard) {
-            guard let window = NSApp.keyWindow,
-                  let toolbar = window.toolbar else { return }
-            for item in toolbar.items {
-                if let searchItem = item as? NSSearchToolbarItem {
-                    searchItem.preferredWidthForSearchField = 180
-                    break
-                }
-            }
-        }
     }
 }

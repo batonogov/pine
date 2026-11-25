@@ -11,8 +11,8 @@
 //  1. The core #1544 journey: a press opens a folder and writes the
 //     selection through the mirroring setter, and the Left command must
 //     observe it and collapse the folder.
-//  2. A SidebarView that re-mounts after the search branch continues
-//     keyboard navigation from the selected row — Down moves past it, not
+//  2. A SidebarView that re-mounts after being hidden continues keyboard
+//     navigation from the selected row — Down moves past it, not
 //     back to the first row.
 //  3. A reload after such a re-mount reconciles from the seeded mirror
 //     (`onChange(of:, initial: true)`) and keeps the externally-written
@@ -104,22 +104,22 @@ struct SidebarLiveSelectionMirrorTests {
         )
         fixture.selectExternally(alpha)
 
-        // Leave and return from the search branch: the returning SidebarView
-        // owns a *fresh* @State navigation, while the harness-side selection
-        // state (the ContentView stand-in) still holds alpha.
-        fixture.projectManager.searchProvider.query = "inside"
+        // Hide and re-mount the sidebar: the returning SidebarView owns a
+        // *fresh* @State navigation, while the harness-side selection state
+        // (the ContentView stand-in) still holds alpha.
+        fixture.setSidebarPresented(false)
         guard await waitFor(seconds: 3, until: {
             Self.row(named: "fileNode_alpha", in: fixture.hosting) == nil
         }) else {
-            Issue.record("search branch did not replace the file tree")
+            Issue.record("sidebar did not unmount")
             return
         }
-        fixture.projectManager.searchProvider.query = ""
+        fixture.setSidebarPresented(true)
         let alphaRow = await waitFor(seconds: 3, until: {
             Self.row(named: "fileNode_alpha", in: fixture.hosting)
         })
         guard let alphaRow else {
-            Issue.record("file tree did not return after clearing the query")
+            Issue.record("file tree did not return after re-mounting")
             return
         }
         guard await waitFor(seconds: 2, until: {
@@ -129,8 +129,8 @@ struct SidebarLiveSelectionMirrorTests {
             return
         }
 
-        // The search-branch transition briefly mounts transitional sidebar
-        // epochs; dispatching the command to *every* mounted responder until
+        // The re-mount briefly mounts transitional sidebar epochs;
+        // dispatching the command to *every* mounted responder until
         // the effect lands makes the check immune to which epoch survives.
         // This case pins the *behaviour* with a live seed — Down continues
         // from the selected row after a re-mount — not the seed itself:
@@ -181,19 +181,19 @@ struct SidebarLiveSelectionMirrorTests {
         // Re-mount the sidebar, then trigger the production refresh path:
         // a file appears on disk and the workspace reloads the tree, which
         // routes through reconcileSelectionAfterReload.
-        fixture.projectManager.searchProvider.query = "inside"
+        fixture.setSidebarPresented(false)
         guard await waitFor(seconds: 3, until: {
             Self.row(named: "fileNode_root-file.swift", in: fixture.hosting)
                 == nil
         }) else {
-            Issue.record("search branch did not replace the file tree")
+            Issue.record("sidebar did not unmount")
             return
         }
-        fixture.projectManager.searchProvider.query = ""
+        fixture.setSidebarPresented(true)
         guard let rootFileRow = await waitFor(seconds: 3, until: {
             Self.row(named: "fileNode_root-file.swift", in: fixture.hosting)
         }) else {
-            Issue.record("file tree did not return after clearing the query")
+            Issue.record("file tree did not return after re-mounting")
             return
         }
         guard await waitFor(seconds: 2, until: {
@@ -256,6 +256,10 @@ struct SidebarLiveSelectionMirrorTests {
             external.write(node)
         }
 
+        func setSidebarPresented(_ isPresented: Bool) {
+            external.setSidebarPresented(isPresented)
+        }
+
         func tearDown() {
             projectManager.workspace.suspend()
             window.contentView = nil
@@ -272,28 +276,39 @@ struct SidebarLiveSelectionMirrorTests {
     @Observable
     final class ExternalSelectionWriter {
         private(set) var node: FileNode?
+        private(set) var isSidebarPresented = true
         private(set) var generation = 0
 
         func write(_ node: FileNode?) {
             self.node = node
             generation &+= 1
         }
+
+        func setSidebarPresented(_ isPresented: Bool) {
+            isSidebarPresented = isPresented
+            generation &+= 1
+        }
     }
 
     /// The hosted ContentView stand-in: owns the selection `@State`, feeds
-    /// `SidebarSearchableContent` exactly as the project window does, and
-    /// applies external selection writes to that state on their own graph
-    /// pass.
+    /// `SidebarView` exactly as the project window does, and applies external
+    /// selection writes to that state on their own graph pass.
     private struct HarnessHost: View {
         @State private var selection: FileNode?
         let projectManager: ProjectManager
         let external: ExternalSelectionWriter
 
         var body: some View {
-            SidebarSearchableContent(
-                selectedNode: $selection,
-                onFileOpen: { _, _ in }
-            )
+            Group {
+                if external.isSidebarPresented {
+                    SidebarView(
+                        selectedFile: $selection,
+                        onFileOpen: { _, _ in }
+                    )
+                } else {
+                    Color.clear
+                }
+            }
             .environment(projectManager)
             .environment(projectManager.workspace)
             .environment(projectManager.paneManager)

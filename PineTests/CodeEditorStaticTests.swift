@@ -61,8 +61,6 @@ struct CodeEditorStaticTests {
 
         // All should be no-ops when scrollView is nil
         coordinator.cancelPendingHighlight()
-        coordinator.performFindAction(.showFindInterface)
-        coordinator.performFindAction(.nextMatch)
         coordinator.handleToggleComment()
     }
 

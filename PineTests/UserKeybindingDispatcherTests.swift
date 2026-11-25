@@ -29,16 +29,16 @@ struct UserKeybindingDispatcherTests {
 
     @Test("A user override claims its chord and suppresses the built-in")
     func overrideClaimsItsChord() async throws {
-        let registry = try await makeRegistry(chords: [("quickOpen", "cmd+p")])
+        let registry = try await makeRegistry(chords: [("commandPalette", "cmd+p")])
         let event = try makeCmdEvent(key: "p")
         // A match means the monitor consumes the event; a built-in menu
         // equivalent for "cmd+p" therefore cannot also fire — no double-dispatch.
-        #expect(UserKeybindingDispatcher.command(for: event, in: registry) == .quickOpen)
+        #expect(UserKeybindingDispatcher.command(for: event, in: registry) == .commandPalette)
     }
 
     @Test("A non-matching event falls through even when overrides exist")
     func nonMatchingEventFallsThrough() async throws {
-        let registry = try await makeRegistry(chords: [("quickOpen", "cmd+p")])
+        let registry = try await makeRegistry(chords: [("commandPalette", "cmd+p")])
         let event = try makeCmdEvent(key: "f")
         // The registry has an override, but not for this chord: built-in
         // shortcuts and text input keep working.
@@ -49,22 +49,22 @@ struct UserKeybindingDispatcherTests {
     func oneEventOneCommand() async throws {
         // Two overrides for different chords: each event matches only its own.
         let registry = try await makeRegistry(chords: [
-            ("quickOpen", "cmd+p"),
-            ("findInFile", "cmd+shift+f"),
+            ("commandPalette", "cmd+p"),
+            ("toggleComment", "cmd+shift+f"),
         ])
         let pEvent = try makeCmdEvent(key: "p")
         let fEvent = try makeCmdEvent(key: "f", modifiers: [.command, .shift])
 
-        #expect(UserKeybindingDispatcher.command(for: pEvent, in: registry) == .quickOpen)
-        #expect(UserKeybindingDispatcher.command(for: fEvent, in: registry) == .findInFile)
+        #expect(UserKeybindingDispatcher.command(for: pEvent, in: registry) == .commandPalette)
+        #expect(UserKeybindingDispatcher.command(for: fEvent, in: registry) == .toggleComment)
         // No event matches more than one command.
-        #expect(UserKeybindingDispatcher.command(for: pEvent, in: registry) != .findInFile)
+        #expect(UserKeybindingDispatcher.command(for: pEvent, in: registry) != .toggleComment)
     }
 
     @Test("User override wins before a conflicting built-in handler")
     func userOverridePrecedesBuiltIn() async throws {
         let registry = try await makeRegistry(chords: [
-            ("quickOpen", "cmd+shift+b"),
+            ("commandPalette", "cmd+shift+b"),
         ])
         let event = try makeCmdEvent(
             key: "b",
@@ -84,14 +84,14 @@ struct UserKeybindingDispatcherTests {
         )
 
         #expect(routed == nil)
-        #expect(dispatchedCommands == [.quickOpen])
+        #expect(dispatchedCommands == [.commandPalette])
         #expect(builtInCallCount == 0)
     }
 
     @Test("Built-in handler runs once when no user override matches")
     func builtInRunsAfterUserMiss() async throws {
         let registry = try await makeRegistry(chords: [
-            ("quickOpen", "cmd+p"),
+            ("commandPalette", "cmd+p"),
         ])
         let event = try makeCmdEvent(key: "f")
         var userDispatchCount = 0
@@ -115,9 +115,12 @@ struct UserKeybindingDispatcherTests {
     @Test("Rebinding a command suppresses its former built-in shortcut")
     func reboundCommandSuppressesOldShortcut() async throws {
         let registry = try await makeRegistry(chords: [
-            ("quickOpen", "cmd+k"),
+            ("commandPalette", "cmd+k"),
         ])
-        let formerShortcut = try makeCmdEvent(key: "p")
+        let formerShortcut = try makeCmdEvent(
+            key: "p",
+            modifiers: [.command, .option]
+        )
         var userDispatchCount = 0
         var builtInCallCount = 0
 
@@ -206,9 +209,12 @@ struct UserKeybindingDispatcherTests {
     @Test("A different user command may claim a built-in shortcut")
     func userCommandClaimsAnotherBuiltInShortcut() async throws {
         let registry = try await makeRegistry(chords: [
-            ("toggleComment", "cmd+p"),
+            ("toggleComment", "cmd+option+p"),
         ])
-        let event = try makeCmdEvent(key: "p")
+        let event = try makeCmdEvent(
+            key: "p",
+            modifiers: [.command, .option]
+        )
         var dispatchedCommands: [UserCommand] = []
         var builtInCallCount = 0
 
@@ -230,7 +236,7 @@ struct UserKeybindingDispatcherTests {
     @Test("Unhandled event reaches menu, text, or terminal unchanged")
     func unhandledEventFallsThrough() async throws {
         let registry = try await makeRegistry(chords: [
-            ("quickOpen", "cmd+p"),
+            ("commandPalette", "cmd+p"),
         ])
         let event = try makeCmdEvent(key: "x")
         var dispatchCount = 0
@@ -255,7 +261,7 @@ struct UserKeybindingDispatcherTests {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
         defer { try? FileManager.default.removeItem(at: directory) }
         let file = directory.appendingPathComponent("keybindings.json")
-        try Data(#"[{"command": "quickOpen", "key": "cmd+p"}]"#.utf8).write(to: file)
+        try Data(#"[{"command": "commandPalette", "key": "cmd+p"}]"#.utf8).write(to: file)
 
         let registry = UserKeybindingRegistry()
         #expect((await registry.load(from: file)).outcome == .loaded)
@@ -267,7 +273,7 @@ struct UserKeybindingDispatcherTests {
         #expect(registry.count == 1)
 
         let event = try makeCmdEvent(key: "p")
-        #expect(UserKeybindingDispatcher.command(for: event, in: registry) == .quickOpen)
+        #expect(UserKeybindingDispatcher.command(for: event, in: registry) == .commandPalette)
     }
 
     // MARK: - Helpers

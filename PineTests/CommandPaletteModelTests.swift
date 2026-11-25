@@ -63,12 +63,12 @@ struct CommandPaletteModelTests {
         _ = registry.apply(
             .loaded([
                 ResolvedUserKeybinding(
-                    command: .quickOpen,
+                    command: .commandPalette,
                     chord: try #require(UserKeybindingRegistry.parse("cmd+k"))
                 ),
                 ResolvedUserKeybinding(
                     command: .toggleComment,
-                    chord: try #require(UserKeybindingRegistry.parse("cmd+f"))
+                    chord: try #require(UserKeybindingRegistry.parse("cmd+s"))
                 ),
             ]),
             from: URL(fileURLWithPath: "/tmp/keybindings.json")
@@ -79,16 +79,16 @@ struct CommandPaletteModelTests {
             keybindings: registry,
             context: fullContext
         )
-        let quickOpen = try #require(item(for: .quickOpen, in: items))
-        let find = try #require(item(for: .findInFile, in: items))
+        let commandPalette = try #require(item(for: .commandPalette, in: items))
+        let save = try #require(item(for: .save, in: items))
         let toggleComment = try #require(item(for: .toggleComment, in: items))
 
-        #expect(quickOpen.shortcut.state == .userOverride)
-        #expect(quickOpen.shortcut.displayText == "⌘K")
+        #expect(commandPalette.shortcut.state == .userOverride)
+        #expect(commandPalette.shortcut.displayText == "⌘K")
         #expect(toggleComment.shortcut.state == .userOverride)
-        #expect(toggleComment.shortcut.displayText == "⌘F")
-        #expect(find.shortcut.state == .shadowed)
-        #expect(find.shortcut.displayText == "⌘F")
+        #expect(toggleComment.shortcut.displayText == "⌘S")
+        #expect(save.shortcut.state == .shadowed)
+        #expect(save.shortcut.displayText == "⌘S")
     }
 
     @Test("Context disables commands and tasks without hiding them")
@@ -127,9 +127,9 @@ struct CommandPaletteModelTests {
             try #require(item(for: .save, in: items)).unavailabilityReason
                 == Strings.commandPaletteRequiresActiveFile
         )
-        #expect(try #require(item(for: .quickOpen, in: items)).isEnabled)
+        #expect(try #require(item(for: .commandPalette, in: items)).isEnabled)
         #expect(
-            try #require(item(for: .quickOpen, in: items))
+            try #require(item(for: .commandPalette, in: items))
                 .unavailabilityReason == nil
         )
         #expect(
@@ -144,72 +144,6 @@ struct CommandPaletteModelTests {
         #expect(try #require(item(forTask: "project-task", in: items)).isEnabled)
     }
 
-    @Test("Find Next/Previous follow the window's find-step target, not just an editor tab")
-    func findStepCommandsFollowTerminalSearchAvailability() throws {
-        let registry = UserKeybindingRegistry()
-        // Terminal-only window (no editor tab) whose search bar the window
-        // routing policy can address — the #1581 scenario.
-        let terminalOnly = CommandPaletteContext(
-            hasProject: true,
-            hasActiveFile: false,
-            isGitRepository: true,
-            hasTerminal: true,
-            hasFindStepTarget: true
-        )
-        var items = CommandPaletteCatalog.makeItems(
-            tasks: [],
-            keybindings: registry,
-            context: terminalOnly
-        )
-        #expect(try #require(item(for: .findNext, in: items)).isEnabled)
-        #expect(try #require(item(for: .findPrevious, in: items)).isEnabled)
-        #expect(
-            try #require(item(for: .findNext, in: items)).unavailabilityReason
-                == nil
-        )
-        // Commands that genuinely need the editor keep their stricter gate.
-        #expect(try #require(item(for: .findInFile, in: items)).isEnabled == false)
-        #expect(try #require(item(for: .goToLine, in: items)).isEnabled == false)
-
-        // Same window once nothing is addressable: disabled and explained.
-        items = CommandPaletteCatalog.makeItems(
-            tasks: [],
-            keybindings: registry,
-            context: CommandPaletteContext(
-                hasProject: true,
-                hasActiveFile: false,
-                isGitRepository: true,
-                hasTerminal: true,
-                hasFindStepTarget: false
-            )
-        )
-        #expect(try #require(item(for: .findNext, in: items)).isEnabled == false)
-        #expect(
-            try #require(item(for: .findNext, in: items)).unavailabilityReason
-                == Strings.commandPaletteRequiresFindStepTarget
-        )
-        #expect(
-            try #require(item(for: .findPrevious, in: items))
-                .unavailabilityReason
-                == Strings.commandPaletteRequiresFindStepTarget
-        )
-
-        // An editor tab alone keeps the pre-#1581 behavior: both enabled.
-        items = CommandPaletteCatalog.makeItems(
-            tasks: [],
-            keybindings: registry,
-            context: CommandPaletteContext(
-                hasProject: true,
-                hasActiveFile: true,
-                isGitRepository: true,
-                hasTerminal: false,
-                hasFindStepTarget: true
-            )
-        )
-        #expect(try #require(item(for: .findNext, in: items)).isEnabled)
-        #expect(try #require(item(for: .findPrevious, in: items)).isEnabled)
-    }
-
     @Test("Every unavailable context has a localized explanation")
     func contextualAvailabilityReasons() throws {
         let items = CommandPaletteCatalog.makeItems(
@@ -219,7 +153,7 @@ struct CommandPaletteModelTests {
         )
 
         #expect(
-            try #require(item(for: .quickOpen, in: items))
+            try #require(item(for: .commandPalette, in: items))
                 .unavailabilityReason
                 == Strings.commandPaletteRequiresProject
         )
@@ -236,11 +170,6 @@ struct CommandPaletteModelTests {
             try #require(item(for: .sendToTerminal, in: items))
                 .unavailabilityReason
                 == Strings.commandPaletteNeedsFileAndTerminal
-        )
-        #expect(
-            try #require(item(for: .findNext, in: items))
-                .unavailabilityReason
-                == Strings.commandPaletteRequiresFindStepTarget
         )
     }
 
@@ -261,7 +190,7 @@ struct CommandPaletteModelTests {
 
         let byCommandID = CommandPaletteSearch.filter(
             items,
-            query: "qopen"
+            query: "cpalette"
         )
         let byTaskID = CommandPaletteSearch.filter(
             items,
@@ -272,7 +201,7 @@ struct CommandPaletteModelTests {
             query: "definitely-not-present"
         )
 
-        #expect(byCommandID.first?.id == .builtIn(.quickOpen))
+        #expect(byCommandID.first?.id == .builtIn(.commandPalette))
         #expect(byTaskID.first?.id == .task("terraform-validate"))
         #expect(noMatch.isEmpty)
     }

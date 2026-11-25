@@ -130,26 +130,6 @@ struct NotificationObserverScopingTests {
                 "Toggle comment must not fire without a key window")
     }
 
-    @Test("Coordinator find actions only fire for key window")
-    func coordinatorFindActionsKeyWindowGuard() {
-        let (scrollView, _) = makeTextStack(text: "hello world")
-        let editorView = CodeEditorView(
-            text: .constant("hello world"),
-            contentVersion: 0,
-            language: "txt",
-            fileName: "test.txt",
-        )
-        let coordinator = CodeEditorView.Coordinator(parent: editorView)
-        coordinator.scrollView = scrollView
-
-        // These should all be no-ops without a key window — no crash
-        coordinator.handleFindInFile()
-        coordinator.handleFindAndReplace()
-        coordinator.handleFindNext()
-        coordinator.handleFindPrevious()
-        coordinator.handleUseSelectionForFind()
-    }
-
     @Test("Coordinator accepts only its owning project's targeted commands")
     func coordinatorTargetedCommandGuard() {
         let owner = ProjectManager()
@@ -176,18 +156,18 @@ struct NotificationObserverScopingTests {
         let inactiveCoordinator = CodeEditorView.Coordinator(
             parent: inactiveEditorView
         )
-        let targeted = Notification(name: .findInFile, object: owner)
+        let targeted = Notification(name: .toggleComment, object: owner)
 
         #expect(activeCoordinator.shouldHandleCommand(
-            Notification(name: .findInFile)
+            Notification(name: .toggleComment)
         ))
         #expect(activeCoordinator.shouldHandleCommand(targeted))
         #expect(!inactiveCoordinator.shouldHandleCommand(targeted))
         #expect(!activeCoordinator.shouldHandleCommand(
-            Notification(name: .findInFile, object: other)
+            Notification(name: .toggleComment, object: other)
         ))
         #expect(!activeCoordinator.shouldHandleCommand(
-            Notification(name: .findInFile, object: NSObject())
+            Notification(name: .toggleComment, object: NSObject())
         ))
     }
 

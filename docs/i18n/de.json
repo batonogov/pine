@@ -69,7 +69,7 @@
   "features.01title": "Agentenarbeit in Echtzeit sehen.",
   "features.01desc": "Der Agenten-Posteingang bewahrt Aufgabenkontext über Projekte hinweg und führt zu laufenden Sitzungen. Aktuelle Anbindungen, die nur Prozesse beobachten, senden keine Agenten-Mitteilungen, auch nicht bei Prozessende. Mitteilungen über Warten auf Eingabe, Scheitern oder Abschluss erfordern verifizierte Lebenszyklusereignisse von einer unterstützten strukturierten Anbindung; eine solche Anbindung ist in der App noch nicht aktiviert. Veröffentlichte Programmversionen können sich anders verhalten.",
   "features.02title": "Native Geschwindigkeit.",
-  "features.02desc": "Mitgelieferte Sprachgrammatiken, Symbole und Projektsuche.",
+  "features.02desc": "Mitgelieferte Sprachgrammatiken.",
   "features.03title": "Ein Arbeitsbereich für mehrere Projekte.",
   "features.03desc": "Behalten Sie verwandte Projekte in einem Fenster und wechseln Sie über die Symbolleiste.",
   "features.04title": "Ein Terminal für echte Workflows.",

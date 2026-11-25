@@ -50,12 +50,9 @@ struct PineAppMenuCommandsTests {
         let names: [Notification.Name] = [
             .newFile, .openFile, .openRecentProject, .showAgentInbox,
             .clearRecentProjects, .openFolder,
-            .closeTab, .closeWindow, .goToLine,
-            .findInFile, .findAndReplace, .findNext, .findPrevious,
-            .useSelectionForFind, .toggleWordWrap, .toggleComment,
-            .showProjectSearch, .navigateChange,
-            .findInTerminal, .showQuickOpen, .showSymbolNavigator,
-            .symbolNavigate, .sendToTerminal, .sendTextToTerminal,
+            .closeTab, .closeWindow, .toggleWordWrap, .toggleComment,
+            .navigateChange, .findInTerminal, .sendToTerminal,
+            .sendTextToTerminal,
             .revealInSidebar, .inlineDiffAction, .tabReloadedFromDisk,
             .refreshLineDiffs, .fileRenamed, .fileDeleted
         ]

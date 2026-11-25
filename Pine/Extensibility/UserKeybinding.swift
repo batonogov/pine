@@ -53,21 +53,12 @@ nonisolated enum UserCommand: String, Sendable, CaseIterable {
     case toggleFormatOnSave
     case toggleSmartListContinuation
     case toggleComment
-    case findInFile
-    case findAndReplace
-    case findNext
-    case findPrevious
-    case useSelectionForFind
-    case findInProject
-    case goToLine
     case nextChange
     case previousChange
     case acceptChange
     case revertChange
     case acceptAllChanges
     case revertAllChanges
-    case symbolNavigator
-    case quickOpen
     case commandPalette
     case openFolder
     case increaseFontSize
@@ -111,19 +102,10 @@ nonisolated enum UserCommand: String, Sendable, CaseIterable {
         case .toggleFormatOnSave: "user.toggleFormatOnSave"
         case .toggleSmartListContinuation: "user.toggleSmartListContinuation"
         case .toggleComment: "toggleComment"
-        case .findInFile: "findInFile"
-        case .findAndReplace: "findAndReplace"
-        case .findNext: "findNext"
-        case .findPrevious: "findPrevious"
-        case .useSelectionForFind: "useSelectionForFind"
-        case .findInProject: "showProjectSearch"
-        case .goToLine: "goToLine"
         case .nextChange, .previousChange: "navigateChange"
         case .acceptChange, .revertChange,
              .acceptAllChanges, .revertAllChanges:
             "inlineDiffAction"
-        case .symbolNavigator: "showSymbolNavigator"
-        case .quickOpen: "showQuickOpen"
         case .commandPalette: "showCommandPalette"
         case .openFolder: "openFolder"
         case .increaseFontSize: "user.increaseFontSize"
@@ -240,6 +222,9 @@ final class UserKeybindingRegistry {
         "showProblems", "nextDiagnostic", "previousDiagnostic",
         "foldCode", "unfoldCode", "foldAll", "unfoldAll",
         "showBranchSwitcher", "toggleMinimap", "toggleBlame",
+        "findInFile", "findAndReplace", "findNext", "findPrevious",
+        "useSelectionForFind", "findInProject", "goToLine",
+        "symbolNavigator", "quickOpen",
     ]
 
     /// Parsed entries in declaration order.

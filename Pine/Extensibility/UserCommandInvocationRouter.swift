@@ -64,11 +64,8 @@ enum UserCommandInvocationRouter {
             let settings = EditorSettings.shared
             settings.smartListContinuation.toggle()
 
-        case .toggleComment, .findInFile, .findAndReplace,
-             .findNext, .findPrevious, .useSelectionForFind,
-             .findInProject,
-             .toggleWordWrap, .showAgentActivity, .showAgentHistory,
-             .findInTerminal, .sendToTerminal:
+        case .toggleComment, .toggleWordWrap, .showAgentActivity,
+             .showAgentHistory, .findInTerminal, .sendToTerminal:
             notificationCenter.post(
                 name: Notification.Name(command.notificationKey),
                 object: projectManager
@@ -116,7 +113,7 @@ enum UserCommandInvocationRouter {
                 userInfo: ["direction": direction.rawValue]
             )
 
-        case .goToLine, .symbolNavigator, .quickOpen, .commandPalette:
+        case .commandPalette:
             notificationCenter.post(
                 name: Notification.Name(command.notificationKey),
                 object: projectManager
@@ -247,11 +244,7 @@ enum UserCommandInvocationRouter {
             isGitRepository: projectManager.workspace.gitProvider.isGitRepository,
             hasTerminal: projectManager.hasTerminalPanes,
             canLaunchAgent: windowAvailability.canLaunchAgent,
-            canSwitchProjectInWindow: windowAvailability.canSwitchProject,
-            // The same `FindStepTargetPolicy` verdict the Find menu items
-            // gate on (#1551): the palette and the menu must agree on
-            // whether ⌘G / ⇧⌘G has an addressee in the window (#1581).
-            hasFindStepTarget: projectManager.hasFindStepTarget
+            canSwitchProjectInWindow: windowAvailability.canSwitchProject
         )
     }
 

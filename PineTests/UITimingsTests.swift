@@ -57,10 +57,6 @@ struct UITimingsTests {
         #expect(UITimings.Debounce.fileWatcher == 0.15)
     }
 
-    @Test func debounceProjectSearchIsExactly300ms() {
-        #expect(UITimings.Debounce.projectSearch == 0.3)
-    }
-
     @Test func debounceConfigValidationIsExactly300ms() {
         #expect(UITimings.Debounce.configValidation == 0.3)
     }
@@ -72,13 +68,6 @@ struct UITimingsTests {
     /// tighter loop to feel native.
     @Test func scrollDebounceIsTighterThanEditDebounce() {
         #expect(UITimings.Debounce.scroll < UITimings.Debounce.edit)
-    }
-
-    /// Project-wide search fires far less often than per-tab edit
-    /// highlighting — it walks the entire file tree and reads every
-    /// matching file. Must outpace `edit` by a real margin.
-    @Test func projectSearchDebounceIsLongerThanEditDebounce() {
-        #expect(UITimings.Debounce.projectSearch > UITimings.Debounce.edit)
     }
 
     /// Delay tier ordering: short < standard < long. If anyone "tunes"
@@ -102,7 +91,6 @@ struct UITimingsTests {
             UITimings.Debounce.scroll,
             UITimings.Debounce.edit,
             UITimings.Debounce.fileWatcher,
-            UITimings.Debounce.projectSearch,
             UITimings.Debounce.configValidation,
         ]
         for value in everything {
@@ -122,7 +110,6 @@ struct UITimingsTests {
             UITimings.Debounce.scroll,
             UITimings.Debounce.edit,
             UITimings.Debounce.fileWatcher,
-            UITimings.Debounce.projectSearch,
             UITimings.Debounce.configValidation,
         ]
         for value in everything {
@@ -136,8 +123,8 @@ struct UITimingsTests {
     /// `.seconds(UITimings.…)` round-trips to the expected millisecond
     /// quantity — guards against a future Swift change to `Duration`'s
     /// conversion of `Double` seconds.
-    @Test func projectSearchDurationRoundsTripToMilliseconds() {
-        let asSeconds: Duration = .seconds(UITimings.Debounce.projectSearch)
+    @Test func configValidationDurationRoundsTripToMilliseconds() {
+        let asSeconds: Duration = .seconds(UITimings.Debounce.configValidation)
         let asMilliseconds: Duration = .milliseconds(300)
         #expect(asSeconds == asMilliseconds)
     }

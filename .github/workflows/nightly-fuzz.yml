@@ -66,10 +66,7 @@ jobs:
             -only-testing:PineTests/FuzzGitDiffParserTests \
             -only-testing:PineTests/FuzzGitStatusParserTests \
             -only-testing:PineTests/FuzzSyntaxHighlighterTests \
-            -only-testing:PineTests/FuzzQuickOpenProviderTests \
-            -only-testing:PineTests/FuzzSymbolParserTests \
             -only-testing:PineTests/FuzzConfigValidatorTests \
-            -only-testing:PineTests/FuzzGoToLineParserTests \
             -only-testing:PineTests/FuzzAgentBoundaryTests \
             -resultBundlePath FuzzResults.xcresult \
             CODE_SIGN_IDENTITY=- \

@@ -59,14 +59,6 @@ struct PineAppMenuCommands: Commands {
     private var nativeState: NativeMenuCommandState {
         NativeMenuCommandState(projectManager: focusedProject)
     }
-    /// Whether ⌘G / ⇧⌘G has any addressee in the focused window (#1551):
-    /// the editor's native find bar (active editor tab — the pre-#1551 gate)
-    /// or a terminal search bar the window routing policy can address, which
-    /// is what keeps the items alive in a terminal-only window.
-    private var canStepFind: Bool {
-        guard let project = focusedProject else { return false }
-        return project.hasFindStepTarget
-    }
     /// What the focused window can do with its projects and agents (#1525).
     private var windowAvailability: ProjectWindowCommandAvailability {
         ProjectWindowCommandAvailability(
@@ -221,22 +213,9 @@ struct PineAppMenuCommands: Commands {
             )
         }
 
-        // Quick Open and navigation remain project-specific additions after
-        // the conventional native open group.
+        // Command Palette remains a project-specific addition after the
+        // conventional native open group.
         CommandGroup(after: .newItem) {
-
-            Button {
-                NotificationCenter.default.post(
-                    name: .showQuickOpen,
-                    object: focusedProject
-                )
-            } label: {
-                Label(Strings.menuQuickOpen, systemImage: MenuIcons.quickOpen)
-            }
-            .effectiveKeyboardShortcut(
-                keybindings.effectiveChord(for: .quickOpen)
-            )
-            .disabled(focusedProject?.workspace.rootURL == nil)
 
             Button {
                 NotificationCenter.default.post(
@@ -253,19 +232,6 @@ struct PineAppMenuCommands: Commands {
                 keybindings.effectiveChord(for: .commandPalette)
             )
             .disabled(focusedProject?.workspace.rootURL == nil)
-
-            Button {
-                NotificationCenter.default.post(
-                    name: .showSymbolNavigator,
-                    object: focusedProject
-                )
-            } label: {
-                Label(Strings.menuSymbolNavigator, systemImage: MenuIcons.symbolNavigator)
-            }
-            .effectiveKeyboardShortcut(
-                keybindings.effectiveChord(for: .symbolNavigator)
-            )
-            .disabled(nativeState.activeEditorTabID == nil)
 
             Divider()
 
@@ -634,8 +600,7 @@ struct PineAppMenuCommands: Commands {
         }
 
         // MARK: - Edit menu
-        // Toggle Comment, Find & Replace, Find in Project, Go to Line,
-        // inline diff navigation/accept/revert
+        // Toggle Comment, inline diff navigation/accept/revert
         CommandGroup(after: .pasteboard) {
             Button {
                 NotificationCenter.default.post(name: .toggleComment, object: nil)
@@ -645,84 +610,6 @@ struct PineAppMenuCommands: Commands {
             .effectiveKeyboardShortcut(
                 keybindings.effectiveChord(for: .toggleComment)
             )
-
-            Divider()
-
-            Button {
-                NotificationCenter.default.post(name: .findInFile, object: nil)
-            } label: {
-                Label(Strings.menuFind, systemImage: MenuIcons.find)
-            }
-            .effectiveKeyboardShortcut(
-                keybindings.effectiveChord(for: .findInFile)
-            )
-            .disabled(focusedProject?.activeTabManager.activeTab == nil)
-
-            Button {
-                NotificationCenter.default.post(name: .findAndReplace, object: nil)
-            } label: {
-                Label(Strings.menuFindAndReplace, systemImage: MenuIcons.findAndReplace)
-            }
-            .effectiveKeyboardShortcut(
-                keybindings.effectiveChord(for: .findAndReplace)
-            )
-            .disabled(focusedProject?.activeTabManager.activeTab == nil)
-
-            Button {
-                NotificationCenter.default.post(name: .findNext, object: nil)
-            } label: {
-                Label(Strings.menuFindNext, systemImage: MenuIcons.nextChange)
-            }
-            .effectiveKeyboardShortcut(
-                keybindings.effectiveChord(for: .findNext)
-            )
-            .disabled(!canStepFind)
-
-            Button {
-                NotificationCenter.default.post(name: .findPrevious, object: nil)
-            } label: {
-                Label(Strings.menuFindPrevious, systemImage: MenuIcons.previousChange)
-            }
-            .effectiveKeyboardShortcut(
-                keybindings.effectiveChord(for: .findPrevious)
-            )
-            .disabled(!canStepFind)
-
-            Button {
-                NotificationCenter.default.post(name: .useSelectionForFind, object: nil)
-            } label: {
-                Label(Strings.menuUseSelectionForFind, systemImage: MenuIcons.find)
-            }
-            .effectiveKeyboardShortcut(
-                keybindings.effectiveChord(for: .useSelectionForFind)
-            )
-            .disabled(focusedProject?.activeTabManager.activeTab == nil)
-
-            Divider()
-
-            Button {
-                NotificationCenter.default.post(name: .showProjectSearch, object: nil)
-            } label: {
-                Label(Strings.menuFindInProject, systemImage: MenuIcons.findInProject)
-            }
-            .effectiveKeyboardShortcut(
-                keybindings.effectiveChord(for: .findInProject)
-            )
-
-            Divider()
-
-            Button {
-                NotificationCenter.default.post(
-                    name: .goToLine,
-                    object: focusedProject
-                )
-            } label: {
-                Label(Strings.menuGoToLine, systemImage: MenuIcons.goToLine)
-            }
-            .effectiveKeyboardShortcut(
-                keybindings.effectiveChord(for: .goToLine)
-            )
-            .disabled(focusedProject?.activeTabManager.activeTab == nil)
 
             Divider()
 
@@ -934,8 +821,8 @@ struct PineAppMenuCommands: Commands {
         // not make the whole app target fail to compile on macOS 26.
         PineCommandCollection {
         // MARK: - Terminal menu
-        // New Tab (Cmd+T), Find in Terminal (Cmd+F when terminal focused),
-        // Quick Terminal (global drop-down, shows current shortcut).
+        // New Tab (Cmd+T), terminal-local find, Quick Terminal (global
+        // drop-down, shows current shortcut).
         CommandMenu(Strings.menuTerminal) {
             // Quick Terminal — global drop-down panel toggled by the
             // system-wide hotkey. The menu item mirrors the hotkey so the

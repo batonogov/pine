@@ -46,15 +46,4 @@ nonisolated enum LayoutMetrics {
     /// Editor / terminal tab bar height.
     static let tabBarHeight: CGFloat = 30
 
-    // MARK: - Search results
-
-    /// Vertical padding for individual match rows.
-    static let searchResultRowVerticalPadding: CGFloat = 2
-
-    /// Vertical padding for file group headers.
-    static let searchResultHeaderVerticalPadding: CGFloat = 4
-
-    /// Horizontal padding for search result rows and headers.
-    static let searchResultHorizontalPadding: CGFloat = 8
-
 }

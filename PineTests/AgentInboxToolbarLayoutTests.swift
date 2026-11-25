@@ -74,10 +74,31 @@ struct AgentInboxToolbarLayoutTests {
         #expect(Layout.correction(in: remainder) == nil)
     }
 
-    @Test("a toolbar without a search field is left alone")
-    func noSearchFieldNoCorrection() {
-        #expect(Layout.correction(in: [contentItem(), contentItem()]) == nil)
+    // Pine 3.0 R4 removes the search field: without its anchor the rule pins
+    // the last content item to the toolbar's own trailing edge.
+    @Test("without a search field the last content item is pinned")
+    func noSearchFieldPinsTrailingEdge() {
+        #expect(
+            Layout.correction(in: [contentItem(), contentItem()])
+                == .insertFlexibleSpace(at: 1)
+        )
+        #expect(
+            Layout.correction(in: [contentItem()]) == .insertFlexibleSpace(at: 0)
+        )
         #expect(Layout.correction(in: []) == nil)
+        #expect(Layout.correction(in: [flex()]) == nil)
+        #expect(Layout.correction(in: [flex(), contentItem()]) == nil)
+    }
+
+    @Test("a stray trailing flexible space is removed without a search field")
+    func noSearchFieldStrayTrailingFlex() {
+        // [pill, button, flex] — a declared spacer's trailing flex.
+        let items = [contentItem(), contentItem(), flex()]
+        #expect(Layout.correction(in: items) == .removeFlexibleSpace(at: 2))
+        #expect(Layout.correction(in: [items[0], items[1]])
+            == .insertFlexibleSpace(at: 1)
+        )
+        #expect(Layout.correction(in: [items[0], flex(), items[1]]) == nil)
     }
 
     /// The pin loop against a real NSToolbar — duplicate `.flexibleSpace`
@@ -131,6 +152,28 @@ struct AgentInboxToolbarLayoutTests {
         // Idempotent: pinning again changes nothing.
         Layout.pin(toolbar: toolbar)
         #expect(toolbar.items.map(\.itemIdentifier) == identifiers)
+
+        // R4's toolbar has no search field: the pin falls back to the
+        // toolbar's own trailing edge.
+        let r4Window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 400, height: 300),
+            styleMask: [.titled, .closable],
+            backing: .buffered,
+            defer: true
+        )
+        let r4Toolbar = NSToolbar(identifier: "testR4")
+        r4Toolbar.delegate = delegate
+        r4Window.toolbar = r4Toolbar
+        r4Toolbar.insertItem(withItemIdentifier: .init("pill"), at: 0)
+        r4Toolbar.insertItem(withItemIdentifier: .init("inbox"), at: 1)
+
+        Layout.pin(toolbar: r4Toolbar)
+
+        let r4Identifiers = r4Toolbar.items.map(\.itemIdentifier)
+        #expect(r4Identifiers == [.init("pill"), .flexibleSpace, .init("inbox")])
+        Layout.pin(toolbar: r4Toolbar)
+        #expect(r4Toolbar.items.map(\.itemIdentifier) == r4Identifiers)
         withExtendedLifetime(delegate) {}
+        withExtendedLifetime(r4Window) {}
     }
 }

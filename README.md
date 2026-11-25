@@ -79,9 +79,6 @@ Russian-language browser demo, not the downloadable app.
 - **Built-in terminal** — Full VT100/xterm emulator via [SwiftTerm](https://github.com/migueldeicaza/SwiftTerm) (upstream, with Pine's terminal-rendering patches merged in). Multiple tabs, themes, TUI apps, clickable file and OSC 8 links, send-to-terminal, pane maximize, a global quick-terminal hotkey, and display recovery that preserves the running shell
 - **Lightweight extensibility** — User grammars, tasks, and keybindings without an extension marketplace
 - **Git integration** — File status in sidebar, diff markers in gutter, and branch identity in task environment details
-- **Symbol navigation** — Jump to functions and classes with Cmd+R
-- **Find & replace** — In-file and project-wide search with .gitignore support
-- **Quick Open** — Fuzzy file search with Cmd+P
 - **Markdown preview** — Source, rendered, or side-by-side via [swift-markdown](https://github.com/swiftlang/swift-markdown)
 - **Status bar** — Cursor position, line endings, indentation style, file size
 - **Bracket matching** — Highlights matching pairs while skipping strings and comments
@@ -146,19 +143,12 @@ release disk image without publishing a release.
 
 | Shortcut | Action |
 | --- | --- |
-| `Cmd+P` | Quick Open |
 | `Cmd+Shift+O` | Open folder |
 | `Cmd+S` | Save |
 | `Cmd+Option+S` | Save All |
 | `Cmd+Shift+S` | Save As |
 | `Cmd+Shift+D` | Duplicate file |
 | `Cmd+W` | Close tab |
-| `Cmd+F` | Find |
-| `Cmd+Option+F` | Find & Replace |
-| `Cmd+G` / `Cmd+Shift+G` | Find Next / Previous |
-| `Cmd+E` | Use Selection for Find |
-| `Cmd+L` | Go to Line |
-| `Cmd+R` | Go to Symbol |
 | `Cmd+/` | Toggle comment |
 | `Cmd+Shift+A` | New agent in a worktree |
 | `Cmd+Shift+P` | Markdown preview |
@@ -170,7 +160,7 @@ release disk image without publishing a release.
 
 ## Architecture
 
-MVVM with SwiftUI views backed by AppKit via `NSViewRepresentable`. The editor core uses the native NSTextStorage/NSLayoutManager/NSTextContainer stack. Syntax highlighting runs asynchronously on a background queue with generation tokens to prevent stale results. Git operations run in parallel via GCD. Project-wide search uses Swift concurrency with sliding-window parallelism.
+MVVM with SwiftUI views backed by AppKit via `NSViewRepresentable`. The editor core uses the native NSTextStorage/NSLayoutManager/NSTextContainer stack. Syntax highlighting runs asynchronously on a background queue with generation tokens to prevent stale results. Git operations run in parallel via GCD.
 
 ## Contributing
 

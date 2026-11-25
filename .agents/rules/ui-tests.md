@@ -9,7 +9,7 @@ Every "known issue" below has already cost someone a debugging session.
 
 ## Targets and shards
 
-- UI test target: `PineUITests` (XCTest/XCUITest) — 40 test classes, base class `PineUITestCase`. CI runs 7 parallel shards (Terminal, Welcome & Session, Navigation, Editor Chrome, Files & Save, Search & Panes, Security & Layout) on each of two OS axes (`xcode-27` primary, `macos-26` compatibility)
+- UI test target: `PineUITests` (XCTest/XCUITest) — 40 test classes, base class `PineUITestCase`. CI runs 7 parallel shards (Terminal, Welcome & Session, Navigation, Editor Chrome, Files & Save, Panes & Files, Security & Layout) on each of two OS axes (`xcode-27` primary, `macos-26` compatibility)
 
 ## Launch arguments and environment
 
@@ -24,7 +24,7 @@ Every "known issue" below has already cost someone a debugging session.
   `--ui-test-*` arguments and `PINE_UI_TEST_*` environment keys, and the
   `PINE_PERSISTENCE_FAULT`, `PINE_PERSISTENCE_PAUSE`, and
   `PINE_PERSISTENCE_CHECKPOINT_DIRECTORY` fault-injection keys. Marker presence
-  is rejected even with empty or malformed values. Normal project/search
+  is rejected even with empty or malformed values. Normal project
   environment variables, disable flags, locale, and `ApplePersistenceIgnoreState`
   remain compatible with the release-smoke launch contract.
 - `PineUITestCase` assigns one UUID `PINE_TEST_STATE_NAMESPACE` for each test,

@@ -391,12 +391,6 @@ final class PaneManager {
         terminalPaneID.map { [$0] } ?? []
     }
 
-    var visibleTerminalSearchPaneIDs: [PaneID] {
-        terminalPaneIDs.filter {
-            terminalStates[$0]?.isSearchVisible == true
-        }
-    }
-
     var allTerminalTabs: [TerminalTab] {
         terminalStates.values.flatMap(\.terminalTabs)
     }

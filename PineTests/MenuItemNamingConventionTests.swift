@@ -6,7 +6,7 @@
 //  Mac user meets the names: in the menu. Two conventions are guarded:
 //
 //  - a command that needs further input is titled with an ellipsis, like its
-//    siblings "Quick Open…", "Find…", and "Save As…";
+//    siblings "Find in Terminal…" and "Save As…";
 //  - a `Toggle(isOn:)` item renders a checkmark, so its title names the
 //    state, not the verb.
 //
@@ -102,9 +102,6 @@ struct MenuItemNamingConventionTests {
     @Test("commands that need further input end with an ellipsis")
     func inputCommandsCarryAnEllipsis() throws {
         let keys = [
-            "menu.goToLine",
-            "menu.symbolNavigator",
-            "menu.findInProject",
             "menu.findInTerminal",
         ]
         for key in keys {
@@ -119,18 +116,6 @@ struct MenuItemNamingConventionTests {
                 )
             }
         }
-    }
-
-    /// The renamed Symbol Navigator also aligns with the help book, which
-    /// has always called the command "Go to Symbol".
-    @Test("the symbol command is named Go to Symbol in English")
-    func symbolCommandMatchesHelpBookNaming() throws {
-        #expect(
-            try Self.value("menu.symbolNavigator", "en") == "Go to Symbol…",
-            """
-            The help book lists "Go to Symbol"; the menu must agree (#1564).
-            """
-        )
     }
 
     // MARK: - Checkmark items

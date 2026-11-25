@@ -42,20 +42,6 @@ nonisolated extension UserCommand {
             String(localized: "menu.smartListContinuation")
         case .toggleComment:
             String(localized: "menu.toggleComment")
-        case .findInFile:
-            String(localized: "menu.find")
-        case .findAndReplace:
-            String(localized: "menu.findAndReplace")
-        case .findNext:
-            String(localized: "menu.findNext")
-        case .findPrevious:
-            String(localized: "menu.findPrevious")
-        case .useSelectionForFind:
-            String(localized: "menu.useSelectionForFind")
-        case .findInProject:
-            String(localized: "menu.findInProject")
-        case .goToLine:
-            String(localized: "menu.goToLine")
         case .nextChange:
             String(localized: "menu.nextChange")
         case .previousChange:
@@ -68,10 +54,6 @@ nonisolated extension UserCommand {
             String(localized: "menu.acceptAllChanges")
         case .revertAllChanges:
             String(localized: "menu.revertAllChanges")
-        case .symbolNavigator:
-            String(localized: "menu.symbolNavigator")
-        case .quickOpen:
-            String(localized: "menu.quickOpen")
         case .commandPalette:
             String(localized: "menu.commandPalette")
         case .openFolder:
@@ -127,11 +109,9 @@ nonisolated extension UserCommand {
              .toggleFormatOnSave, .toggleSmartListContinuation,
              .newFile, .openFile, .clearRecentProjects,
              .closeTab, .closeWindow, .closeProject,
-             .openFolder, .quickOpen, .symbolNavigator, .commandPalette:
+             .openFolder, .commandPalette:
             .file
-        case .toggleComment, .findInFile, .findAndReplace,
-             .findNext, .findPrevious, .useSelectionForFind,
-             .findInProject, .goToLine, .nextChange, .previousChange,
+        case .toggleComment, .nextChange, .previousChange,
              .acceptChange, .revertChange, .acceptAllChanges,
              .revertAllChanges:
             .edit
@@ -181,16 +161,6 @@ nonisolated extension UserCommand {
             MenuIcons.smartListContinuation
         case .toggleComment:
             MenuIcons.toggleComment
-        case .findInFile, .findNext, .findPrevious:
-            MenuIcons.find
-        case .findAndReplace:
-            MenuIcons.findAndReplace
-        case .useSelectionForFind:
-            MenuIcons.find
-        case .findInProject:
-            MenuIcons.findInProject
-        case .goToLine:
-            MenuIcons.goToLine
         case .nextChange:
             MenuIcons.nextChange
         case .previousChange:
@@ -203,10 +173,6 @@ nonisolated extension UserCommand {
             MenuIcons.acceptAllChanges
         case .revertAllChanges:
             MenuIcons.revertAllChanges
-        case .symbolNavigator:
-            MenuIcons.symbolNavigator
-        case .quickOpen:
-            MenuIcons.quickOpen
         case .commandPalette:
             MenuIcons.commandPalette
         case .openFolder:
@@ -264,10 +230,10 @@ nonisolated extension UserCommand {
              .reloadUserConfiguration:
             .always
         case .newFile, .openFile,
-             .quickOpen, .commandPalette, .saveAll, .toggleAutoSave,
+             .commandPalette, .saveAll, .toggleAutoSave,
              .toggleFormatOnSave, .toggleSmartListContinuation,
              .closeTab, .closeWindow, .closeProject,
-             .findInProject, .toggleTerminal, .newTerminalTab,
+             .toggleTerminal, .newTerminalTab,
              .toggleWordWrap,
              .revealProjectInFinder, .showAgentActivity, .showAgentHistory:
             .project
@@ -279,15 +245,9 @@ nonisolated extension UserCommand {
             .terminal
         case .sendToTerminal:
             .activeFileAndTerminal
-        case .findNext, .findPrevious:
-            // #1581: ⌘G / ⇧⌘G also step a visible terminal search bar
-            // (#1551), so the palette must not grey these out in a
-            // terminal-only window.
-            .activeFileOrTerminalSearch
-        case .save, .saveAs, .duplicate, .toggleComment, .findInFile,
-             .findAndReplace, .useSelectionForFind, .goToLine, .nextChange,
+        case .save, .saveAs, .duplicate, .toggleComment, .nextChange,
              .previousChange, .acceptChange, .revertChange,
-             .acceptAllChanges, .revertAllChanges, .symbolNavigator,
+             .acceptAllChanges, .revertAllChanges,
              .togglePreview, .revealFileInFinder:
             .activeFile
         }
@@ -312,20 +272,6 @@ nonisolated extension UserCommand {
             value = nil
         case .toggleComment:
             value = "cmd+/"
-        case .findInFile:
-            value = "cmd+f"
-        case .findAndReplace:
-            value = "cmd+option+f"
-        case .findNext:
-            value = "cmd+g"
-        case .findPrevious:
-            value = "cmd+shift+g"
-        case .useSelectionForFind:
-            value = "cmd+e"
-        case .findInProject:
-            value = "cmd+shift+f"
-        case .goToLine:
-            value = "cmd+l"
         case .nextChange:
             value = "ctrl+option+down"
         case .previousChange:
@@ -336,10 +282,6 @@ nonisolated extension UserCommand {
             value = "ctrl+option+delete"
         case .acceptAllChanges, .revertAllChanges:
             value = nil
-        case .symbolNavigator:
-            value = "cmd+r"
-        case .quickOpen:
-            value = "cmd+p"
         case .commandPalette:
             value = "cmd+option+p"
         case .openFolder:

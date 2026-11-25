@@ -351,7 +351,6 @@ final class ScreenshotTests: PineUITestCase {
         - Syntax highlighting for 37 languages
         - Editor with an adjacent terminal
         - Git context and live agent activity
-        - Project search
 
         ## Getting Started
 

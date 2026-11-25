@@ -659,14 +659,6 @@ final class LifecycleResourceSoakTests: XCTestCase {
             workingDirectory: projectURL
         )
 
-        let searchResults = await ProjectSearchProvider.performSearch(
-            query: "pine-soak-token",
-            isCaseSensitive: false,
-            rootURL: projectURL
-        )
-        guard !searchResults.isEmpty else {
-            throw LifecycleSoakError.invariant("large-project search returned no fixture result")
-        }
         manager.paneManager.removePane(terminalPane)
 
         manager.suspendEditorServices()

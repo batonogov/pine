@@ -471,30 +471,10 @@ final class AccessibilityLocalizationSmokeTests: PineUITestCase {
 
         try verifyCommandOverlay(
             CommandOverlayExpectation(
-                menuKey: "menu.quickOpen",
-                overlayID: "quickOpenOverlay",
-                fieldID: "quickOpenSearchField",
-                placeholderKey: "quickOpen.placeholder"
-            ),
-            locale: locale,
-            catalog: catalog
-        )
-        try verifyCommandOverlay(
-            CommandOverlayExpectation(
                 menuKey: "menu.commandPalette",
                 overlayID: "commandPaletteOverlay",
                 fieldID: "commandPaletteSearchField",
                 placeholderKey: "commandPalette.placeholder"
-            ),
-            locale: locale,
-            catalog: catalog
-        )
-        try verifyCommandOverlay(
-            CommandOverlayExpectation(
-                menuKey: "menu.symbolNavigator",
-                overlayID: "symbolNavigatorOverlay",
-                fieldID: "symbolSearchField",
-                placeholderKey: "symbolNavigator.placeholder"
             ),
             locale: locale,
             catalog: catalog

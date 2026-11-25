@@ -305,20 +305,6 @@ final class EditorStressTests: XCTestCase {
         }
     }
 
-    func testThroughputSearchAndHighlight() {
-        let code = generateSwiftFile(lines: 5000)
-        let textStorage = NSTextStorage(string: code)
-        let font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
-
-        let file = tempDir.appendingPathComponent("throughput_search.swift")
-        try? code.write(to: file, atomically: true, encoding: .utf8)
-
-        measure {
-            highlighter.highlight(textStorage: textStorage, language: "stresstest", font: font)
-            _ = ProjectSearchProvider.searchFile(at: file, query: "value", isCaseSensitive: false)
-        }
-    }
-
     // MARK: - FileSystemWatcher Stress
 
     func testFileWatcherRapidStartStop() {

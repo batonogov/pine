@@ -21,8 +21,7 @@ import Testing
 /// `-default-test-execution-time-allowance`, so the alternative is Xcode's
 /// 600-second default.
 ///
-/// Three minutes, not one — see the same note on
-/// `CommandOverlayHostedAnnouncementTests`. The headroom is sized from a
+/// Three minutes, not one. The headroom is sized from a
 /// *local* measurement: on macOS 27.0 (26A5416b) / Xcode 27.0 (27A5237l) /
 /// macosx SDK 27.0 (26A5406c), a full parallel `PineTests` run records
 /// 59.7–61.8 seconds of elapsed time for tests that do no I/O whatsoever, so
@@ -49,7 +48,6 @@ struct CommandOverlaySelectionAnnouncementTests {
         "commandOverlay.announcement.manyResults",
         "commandOverlay.announcement.shortcut",
         "commandOverlay.announcement.unavailable",
-        "commandOverlay.announcement.symbol",
     ]
 
     @Test("Rapid result changes coalesce to the newest summary")
@@ -107,32 +105,16 @@ struct CommandOverlaySelectionAnnouncementTests {
         #expect(recorder.messages == ["Same row", "Stale row"])
     }
 
-    @Test("Quick Open includes useful path context without duplication")
-    func quickOpenProjection() {
-        #expect(
-            CommandOverlaySelectionAnnouncement.quickOpenRow(
-                fileName: "main.swift",
-                relativePath: "Sources/App/main.swift"
-            ) == "main.swift, Sources/App/main.swift"
-        )
-        #expect(
-            CommandOverlaySelectionAnnouncement.quickOpenRow(
-                fileName: "README.md",
-                relativePath: "README.md"
-            ) == "README.md"
-        )
-    }
-
     @Test("Command Palette includes shortcut and disabled reason")
     func commandPaletteProjection() {
         let item = CommandPaletteItem(
-            id: .builtIn(.quickOpen),
-            title: "Quick Open",
+            id: .builtIn(.commandPalette),
+            title: "Command Palette",
             subtitle: "File",
             searchTerms: [],
-            iconName: "doc.text.magnifyingglass",
+            iconName: "command",
             shortcut: CommandShortcutPresentation(
-                chord: ParsedKeyChord(modifiers: .command, key: "p"),
+                chord: ParsedKeyChord(modifiers: [.command, .option], key: "p"),
                 state: .builtIn
             ),
             isEnabled: false,
@@ -143,29 +125,9 @@ struct CommandOverlaySelectionAnnouncementTests {
             item: item,
             locale: Locale(identifier: "en")
         )
-        #expect(message.contains("Quick Open"))
-        #expect(message.contains("Shortcut: ⌘P"))
+        #expect(message.contains("Command Palette"))
+        #expect(message.contains("Shortcut: ⌥⌘P"))
         #expect(message.contains("Unavailable: Open a project first"))
-    }
-
-    @Test("Symbol projection localizes kind, name, and line")
-    func symbolProjection() {
-        #expect(
-            CommandOverlaySelectionAnnouncement.symbolRow(
-                kind: "Function",
-                name: "render()",
-                line: 42,
-                locale: Locale(identifier: "en")
-            ) == "Function, render(), line 42"
-        )
-        #expect(
-            CommandOverlaySelectionAnnouncement.symbolRow(
-                kind: "Функция",
-                name: "render()",
-                line: 42,
-                locale: Locale(identifier: "ru")
-            ) == "Функция, render(), строка 42"
-        )
     }
 
     @Test("Result summaries distinguish empty, singular, and multiple")

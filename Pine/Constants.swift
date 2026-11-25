@@ -35,11 +35,3 @@ nonisolated enum EditorConstants {
     /// Large enough to find nearby brackets, small enough to avoid scanning the entire file.
     static let bracketSearchRadius = 5000
 }
-
-// MARK: - Search Constants
-
-/// Constants used by project search (ProjectSearchProvider).
-nonisolated enum SearchConstants {
-    /// Maximum number of characters to keep from a matched line for display.
-    static let lineContentPrefixLimit = 200
-}

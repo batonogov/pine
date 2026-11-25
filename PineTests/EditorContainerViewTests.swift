@@ -7,7 +7,7 @@ import Testing
 import AppKit
 @testable import Pine
 
-/// Tests for EditorContainerView and EditorScrollView layout behavior.
+/// Tests for EditorContainerView layout behavior.
 @Suite("EditorContainerView Layout Tests")
 @MainActor
 struct EditorContainerViewTests {
@@ -15,7 +15,7 @@ struct EditorContainerViewTests {
     @Test func layoutScrollViewFillsFullWidth() {
         let container = EditorContainerView(frame: NSRect(x: 0, y: 0, width: 1000, height: 600))
 
-        let scrollView = EditorScrollView(frame: .zero)
+        let scrollView = NSScrollView(frame: .zero)
         container.addSubview(scrollView)
 
         container.layout()
@@ -28,7 +28,7 @@ struct EditorContainerViewTests {
     @Test func layoutPositionsLineNumberView() {
         let container = EditorContainerView(frame: NSRect(x: 0, y: 0, width: 1000, height: 600))
 
-        let scrollView = EditorScrollView(frame: .zero)
+        let scrollView = NSScrollView(frame: .zero)
         container.addSubview(scrollView)
 
         let textView = NSTextView(frame: .zero)
@@ -40,13 +40,5 @@ struct EditorContainerViewTests {
 
         #expect(lineNumberView.frame.width == 40)
         #expect(lineNumberView.frame.height == 600)
-    }
-
-    // MARK: - EditorScrollView
-
-    @Test func tileWithNoFindBarKeepsZeroOffset() {
-        let sv = EditorScrollView(frame: NSRect(x: 0, y: 0, width: 500, height: 500))
-        sv.tile()
-        #expect(sv.findBarOffset == 0)
     }
 }

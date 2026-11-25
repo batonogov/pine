@@ -13,7 +13,7 @@ Pine uses GCD for background work, bridged to async/await via `withCheckedContin
 
 **Threading rules:**
 - All UI updates on main thread (SwiftUI observation + `DispatchQueue.main.async`)
-- CPU-intensive work dispatched to background: syntax highlighting (`com.pine.syntax-highlight` serial queue), git operations (`DispatchQueue.global` with `DispatchGroup` for parallel branch/status/branches), project search (`TaskGroup` with sliding-window concurrency), file tree loading (`DispatchQueue.global`)
+- CPU-intensive work dispatched to background: syntax highlighting (`com.pine.syntax-highlight` serial queue), git operations (`DispatchQueue.global` with `DispatchGroup` for parallel branch/status/branches), file tree loading (`DispatchQueue.global`)
 - **Never block main thread** with file I/O, regex computation, or git process execution
 - Generation tokens (`HighlightGeneration`, `WorkspaceManager.loadGeneration`, `FileSystemWatcher.activeGeneration`) prevent stale async results from overwriting newer ones — always check generation before applying results
 - **Background work owns its autorelease pool** (#1509). A `DispatchQueue.global()` work item runs with no pool in place, so every autoreleased Foundation/AppKit temporary it produces is parked in libobjc's thread-wide fallback pool and stays alive until the worker thread is destroyed. `runOnBackground` (`Pine/Concurrency/BackgroundDispatch.swift`) wraps its body in `autoreleasepool` on both the success and the error path — prefer it over a raw `DispatchQueue.global().async`, and wrap the body yourself where a raw dispatch is unavoidable. Verify with `OBJC_DEBUG_MISSING_POOLS=YES`: "autoreleased with no pool in place" lines are the regression signal
@@ -21,7 +21,6 @@ Pine uses GCD for background work, bridged to async/await via `withCheckedContin
 **Debounce values** (centralised in `UITimings.Debounce` / `UITimings.Render`):
 - Syntax highlight on edit: 100ms (`Debounce.edit`)
 - Syntax highlight on scroll: 50ms (`Debounce.scroll`)
-- Project search: 300ms (`Debounce.projectSearch`)
 - File system watcher: 150ms (`Debounce.fileWatcher`, `WorkspaceManager.watcherDebounce`)
 - Config validator (yamllint / shellcheck / hadolint / terraform validate): 300ms (`Debounce.configValidation`, `ConfigValidator.debounceInterval`)
 
@@ -29,7 +28,6 @@ Pine uses GCD for background work, bridged to async/await via `withCheckedContin
 - Viewport-only highlighting: files > 50 000 characters (`viewportHighlightThreshold`; lowered from 100KB in #637)
 - Large file dialog (disable highlighting?): files > 1MB (`largeFileThreshold`)
 - Partial load (first 1MB only): files > 10MB (`hugeFileThreshold`)
-- Project search skips files > 1MB
 - Target: <4ms main thread work per scroll frame for 120Hz ProMotion
 
 **Reentrancy / exclusivity:**

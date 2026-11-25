@@ -4,8 +4,8 @@
 //
 //  Document-scoped router that presents at most one ephemeral command overlay
 //  per project window (#975). Replaces the document-modal .sheet presentations
-//  used by Quick Open, Symbol Navigator, Go to Line, and Command Palette with
-//  a lightweight, shared overlay container.
+//  used by the previous navigation flows with a lightweight, shared overlay
+//  container.
 //
 //  Routing through a single router enforces two invariants that per-view
 //  @State booleans cannot:
@@ -253,7 +253,7 @@ final class CommandOverlayRouter {
     }
 
     /// Captures both the flow and its exact presentation generation. Two
-    /// consecutive Quick Open sessions have the same enum value, but delayed
+    /// consecutive sessions have the same enum value, but delayed
     /// results from the dismissed owner must still fail closed after reopen.
     func announcementSink(
         for presentation: CommandOverlayPresentation

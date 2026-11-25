@@ -9,10 +9,9 @@
 //
 //    • GutterTextView.swift — NSTextView subclass (gutter inset, current line
 //      highlight, inline diff, auto-indent, comment toggling).
-//    • EditorContainerViews.swift — EditorScrollView, EditorContainerView,
-//      GoToRequest.
+//    • EditorContainerViews.swift — EditorContainerView, GoToRequest.
 //    • CodeEditorView+Coordinator.swift — the Coordinator class driving
-//      highlighting, find, and every NS*Delegate callback.
+//      highlighting, and every NS*Delegate callback.
 //
 //  Split performed on 2026-04-09 as part of issue #755 — strictly mechanical,
 //  no behavior change, no public API change.
@@ -39,11 +38,6 @@ struct CodeEditorView: NSViewRepresentable {
     /// AppKit bridge. Multiple editor panes share one key NSWindow, so window
     /// focus alone cannot identify the intended coordinator.
     var canHandleCommands: (() -> Bool)? = nil
-    /// Window-wide ownership of ⌘G / ⇧⌘G (#1551). Find stepping is routed by
-    /// `FindStepTargetPolicy`: while it resolves to a visible terminal search
-    /// bar, the editor's native find bar must not also step. `nil` keeps the
-    /// editor eligible — previews and tests that do not model panes.
-    var canHandleFindStepping: (() -> Bool)? = nil
     var lineDiffs: [GitLineDiff] = []
     /// Monotonic counter bumped after every `refreshLineDiffs` completion.
     /// Forces SwiftUI to call `updateNSView` even when the `[GitLineDiff]`
@@ -109,7 +103,7 @@ struct CodeEditorView: NSViewRepresentable {
         container.wantsLayer = true
 
         // ── ScrollView ──
-        let scrollView = EditorScrollView()
+        let scrollView = NSScrollView()
         scrollView.hasVerticalScroller = true
         scrollView.hasHorizontalScroller = !isWordWrapEnabled
         scrollView.autohidesScrollers = true
@@ -139,7 +133,6 @@ struct CodeEditorView: NSViewRepresentable {
         textView.isEditable = true
         textView.isSelectable = true
         textView.allowsUndo = true
-        textView.usesFindBar = true
         textView.isAutomaticQuoteSubstitutionEnabled = false
         textView.isAutomaticDashSubstitutionEnabled = false
         textView.isAutomaticTextReplacementEnabled = false
@@ -277,19 +270,6 @@ struct CodeEditorView: NSViewRepresentable {
             name: .toggleComment,
             object: nil
         )
-
-        // Observe Find & Replace notifications (Cmd+F, Cmd+Option+F, Cmd+G, Cmd+Shift+G, Cmd+E)
-        for (selector, name) in [
-            (#selector(Coordinator.handleFindInFile(_:)), Notification.Name.findInFile),
-            (#selector(Coordinator.handleFindAndReplace(_:)), Notification.Name.findAndReplace),
-            (#selector(Coordinator.handleFindNext(_:)), Notification.Name.findNext),
-            (#selector(Coordinator.handleFindPrevious(_:)), Notification.Name.findPrevious),
-            (#selector(Coordinator.handleUseSelectionForFind(_:)), Notification.Name.useSelectionForFind),
-        ] {
-            NotificationCenter.default.addObserver(
-                context.coordinator, selector: selector, name: name, object: nil
-            )
-        }
 
         // Observe send to terminal notification (Cmd+Shift+Enter)
         NotificationCenter.default.addObserver(
