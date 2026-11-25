@@ -249,17 +249,6 @@ extension ContentView {
         }
     }
 
-    /// Reads `PINE_SEARCH_QUERY` from the environment (used by UI tests) and
-    /// applies it to the search provider, activating the search UI.
-    func applySearchQueryFromEnvironment() {
-        guard let query = ProcessInfo.processInfo.environment["PINE_SEARCH_QUERY"],
-              !query.isEmpty,
-              let rootURL = workspace.rootURL else { return }
-        projectManager.searchProvider.query = query
-        isSearchPresented = true
-        projectManager.searchProvider.search(in: rootURL)
-    }
-
     #if DEBUG
     /// Seeds one deterministic dirty buffer for focused accessibility tests.
     /// XCUITest cannot insert text into `GutterTextView`, so the fixture
@@ -711,18 +700,6 @@ extension ContentView {
            !workspace.isSuspended {
             workspace.refreshFileTreeAsync()
         }
-    }
-
-    var totalLineCount: Int {
-        guard let content = activeTab?.content else { return 1 }
-        let ns = content as NSString
-        var count = 1
-        var pos = 0
-        while pos < ns.length {
-            pos = NSMaxRange(ns.lineRange(for: NSRange(location: pos, length: 0)))
-            count += 1
-        }
-        return max(1, count - 1)
     }
 
     /// Converts a 1-based line number to a UTF-16 cursor offset within content.

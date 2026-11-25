@@ -28,7 +28,6 @@ extension Notification.Name {
     /// Takes the active project out of its window, leaving the window open on
     /// the projects beside it (File → Close Project).
     static let closeProject = Notification.Name("closeProject")
-    static let showQuickOpen = Notification.Name("showQuickOpen")
     static let showCommandPalette = Notification.Name("showCommandPalette")
     /// userInfo: ["oldURL": URL, "newURL": URL]
     static let fileRenamed = Notification.Name("fileRenamed")
@@ -41,20 +40,7 @@ extension Notification.Name {
     /// userInfo: ["operation": SidebarFileMenuOperation]
     static let sidebarFileOperation = Notification.Name("sidebarFileOperation")
 
-    // MARK: - Find & Replace (issue #275)
-    static let findInFile = Notification.Name("findInFile")
-    static let findAndReplace = Notification.Name("findAndReplace")
-    static let findNext = Notification.Name("findNext")
-    static let findPrevious = Notification.Name("findPrevious")
-    static let useSelectionForFind = Notification.Name("useSelectionForFind")
-    static let showProjectSearch = Notification.Name("showProjectSearch")
-
     // MARK: - Editor navigation
-    /// Go to Line (issue #418)
-    static let goToLine = Notification.Name("goToLine")
-    /// Symbol Navigation (issue #306)
-    static let showSymbolNavigator = Notification.Name("showSymbolNavigator")
-    static let symbolNavigate = Notification.Name("symbolNavigate")
     /// userInfo: ["direction": "next" | "previous"]
     static let navigateChange = Notification.Name("navigateChange")
     /// userInfo: ["action": "fold" | "unfold" | "foldAll" | "unfoldAll"]

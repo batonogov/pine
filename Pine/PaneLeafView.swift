@@ -179,9 +179,9 @@ struct PaneLeafView: View {
                     refreshBlame(tabManager: tabManager)
                 }
                 .onChange(of: tabManager.pendingGoToLocation) { _, location in
-                    // Per-pane go-to handler (issue #971). ContentView and
-                    // SearchResultsView route line-based navigation requests
-                    // through the focused pane's `TabManager`; this observer
+                    // Per-pane go-to handler (issue #971). Source-location
+                    // requests route through the focused pane's `TabManager`;
+                    // this observer
                     // preserves an optional diagnostic column instead of
                     // silently reducing every target to the start of its line.
                     guard let location,
@@ -364,17 +364,6 @@ struct PaneLeafView: View {
             canHandleCommands: {
                 paneManager.activePaneID == paneID
                     && tabManager.activeTabID == tab.id
-            },
-            canHandleFindStepping: {
-                // Window-wide ⌘G / ⇧⌘G routing (#1551): the editor's find
-                // bar takes the step only when no visible terminal search bar
-                // claims it. Unaffected by which editor pane/tab is active —
-                // `canHandleCommands` above already narrows to one editor.
-                FindStepTargetPolicy.target(
-                    activePaneID: paneManager.activePaneID,
-                    visibleTerminalSearchPaneIDs:
-                        paneManager.visibleTerminalSearchPaneIDs
-                ) == .editor
             },
             lineDiffs: lineDiffs,
             diffVersion: diffVersion,

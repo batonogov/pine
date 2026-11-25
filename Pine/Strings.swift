@@ -2406,9 +2406,6 @@ enum Strings {
     static var commandPaletteRequiresProjectSwitching: String {
         String(localized: "commandPalette.unavailable.projectSwitching")
     }
-    static var commandPaletteRequiresFindStepTarget: String {
-        String(localized: "commandPalette.unavailable.fileOrTerminalSearch")
-    }
     static var commandPaletteNeedsFileAndTerminal: String {
         String(localized: "commandPalette.unavailable.activeFileAndTerminal")
     }
@@ -2664,71 +2661,6 @@ enum Strings {
         localized: "userTask.diagnostic.inputIncomplete",
         defaultValue: "The task stopped before Pine finished writing standard input."
     )
-
-    // MARK: - Quick Open
-
-    static let menuQuickOpen: LocalizedStringKey = "menu.quickOpen"
-    static let quickOpenPlaceholder: LocalizedStringKey = "quickOpen.placeholder"
-    static let quickOpenNoResults: LocalizedStringKey = "quickOpen.noResults"
-    static let quickOpenRecentEmpty: LocalizedStringKey = "quickOpen.recentEmpty"
-
-    // MARK: - Symbol Navigator
-
-    static let menuSymbolNavigator: LocalizedStringKey = "menu.symbolNavigator"
-    static let symbolNavigatorEmpty: LocalizedStringKey = "symbolNavigator.empty"
-    static let symbolNavigatorNoResults: LocalizedStringKey = "symbolNavigator.noResults"
-    static let symbolNavigatorPlaceholder: LocalizedStringKey = "symbolNavigator.placeholder"
-
-    static func symbolKindName(
-        _ kind: SymbolKind,
-        locale: Locale = .current
-    ) -> String {
-        let localization: (key: String, fallback: String)
-        switch kind {
-        case .class:
-            localization = ("symbolKind.class", "Class")
-        case .struct:
-            localization = ("symbolKind.struct", "Struct")
-        case .enum:
-            localization = ("symbolKind.enum", "Enum")
-        case .interface:
-            localization = ("symbolKind.interface", "Interface")
-        case .namespace:
-            localization = ("symbolKind.namespace", "Namespace")
-        case .function:
-            localization = ("symbolKind.function", "Function")
-        case .property:
-            localization = ("symbolKind.property", "Property")
-        case .variable:
-            localization = ("symbolKind.variable", "Variable")
-        case .other:
-            localization = ("symbolKind.symbol", "Symbol")
-        }
-        return localizedString(
-            forKey: localization.key,
-            fallback: localization.fallback,
-            locale: locale
-        )
-    }
-
-    /// The secondary label of a symbol-navigator row. Reads the catalog key
-    /// `%@ — line %lld`, whose translations may reorder the parts, instead of
-    /// hand-building the string (#1529).
-    static func symbolNavigatorItemDetail(
-        kind: String,
-        line: Int
-    ) -> String {
-        String(
-            format: String(localized: "%@ — line %lld"),
-            kind,
-            line
-        )
-    }
-
-    /// The Go to Line field's placeholder, from its existing catalog key
-    /// rather than the literal (#1529).
-    static let goToLineFieldPlaceholder: String =
-        String(localized: "42 or 42:10")
 
     /// `nonisolated` so `nonisolated` diagnostic builders (the built-in
     /// validators run off the main actor) can resolve copy too (#1536).
@@ -3109,36 +3041,6 @@ enum Strings {
     }
     static let welcomeNoSearchResults: LocalizedStringKey = "welcome.noSearchResults"
 
-    // MARK: - Project Search
-
-    static let searchPlaceholder: LocalizedStringKey = "search.placeholder"
-    static let searchNoResults: LocalizedStringKey = "search.noResults"
-    static let searchInitialPrompt: LocalizedStringKey = "search.initialPrompt"
-    static let searchInitialDescription: LocalizedStringKey = "search.initialDescription"
-    static let searchCaseSensitive: LocalizedStringKey = "search.caseSensitive"
-    static let searchClose: LocalizedStringKey = "search.close"
-
-    static func searchTruncatedTotal(shown: Int, max: Int) -> String {
-        String(localized: "search.truncatedTotal \(shown) \(max)")
-    }
-    static func searchTruncatedPerFile(
-        _ max: Int,
-        locale: Locale = .current
-    ) -> String {
-        localizedPluralString(
-            forKey: "search.truncatedPerFile %lld",
-            fallback: "Per-file results limited to %lld matches — refine your query",
-            count: max,
-            locale: locale
-        )
-    }
-    static let menuFind: LocalizedStringKey = "menu.find"
-    static let menuFindAndReplace: LocalizedStringKey = "menu.findAndReplace"
-    static let menuFindNext: LocalizedStringKey = "menu.findNext"
-    static let menuFindPrevious: LocalizedStringKey = "menu.findPrevious"
-    static let menuUseSelectionForFind: LocalizedStringKey = "menu.useSelectionForFind"
-    static let menuFindInProject: LocalizedStringKey = "menu.findInProject"
-    static let menuGoToLine: LocalizedStringKey = "menu.goToLine"
     static let menuNextChange: LocalizedStringKey = "menu.nextChange"
     static let menuPreviousChange: LocalizedStringKey = "menu.previousChange"
     static let menuAcceptChange: LocalizedStringKey = "menu.acceptChange"
@@ -3150,7 +3052,6 @@ enum Strings {
     static let menuFoldAll: LocalizedStringKey = "menu.foldAll"
     static let menuUnfoldAll: LocalizedStringKey = "menu.unfoldAll"
     static let sidebarFiles: LocalizedStringKey = "sidebar.files"
-    static let sidebarSearch: LocalizedStringKey = "sidebar.search"
 
     // MARK: - Terminal Search
 
@@ -3624,14 +3525,6 @@ enum Strings {
     static let a11yBranchSwitcherHint: String =
         String(localized: "a11y.branchSwitcher.hint", defaultValue: "Switches to this git branch")
 
-    // Quick open
-    static let a11yQuickOpenItemHint: String =
-        String(localized: "a11y.quickOpen.item.hint", defaultValue: "Opens this file")
-
-    // Symbol navigator
-    static let a11ySymbolItemHint: String =
-        String(localized: "a11y.symbolNavigator.item.hint", defaultValue: "Jumps to this symbol")
-
     // Status bar
     static let a11yStatusBarLabel: String =
         String(localized: "a11y.statusBar.label", defaultValue: "Status bar")
@@ -3841,20 +3734,6 @@ enum Strings {
             locale: locale
         )
         return String(format: format, locale: locale, reason)
-    }
-
-    static func commandOverlaySymbol(
-        kind: String,
-        name: String,
-        line: Int,
-        locale: Locale = .current
-    ) -> String {
-        let format = localizedString(
-            forKey: "commandOverlay.announcement.symbol",
-            fallback: "%1$@, %2$@, line %3$lld",
-            locale: locale
-        )
-        return String(format: format, locale: locale, kind, name, line)
     }
 
     // MARK: - Command Line Tool (#1530)

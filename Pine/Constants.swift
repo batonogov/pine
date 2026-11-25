@@ -36,14 +36,6 @@ nonisolated enum EditorConstants {
     static let bracketSearchRadius = 5000
 }
 
-// MARK: - Search Constants
-
-/// Constants used by project search (ProjectSearchProvider).
-nonisolated enum SearchConstants {
-    /// Maximum number of characters to keep from a matched line for display.
-    static let lineContentPrefixLimit = 200
-}
-
 // MARK: - Minimap Constants
 
 /// Constants used by the minimap view (MinimapView).

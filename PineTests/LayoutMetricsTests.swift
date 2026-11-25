@@ -53,21 +53,6 @@ struct LayoutMetricsTests {
         #expect(LayoutMetrics.tabBarHeight == 30)
     }
 
-    @Test("Search results row vertical padding is 2")
-    func searchResultsRowPadding() {
-        #expect(LayoutMetrics.searchResultRowVerticalPadding == 2)
-    }
-
-    @Test("Search results header vertical padding is 4")
-    func searchResultsHeaderPadding() {
-        #expect(LayoutMetrics.searchResultHeaderVerticalPadding == 4)
-    }
-
-    @Test("Search results horizontal padding is 8")
-    func searchResultsHorizontalPadding() {
-        #expect(LayoutMetrics.searchResultHorizontalPadding == 8)
-    }
-
     // MARK: - All values are positive
 
     @Test("All spacing values are positive")
@@ -79,9 +64,6 @@ struct LayoutMetricsTests {
         #expect(LayoutMetrics.statusBarHeight > 0)
         #expect(LayoutMetrics.statusBarItemSpacing > 0)
         #expect(LayoutMetrics.tabBarHeight > 0)
-        #expect(LayoutMetrics.searchResultRowVerticalPadding > 0)
-        #expect(LayoutMetrics.searchResultHeaderVerticalPadding > 0)
-        #expect(LayoutMetrics.searchResultHorizontalPadding > 0)
     }
 
     // MARK: - Font size ordering

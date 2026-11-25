@@ -133,31 +133,11 @@ nonisolated enum AccessibilityID {
     static let markdownPreviewToggle = "markdownPreviewToggle"
     static let markdownPreviewView = "markdownPreviewView"
 
-    // MARK: - Go to Line
-    /// Existing view-level identifier retained for compatibility. The
-    /// NSPanel container uses `goToLineOverlay`.
-    static let goToLineSheet = "goToLineSheet"
-    static let goToLineOverlay = "goToLineOverlay"
-    static let goToLineField = "goToLineField"
-    static let goToLineInvalidMessage = "goToLineInvalidMessage"
-
     // MARK: - Branch switcher
     static let branchSearchField = "branchSearchField"
     static let branchList = "branchList"
     static let branchCancelButton = "branchCancelButton"
     static func branchItem(_ name: String) -> String { "branchItem_\(name)" }
-
-    // MARK: - Project Search
-    static let projectSearchResultsList = "projectSearchResultsList"
-    static let searchEmptyState = "searchEmptyState"
-    static let searchInitialState = "searchInitialState"
-    static let searchTruncationFooter = "searchTruncationFooter"
-
-    // MARK: - Quick Open
-    static let quickOpenOverlay = "quickOpenOverlay"
-    static let quickOpenSearchField = "quickOpenSearchField"
-    static let quickOpenResultsList = "quickOpenResultsList"
-    static func quickOpenItem(_ name: String) -> String { "quickOpenItem_\(name)" }
 
     // MARK: - Command Palette
     static let commandPaletteOverlay = "commandPaletteOverlay"
@@ -166,12 +146,6 @@ nonisolated enum AccessibilityID {
     static func commandPaletteItem(_ id: String) -> String {
         "commandPaletteItem_\(id)"
     }
-
-    // MARK: - Symbol Navigator
-    static let symbolNavigatorOverlay = "symbolNavigatorOverlay"
-    static let symbolSearchField = "symbolSearchField"
-    static let symbolResultsList = "symbolResultsList"
-    static func symbolItem(_ name: String) -> String { "symbolItem_\(name)" }
 
     // MARK: - Split Panes
     static let paneDivider = "paneDivider"

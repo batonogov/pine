@@ -81,18 +81,9 @@ final class WorkspaceManager {
     /// a slow background task never overwrites a newer result.
     private var loadGeneration: Int = 0
 
-    /// Called on main thread whenever `rootNodes` changes so dependents
-    /// (e.g. QuickOpenProvider) can rebuild their caches.
-    /// Debounced with 200ms delay so rapid sequential updates
-    /// (shallow → full phase) trigger only one rebuild.
-    private(set) var onRootNodesChanged: (([FileNode]) -> Void)?
-
     /// Accepted git/tree refresh, independent of structural tree publication.
     /// Called once after fresh git state is applied, including unchanged trees.
     private(set) var onRefreshAccepted: ((URL) -> Void)?
-
-    /// Debouncer for `onRootNodesChanged` notifications.
-    private var rootNodesChangedDebouncer: Debouncer?
 
     /// Continuations waiting for `isLoading` to become `false`.
     private var loadingContinuations: [CheckedContinuation<Void, Never>] = []
@@ -111,14 +102,6 @@ final class WorkspaceManager {
     ) {
         self.fileWatcherFactory = fileWatcherFactory
         self.filesystemValidationSeam = filesystemValidationSeam
-    }
-
-    /// Debounce interval for `onRootNodesChanged` notifications.
-    private static let rootNodesChangedDebounce: TimeInterval = 0.2
-
-    /// Sets the callback invoked when `rootNodes` changes.
-    func setOnRootNodesChanged(_ handler: (([FileNode]) -> Void)?) {
-        onRootNodesChanged = handler
     }
 
     func setOnRefreshAccepted(_ handler: ((URL) -> Void)?) {
@@ -145,9 +128,9 @@ final class WorkspaceManager {
     /// to users.
     static let watcherDebounce: TimeInterval = UITimings.Debounce.fileWatcher
 
-    /// Sets `rootNodes`, bumps `rootNodesRevision`, and schedules a debounced
-    /// `onRootNodesChanged` notification. Centralised so every assignment site
-    /// (initial load, shallow refresh, full refresh) emits the same signals.
+    /// Sets `rootNodes` and bumps `rootNodesRevision`. Centralised so every
+    /// assignment site (initial load, shallow refresh, full refresh) emits the
+    /// same signals.
     ///
     /// Before replacing the tree, previously-loaded children of deep folders
     /// are merged from the current tree into matching deferred nodes of the
@@ -161,25 +144,6 @@ final class WorkspaceManager {
         FileNode.mergeLoadedSubtrees(into: nodes, preservingFrom: rootNodes)
         rootNodes = nodes
         rootNodesRevision += 1
-        notifyRootNodesChanged()
-    }
-
-    /// Schedules a debounced `onRootNodesChanged` notification.
-    /// Cancels any pending notification so rapid updates coalesce into one.
-    private func notifyRootNodesChanged() {
-        guard !isSuspended else { return }
-        // Lazily create the debouncer (captures self weakly).
-        if rootNodesChangedDebouncer == nil {
-            rootNodesChangedDebouncer = Debouncer(
-                delay: Self.rootNodesChangedDebounce
-            ) { [weak self] in
-                MainActor.assumeIsolated {
-                    guard let self else { return }
-                    self.onRootNodesChanged?(self.rootNodes)
-                }
-            }
-        }
-        rootNodesChangedDebouncer?.schedule()
     }
 
     isolated deinit {
@@ -711,7 +675,6 @@ final class WorkspaceManager {
         loadingTask = nil
         fileWatcher?.stop()
         fileWatcher = nil
-        rootNodesChangedDebouncer?.cancel()
         isLoading = false
         resumeLoadingContinuations()
     }

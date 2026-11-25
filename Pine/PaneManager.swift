@@ -1087,7 +1087,7 @@ final class PaneManager {
     /// empty "No File Selected" placeholder so it never occupies layout space
     /// when the user has other panes to work with. Pruning is unconditional
     /// when other content (editor or terminal) remains in the tree; if a file
-    /// is later opened from the sidebar / Quick Open / Recent, callers use
+    /// is later opened from the sidebar or another retained flow, callers use
     /// ``ensureEditorPane()`` to recreate an editor leaf on demand.
     ///
     /// Invariants:
@@ -1549,21 +1549,6 @@ final class PaneManager {
 
     var terminalPaneIDs: [PaneID] {
         root.leafIDs.filter { root.content(for: $0) == .terminal }
-    }
-
-    /// Panes whose terminal search bar is currently visible (#1551). Feeds
-    /// the window-wide ⌘G / ⇧⌘G routing policy; order is not significant.
-    ///
-    /// Derived from `terminalPaneIDs` (the live pane tree), not from the
-    /// `terminalStates` dictionary: `maximize(paneID:)` dismantles every
-    /// other pane's views — their `TerminalSearchObserver` subscriptions die —
-    /// while their `terminalStates` entries, `isSearchVisible` included,
-    /// survive for the restore. Offering such a bar would enable a ⌘G that
-    /// nothing is left to receive.
-    var visibleTerminalSearchPaneIDs: [PaneID] {
-        terminalPaneIDs.compactMap { paneID in
-            terminalStates[paneID]?.isSearchVisible == true ? paneID : nil
-        }
     }
 
     var allTerminalTabs: [TerminalTab] {

@@ -197,7 +197,7 @@ struct AgentInboxFocusRestorationTargetTests {
 
     /// The case a naive `firstResponder` round-trip gets wrong.
     ///
-    /// While the user is typing in a text field — project search, inline
+    /// While the user is typing in a text field — Command Palette, inline
     /// rename, the branch filter — the window's first responder is the shared
     /// field editor, not the field. AppKit lends that one text view to
     /// whichever control is editing, so restoring the editor object hands

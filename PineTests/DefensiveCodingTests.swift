@@ -10,36 +10,26 @@ import Foundation
 @MainActor
 struct DefensiveCodingTests {
 
-    // MARK: - QuickOpenProvider depth limit
+    // MARK: - FileNode depth limit
 
-    @Test func collectFilesRespectsDepthLimit() {
+    @Test func fileNodeRespectsDepthLimit() {
         let tmp = FileManager.default.temporaryDirectory
             .appendingPathComponent("pine-defensive-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: tmp) }
 
-        // Create a deeply nested directory: depth 0/1/2/.../150
         var current = tmp
         for i in 0..<150 {
             current = current.appendingPathComponent("d\(i)")
         }
         try? FileManager.default.createDirectory(at: current, withIntermediateDirectories: true)
-        // Put a file at the bottom
         FileManager.default.createFile(atPath: current.appendingPathComponent("deep.txt").path, contents: nil)
 
         let root = FileNode(url: tmp, projectRoot: tmp, ignoredPaths: [], maxDepth: 5)
-        let provider = QuickOpenProvider()
-        provider.buildIndex(from: [root], rootURL: tmp)
-
-        // The file at depth 150 should NOT be indexed because FileNode stops at maxDepth 5
-        let deepFiles = provider.fileIndex.filter { $0.lastPathComponent == "deep.txt" }
-        #expect(deepFiles.isEmpty)
-    }
-
-    @Test func collectFilesWithDepthLimitDoesNotCrash() {
-        let provider = QuickOpenProvider()
-        // Building index from empty roots should not crash
-        provider.buildIndex(from: [], rootURL: URL(fileURLWithPath: "/nonexistent"))
-        #expect(provider.fileIndex.isEmpty)
+        func containsDeepFile(_ node: FileNode) -> Bool {
+            if node.url.lastPathComponent == "deep.txt" { return true }
+            return node.children?.contains(where: containsDeepFile) ?? false
+        }
+        #expect(!containsDeepFile(root))
     }
 
     // MARK: - BracketMatcher iteration limit
@@ -121,22 +111,4 @@ struct DefensiveCodingTests {
         #expect(result == true)
     }
 
-    // MARK: - ProjectSearchProvider max results guard
-
-    @Test func searchRespectsMaxResultsPerFile() {
-        let tmp = FileManager.default.temporaryDirectory
-            .appendingPathComponent("pine-search-\(UUID().uuidString).txt")
-        defer { try? FileManager.default.removeItem(at: tmp) }
-
-        // Create a file with many matches
-        let line = "match match match match match\n"
-        let content = String(repeating: line, count: 200)
-        try? content.write(to: tmp, atomically: true, encoding: .utf8)
-
-        let matches = ProjectSearchProvider.searchFile(
-            at: tmp, query: "match", isCaseSensitive: false,
-            remainingCapacity: 50
-        )
-        #expect(matches.count <= 50)
-    }
 }

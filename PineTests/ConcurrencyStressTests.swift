@@ -6,8 +6,7 @@
 //  queues, and cancellation logic under heavy concurrent load. The goal is
 //  to falsify regressions like #790 (SyntaxHighlighter concurrent crash),
 //  race-condition stale state in WorkspaceManager, stale FSEvents callbacks
-//  after stop(), hanging DispatchGroups in GitStatusProvider, and leaked
-//  tasks in ProjectSearchProvider.
+//  after stop(), and hanging DispatchGroups in GitStatusProvider.
 //
 //  Design constraints:
 //  - Swift Testing framework.
@@ -400,101 +399,5 @@ struct WorkspaceManagerStressTests {
             // completion is still in flight; the stale completion exits
             // early on generation mismatch without resetting isLoading.
             // Covered separately by `rapidLoadDirectoryGenerationWins`.
-    }
-}
-
-// MARK: - ProjectSearchProvider Stress
-
-@Suite("Concurrency Stress — ProjectSearchProvider")
-@MainActor
-struct ProjectSearchProviderStressTests {
-
-    private func populate(_ dir: URL) throws {
-        for i in 0..<20 {
-            try """
-            line one \(i)
-            needle-\(i) appears here
-            tail line
-            """.write(
-                to: dir.appendingPathComponent("file\(i).txt"),
-                atomically: true,
-                encoding: .utf8
-            )
-        }
-    }
-
-    /// Firing many search() calls in quick succession must cancel the
-    /// previous in-flight task so only the latest query's result lands
-    /// in `results`. isSearching must eventually return to false.
-    @Test("Rapid search calls cancel stale tasks and land on latest query", .timeLimit(.minutes(3)))
-    func rapidSearchCancelsStale() async throws {
-            let dir = try makeTempDir("search-rapid")
-            defer { cleanup(dir) }
-            try populate(dir)
-
-            let provider = ProjectSearchProvider()
-
-            // Fire 20 searches with different queries back-to-back.
-            for i in 0..<20 {
-                provider.query = "needle-\(i)"
-                provider.search(in: dir)
-            }
-
-            // Poll until debounce + search completes.
-            for _ in 0..<150 {
-                if !provider.isSearching { break }
-                try await Task.sleep(for: .milliseconds(100))
-            }
-
-            #expect(!provider.isSearching)
-            // The final accepted query was "needle-19", which occurs in
-            // exactly one file. Stale results from earlier searches must
-            // have been cancelled before overwriting `results`.
-            #expect(provider.totalMatchCount == 1,
-                    "expected exactly 1 match for final query, got \(provider.totalMatchCount)")
-            #expect(provider.results.first?.matches.first?.lineContent.contains("needle-19") == true)
-    }
-
-    /// cancel() must stop an in-flight search and leave isSearching=false.
-    @Test("cancel() terminates in-flight search", .timeLimit(.minutes(3)))
-    func cancelStopsSearch() async throws {
-            let dir = try makeTempDir("search-cancel")
-            defer { cleanup(dir) }
-            try populate(dir)
-
-            let provider = ProjectSearchProvider()
-            provider.query = "needle"
-            provider.search(in: dir)
-            #expect(provider.isSearching)
-
-            provider.cancel()
-            #expect(!provider.isSearching)
-
-            // After cancel, wait past the would-be debounce window and
-            // confirm no stale completion flips isSearching back or writes
-            // results.
-            try await Task.sleep(for: .milliseconds(600))
-            #expect(!provider.isSearching)
-    }
-
-    /// Interleaved search/cancel/search must not leak tasks or deadlock.
-    @Test("Interleaved search/cancel does not leak tasks", .timeLimit(.minutes(3)))
-    func interleavedSearchCancel() async throws {
-            let dir = try makeTempDir("search-interleave")
-            defer { cleanup(dir) }
-            try populate(dir)
-
-            let provider = ProjectSearchProvider()
-            for i in 0..<30 {
-                provider.query = "needle-\(i % 20)"
-                provider.search(in: dir)
-                if i.isMultiple(of: 3) { provider.cancel() }
-            }
-
-            for _ in 0..<150 {
-                if !provider.isSearching { break }
-                try await Task.sleep(for: .milliseconds(100))
-            }
-            #expect(!provider.isSearching)
     }
 }

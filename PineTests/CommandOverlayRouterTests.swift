@@ -17,7 +17,7 @@ struct CommandOverlayRouterTests {
     func replacementIsDeterministic() {
         let router = makeRouterWithoutResponderHost()
 
-        router.present(.quickOpen)
+        router.present(.agentAttention)
         router.present(.commandPalette)
 
         #expect(router.activePresentation == .commandPalette)
@@ -27,13 +27,13 @@ struct CommandOverlayRouterTests {
     @Test("An obsolete flow cannot dismiss its replacement")
     func staleDismissIsIgnored() {
         let router = makeRouterWithoutResponderHost()
-        router.present(.quickOpen)
-        router.present(.symbolNavigator)
+        router.present(.commandPalette)
+        router.present(.agentAttention)
 
-        router.dismiss(ifMatching: .quickOpen)
+        router.dismiss(ifMatching: .commandPalette)
 
-        #expect(router.activePresentation == .symbolNavigator)
-        router.dismiss(ifMatching: .symbolNavigator)
+        #expect(router.activePresentation == .agentAttention)
+        router.dismiss(ifMatching: .agentAttention)
         #expect(!router.isPresented)
     }
 
@@ -41,13 +41,13 @@ struct CommandOverlayRouterTests {
     func routersAreIndependent() {
         let first = makeRouterWithoutResponderHost()
         let second = makeRouterWithoutResponderHost()
-        first.present(.quickOpen)
-        second.present(.goToLine)
+        first.present(.commandPalette)
+        second.present(.agentAttention)
 
         first.dismiss()
 
         #expect(!first.isPresented)
-        #expect(second.activePresentation == .goToLine)
+        #expect(second.activePresentation == .agentAttention)
     }
 
     @Test("Separate project windows restore only their own responder")
@@ -63,7 +63,7 @@ struct CommandOverlayRouterTests {
         let first = CommandOverlayRouter()
         let second = CommandOverlayRouter()
 
-        first.present(.quickOpen)
+        first.present(.commandPalette)
         second.present(.commandPalette)
         first.preparePresentation(in: firstHost)
         second.preparePresentation(in: secondHost)
@@ -99,7 +99,7 @@ struct CommandOverlayRouterTests {
         )
         let router = CommandOverlayRouter()
 
-        router.present(.symbolNavigator)
+        router.present(.agentAttention)
         // The production router has no global key-window fallback. The owner
         // is supplied by CommandOverlayWindow immediately before presentation.
         #expect(router.capturedResponder == nil)
@@ -150,7 +150,7 @@ struct CommandOverlayRouterTests {
         )
         let router = CommandOverlayRouter(responderHostProvider: { host })
 
-        router.present(.quickOpen)
+        router.present(.commandPalette)
         router.dismiss()
 
         host.firstResponder = secondSessionResponder
@@ -179,9 +179,9 @@ struct CommandOverlayRouterTests {
         )
         let router = CommandOverlayRouter(responderHostProvider: { host })
 
-        router.present(.quickOpen)
+        router.present(.commandPalette)
         host.firstResponder = clickedResponder
-        router.dismissForExternalFocusChange(ifMatching: .quickOpen)
+        router.dismissForExternalFocusChange(ifMatching: .commandPalette)
         try await Task.sleep(for: .milliseconds(20))
 
         #expect(router.activePresentation == nil)
@@ -214,11 +214,11 @@ struct CommandOverlayRouterTests {
     func staleAgentAttentionCompletionIsIgnored() {
         let router = makeRouterWithoutResponderHost()
         router.present(.agentAttention)
-        router.present(.quickOpen)
+        router.present(.commandPalette)
 
         router.complete(ifMatching: .agentAttention)
 
-        #expect(router.activePresentation == .quickOpen)
+        #expect(router.activePresentation == .commandPalette)
     }
 
     @Test("Announcements use only the captured document owner")
@@ -241,14 +241,14 @@ struct CommandOverlayRouterTests {
         let owner = CommandOverlayResponderHostSpy(firstResponder: nil)
         let router = makeRouterWithoutResponderHost()
 
-        router.present(.quickOpen)
+        router.present(.commandPalette)
         router.preparePresentation(in: owner)
-        #expect(router.announce("Quick", ifMatching: .quickOpen))
+        #expect(router.announce("Palette", ifMatching: .commandPalette))
 
-        router.present(.symbolNavigator)
-        #expect(!router.announce("Stale", ifMatching: .quickOpen))
-        #expect(router.announce("Symbol", ifMatching: .symbolNavigator))
-        #expect(owner.announcements == ["Quick", "Symbol"])
+        router.present(.agentAttention)
+        #expect(!router.announce("Stale", ifMatching: .commandPalette))
+        #expect(router.announce("Attention", ifMatching: .agentAttention))
+        #expect(owner.announcements == ["Palette", "Attention"])
     }
 
     @Test("Announcements cannot cross two sessions of the same flow")
@@ -257,15 +257,15 @@ struct CommandOverlayRouterTests {
         let secondOwner = CommandOverlayResponderHostSpy(firstResponder: nil)
         let router = makeRouterWithoutResponderHost()
 
-        router.present(.quickOpen)
+        router.present(.commandPalette)
         router.preparePresentation(in: firstOwner)
-        let firstSession = router.announcementSink(for: .quickOpen)
+        let firstSession = router.announcementSink(for: .commandPalette)
         #expect(firstSession("First"))
         router.dismiss()
 
-        router.present(.quickOpen)
+        router.present(.commandPalette)
         router.preparePresentation(in: secondOwner)
-        let secondSession = router.announcementSink(for: .quickOpen)
+        let secondSession = router.announcementSink(for: .commandPalette)
 
         #expect(!firstSession("Stale"))
         #expect(secondSession("Second"))
@@ -278,17 +278,17 @@ struct CommandOverlayRouterTests {
         let owner = CommandOverlayResponderHostSpy(firstResponder: nil)
         let router = makeRouterWithoutResponderHost()
 
-        router.present(.quickOpen)
+        router.present(.commandPalette)
         router.preparePresentation(in: owner)
-        let firstQuickOpen = router.announcementSink(for: .quickOpen)
-        #expect(firstQuickOpen("First"))
+        let firstCommandPalette = router.announcementSink(for: .commandPalette)
+        #expect(firstCommandPalette("First"))
 
-        router.present(.symbolNavigator)
-        router.present(.quickOpen)
-        let replacementQuickOpen = router.announcementSink(for: .quickOpen)
+        router.present(.agentAttention)
+        router.present(.commandPalette)
+        let replacementCommandPalette = router.announcementSink(for: .commandPalette)
 
-        #expect(!firstQuickOpen("Stale"))
-        #expect(replacementQuickOpen("Replacement"))
+        #expect(!firstCommandPalette("Stale"))
+        #expect(replacementCommandPalette("Replacement"))
         #expect(owner.announcements == ["First", "Replacement"])
     }
 
@@ -299,11 +299,11 @@ struct CommandOverlayRouterTests {
         let host = CommandOverlayResponderHostSpy(firstResponder: original)
         let router = CommandOverlayRouter(responderHostProvider: { host })
 
-        router.present(.quickOpen)
+        router.present(.commandPalette)
         #expect(router.capturedResponder === original)
 
         host.firstResponder = intermediate
-        router.present(.commandPalette)
+        router.present(.agentAttention)
         #expect(router.capturedResponder === original)
 
         router.dismiss()
@@ -325,7 +325,7 @@ struct CommandOverlayRouterTests {
         let host = CommandOverlayResponderHostSpy(firstResponder: nil)
         let router = CommandOverlayRouter(responderHostProvider: { host })
 
-        router.present(.quickOpen)
+        router.present(.commandPalette)
         router.dismiss()
 
         let didRestore = await waitUntil {
@@ -336,36 +336,6 @@ struct CommandOverlayRouterTests {
             "Timed out waiting for the responder host to be restored"
         )
         #expect(host.lastRestoredResponder == nil)
-    }
-
-    @Test("Palette overlay command replaces the panel in the same session")
-    func paletteOverlayCommandReplacesInPlace() {
-        let router = makeRouterWithoutResponderHost()
-        router.present(.commandPalette)
-
-        let didReplace = CommandPaletteInvocationRouter
-            .replaceOverlayIfNeeded(
-            for: .quickOpen,
-            overlayRouter: router
-        )
-
-        #expect(didReplace)
-        #expect(router.activePresentation == .quickOpen)
-    }
-
-    @Test("Non-overlay palette commands leave replacement routing untouched")
-    func nonOverlayCommandDoesNotReplaceInPlace() {
-        let router = makeRouterWithoutResponderHost()
-        router.present(.commandPalette)
-
-        let didReplace = CommandPaletteInvocationRouter
-            .replaceOverlayIfNeeded(
-                for: .findInProject,
-                overlayRouter: router
-            )
-
-        #expect(!didReplace)
-        #expect(router.activePresentation == .commandPalette)
     }
 
     @Test("Attachment view reports window lifecycle changes")
@@ -412,7 +382,7 @@ struct CommandOverlayRouterTests {
         let probe = CommandOverlayNotificationProbe()
         let projectIdentifier = ObjectIdentifier(projectManager)
         let token = center.addObserver(
-            forName: .showProjectSearch,
+            forName: .openFolder,
             object: nil,
             queue: nil
         ) { notification in
@@ -421,7 +391,7 @@ struct CommandOverlayRouterTests {
         defer { center.removeObserver(token) }
 
         CommandPaletteInvocationRouter.invoke(
-            paletteItem(for: .findInProject),
+            paletteItem(for: .openFolder),
             projectManager: projectManager,
             overlayRouter: router,
             notificationCenter: center

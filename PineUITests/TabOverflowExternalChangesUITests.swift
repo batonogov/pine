@@ -1,15 +1,13 @@
 //
-//  GoToLineTabOverflowExternalChangesUITests.swift
+//  TabOverflowExternalChangesUITests.swift
 //  PineUITests
 //
-//  UI tests for Go to Line (Cmd+L), tab overflow menu,
-//  and external file change detection.
+//  UI tests for tab overflow and external file change detection.
 //
 
 import XCTest
 
-// swiftlint:disable:next type_name
-final class GoToLineTabOverflowExternalChangesUITests: PineUITestCase {
+final class TabOverflowExternalChangesUITests: PineUITestCase {
 
     private var projectURL: URL!
 
@@ -29,163 +27,6 @@ final class GoToLineTabOverflowExternalChangesUITests: PineUITestCase {
             cleanupProject(url)
         }
         try super.tearDownWithError()
-    }
-
-    // MARK: - Helpers
-
-    /// Opens Go to Line via Edit menu and returns its command panel.
-    @discardableResult
-    private func openGoToLine() -> XCUIElement {
-        clickMenuBarItem("Edit")
-        let goToLineItem = app.menuItems["Go to Line…"]
-        XCTAssertTrue(waitForExistence(goToLineItem, timeout: 5))
-        goToLineItem.click()
-
-        let overlay = commandOverlay("goToLineOverlay")
-        XCTAssertTrue(
-            waitForExistence(overlay, timeout: 5),
-            "Go to Line command panel should appear"
-        )
-        return overlay
-    }
-
-    // MARK: - Go to Line: opens via menu
-
-    func testGoToLineOpensViaEditMenu() throws {
-        launchWithProject(projectURL)
-
-        let sidebar = app.scrollViews["sidebar"]
-        XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
-
-        openFile("main.swift")
-        XCTAssertTrue(waitForExistence(editorTab("main.swift"), timeout: 5))
-
-        openGoToLine()
-    }
-
-    // MARK: - Go to Line: requires open file
-
-    func testGoToLineMenuItemExistsInEditMenu() throws {
-        launchWithProject(projectURL)
-
-        let sidebar = app.scrollViews["sidebar"]
-        XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
-
-        openFile("main.swift")
-        XCTAssertTrue(waitForExistence(editorTab("main.swift"), timeout: 5))
-
-        // Open Edit menu and verify Go to Line exists
-        clickMenuBarItem("Edit")
-        let goToLineItem = app.menuItems["Go to Line…"]
-        XCTAssertTrue(
-            waitForExistence(goToLineItem, timeout: 5),
-            "Go to Line menu item should exist in Edit menu"
-        )
-        // Dismiss menu
-        app.typeKey(.escape, modifierFlags: [])
-    }
-
-    // MARK: - Go to Line: dismisses on Escape
-
-    func testGoToLineDismissesOnEscape() throws {
-        launchWithProject(projectURL)
-
-        let sidebar = app.scrollViews["sidebar"]
-        XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
-
-        openFile("main.swift")
-        XCTAssertTrue(waitForExistence(editorTab("main.swift"), timeout: 5))
-
-        let overlay = openGoToLine()
-
-        // Press Escape to dismiss
-        app.typeKey(.escape, modifierFlags: [])
-
-        XCTAssertTrue(
-            overlay.waitForNonExistence(timeout: 5),
-            "Go to Line command panel should dismiss on Escape"
-        )
-    }
-
-    // MARK: - Go to Line: shows line range hint
-
-    func testGoToLineShowsLineRangeHint() throws {
-        launchWithProject(projectURL)
-
-        let sidebar = app.scrollViews["sidebar"]
-        XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
-
-        openFile("main.swift")
-        XCTAssertTrue(waitForExistence(editorTab("main.swift"), timeout: 5))
-
-        let overlay = openGoToLine()
-
-        // The view shows "1-N" as a hint for the valid range
-        let rangeHint = overlay.staticTexts.element(matching: NSPredicate(
-            format: "value CONTAINS '1'"
-        ))
-        XCTAssertTrue(
-            waitForExistence(rangeHint, timeout: 3),
-            "Go to Line should display a line range hint"
-        )
-    }
-
-    // MARK: - Go to Line: accepts valid input and dismisses
-
-    func testGoToLineAcceptsValidInput() throws {
-        launchWithProject(projectURL)
-
-        let sidebar = app.scrollViews["sidebar"]
-        XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
-
-        openFile("main.swift")
-        XCTAssertTrue(waitForExistence(editorTab("main.swift"), timeout: 5))
-
-        let overlay = openGoToLine()
-
-        let textField = overlay.textFields["goToLineField"].firstMatch
-        guard waitForExistence(textField, timeout: 5) else {
-            XCTFail("GoToLine text field should be accessible in command panel")
-            return
-        }
-        textField.click()
-        textField.typeText("10")
-        textField.typeKey(.return, modifierFlags: [])
-
-        XCTAssertTrue(
-            overlay.waitForNonExistence(timeout: 5),
-            "Go to Line command panel should dismiss after valid input"
-        )
-    }
-
-    // MARK: - Go to Line: rejects invalid input
-
-    func testGoToLineRejectsInvalidInput() throws {
-        launchWithProject(projectURL)
-
-        let sidebar = app.scrollViews["sidebar"]
-        XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
-
-        openFile("main.swift")
-        XCTAssertTrue(waitForExistence(editorTab("main.swift"), timeout: 5))
-
-        let overlay = openGoToLine()
-
-        let textField = overlay.textFields["goToLineField"].firstMatch
-        guard waitForExistence(textField, timeout: 5) else {
-            XCTFail("GoToLine text field should be accessible in command panel")
-            return
-        }
-        textField.click()
-        textField.typeText("abc")
-        textField.typeKey(.return, modifierFlags: [])
-
-        // The command panel should remain open for invalid input.
-        sleep(1)
-        XCTAssertTrue(
-            overlay.exists,
-            "Go to Line command panel should stay open for invalid input"
-        )
     }
 
     // MARK: - Tab Overflow: many tabs remain accessible
