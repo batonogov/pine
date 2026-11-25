@@ -1233,7 +1233,7 @@ final class AgentTaskRegistry {
               vendorIdentity.provider == policy.agentID.value,
               let checkpoint = task.nativeDispatch, checkpoint.runID == policy.runID,
               checkpoint.conversation?.opaqueIdentifier == vendorIdentity.opaqueIdentifier,
-              AgentTaskNativeDispatch.isRestoreEligible(checkpoint.phase, submissions: checkpoint.submissions),
+              checkpoint.isRestoreEligible,
               task.descriptor.typeIdentifier == policy.agentID.value,
               binding.taskID == policy.taskID, binding.id == policy.bindingID else {
             throw AgentTaskNativeAdmissionError.invalidPolicy
@@ -1258,9 +1258,7 @@ final class AgentTaskRegistry {
         // admission (as prepareNativeLaunch moves .reserved -> .launchIntent),
         // so the runtime is current before the restored owner even spawns.
         // The sessionBound rebind later is then an exact-identity no-op.
-        checkpoint.phase = AgentTaskNativeDispatch.restoreRebindPhase(
-            from: checkpoint.phase, submissions: checkpoint.submissions
-        ) ?? checkpoint.phase
+        checkpoint.phase = checkpoint.restoreRebindPhase() ?? checkpoint.phase
         nativeOwners[task.id] = ownership
         tasks[index].nativeDispatch = checkpoint
         tasks[index].updatedAt = max(tasks[index].updatedAt, Date())
@@ -1279,10 +1277,7 @@ final class AgentTaskRegistry {
     ) throws {
         let task = task(for: ownership.policy.taskID)
         let checkpoint = task?.nativeDispatch
-        let restoreAdmitted = task?.runs.count == 1
-            && AgentTaskNativeDispatch.isRestoreEligible(
-                checkpoint?.phase ?? .reserved, submissions: checkpoint?.submissions ?? []
-            )
+        let restoreAdmitted = task?.runs.count == 1 && (checkpoint?.isRestoreEligible ?? false)
         guard nativeOwners[ownership.policy.taskID] === ownership, !isTerminating,
               checkpoint?.phase == .launchIntent || restoreAdmitted,
               session.contract.agentID == ownership.policy.agentID,
@@ -1310,7 +1305,7 @@ final class AgentTaskRegistry {
             guard task.runs.count == 1, task.runs.last?.id == ownership.policy.runID,
                   task.runs.last?.liveness != .live,
                   let checkpoint = task.nativeDispatch,
-                  AgentTaskNativeDispatch.isRestoreEligible(checkpoint.phase, submissions: checkpoint.submissions),
+                  checkpoint.isRestoreEligible,
                   checkpoint.conversation?.opaqueIdentifier == task.runs.last?.vendorIdentity?.opaqueIdentifier else {
                 throw AgentTaskNativeAdmissionError.staleOwner
             }

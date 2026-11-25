@@ -220,31 +220,25 @@ struct AgentTaskNativeDispatchTests {
     @Test func restoreRebindReturnsTheDocumentedPostSessionPhase() throws {
         let identity = AgentVendorSessionIdentity(provider: "codex", opaqueIdentifier: "thr_1")
         // Pre-session phases are never restore targets.
-        #expect(AgentTaskNativeDispatch.restoreRebindPhase(
-            from: .reserved, submissions: []
-        ) == nil)
-        #expect(AgentTaskNativeDispatch.restoreRebindPhase(
-            from: .launchIntent, submissions: []
-        ) == nil)
+        #expect(freshJournal().restoreRebindPhase() == nil)
+        #expect(try launchedJournal().restoreRebindPhase() == nil)
         // A post-session journal keeps its phase on rebind.
         let bound = try launchedJournal().applying(.sessionBound(identity))
-        #expect(AgentTaskNativeDispatch.restoreRebindPhase(
-            from: bound.phase, submissions: bound.submissions
-        ) == .sessionBound)
+        #expect(bound.restoreRebindPhase() == .sessionBound)
         // The clean-stop `.unavailable` journal re-enters by its last
         // recorded input state.
         var unavailable = bound
         unavailable = try unavailable.applying(.unavailable)
-        #expect(AgentTaskNativeDispatch.restoreRebindPhase(
-            from: unavailable.phase, submissions: unavailable.submissions
-        ) == .sessionBound)
+        #expect(unavailable.restoreRebindPhase() == .sessionBound)
+        // An acknowledged-but-unobserved input dead-ends the restored
+        // owner: followup requires .responseObserved, initial requires an
+        // empty journal. Restore is refused, never guessed.
         var withAck = try bound
             .applying(.initialInputIntent)
             .applying(.initialInputAcknowledged(operationID: "turn_1"))
-            .applying(.unavailable)
-        #expect(AgentTaskNativeDispatch.restoreRebindPhase(
-            from: withAck.phase, submissions: withAck.submissions
-        ) == .parentSettlementUnknown)
+        withAck = try withAck.applying(.unavailable)
+        #expect(withAck.restoreRebindPhase() == nil)
+        #expect(!withAck.isRestoreEligible)
         // An unknown input outcome has no documented re-entry either:
         // restore is refused, never guessed.
         var withUnknown = try launchedJournal()
@@ -253,12 +247,8 @@ struct AgentTaskNativeDispatchTests {
         withUnknown = try withUnknown
             .applying(.submissionUnknown(submissionID: withUnknown.submissions[0].id))
             .applying(.unavailable)
-        #expect(AgentTaskNativeDispatch.restoreRebindPhase(
-            from: withUnknown.phase, submissions: withUnknown.submissions
-        ) == nil)
-        #expect(!AgentTaskNativeDispatch.isRestoreEligible(
-            withUnknown.phase, submissions: withUnknown.submissions
-        ))
+        #expect(withUnknown.restoreRebindPhase() == nil)
+        #expect(!withUnknown.isRestoreEligible)
         // An indeterminate last input (recorded intent, never acknowledged,
         // then invalidated) has no documented re-entry: restore is refused,
         // never guessed.
@@ -266,39 +256,23 @@ struct AgentTaskNativeDispatchTests {
             .applying(.sessionBound(identity))
             .applying(.initialInputIntent)
             .applying(.unavailable)
-        #expect(AgentTaskNativeDispatch.restoreRebindPhase(
-            from: withIntent.phase, submissions: withIntent.submissions
-        ) == nil)
-        #expect(!AgentTaskNativeDispatch.isRestoreEligible(
-            withIntent.phase, submissions: withIntent.submissions
-        ))
+        #expect(withIntent.restoreRebindPhase() == nil)
+        #expect(!withIntent.isRestoreEligible)
         // Admitted-but-dead-end journal phases refuse at admission: no
         // rebind, no eligibility.
         var deadIntent = try launchedJournal()
             .applying(.sessionBound(identity))
             .applying(.initialInputIntent)
         #expect(deadIntent.phase == .inputIntent)
-        #expect(AgentTaskNativeDispatch.restoreRebindPhase(
-            from: deadIntent.phase, submissions: deadIntent.submissions
-        ) == nil)
-        #expect(!AgentTaskNativeDispatch.isRestoreEligible(
-            deadIntent.phase, submissions: deadIntent.submissions
-        ))
+        #expect(deadIntent.restoreRebindPhase() == nil)
+        #expect(!deadIntent.isRestoreEligible)
         let failed = try deadIntent.applying(.operationFailed)
         #expect(failed.phase == .operationFailed)
-        #expect(AgentTaskNativeDispatch.restoreRebindPhase(
-            from: failed.phase, submissions: failed.submissions
-        ) == nil)
-        #expect(!AgentTaskNativeDispatch.isRestoreEligible(
-            failed.phase, submissions: failed.submissions
-        ))
+        #expect(failed.restoreRebindPhase() == nil)
+        #expect(!failed.isRestoreEligible)
         let cancelled = try failed.applying(.cancellationConfirmed)
-        #expect(AgentTaskNativeDispatch.restoreRebindPhase(
-            from: cancelled.phase, submissions: cancelled.submissions
-        ) == nil)
-        #expect(!AgentTaskNativeDispatch.isRestoreEligible(
-            cancelled.phase, submissions: cancelled.submissions
-        ))
+        #expect(cancelled.restoreRebindPhase() == nil)
+        #expect(!cancelled.isRestoreEligible)
     }
 
     @Test func restoreRebindIsAOneShotExactIdentityRebind() throws {
@@ -307,6 +281,11 @@ struct AgentTaskNativeDispatchTests {
             .applying(.sessionBound(identity))
             .applying(.initialInputIntent)
             .applying(.initialInputAcknowledged(operationID: "turn_1"))
+        // Model the settled turn the journal admits it in (receipt-bearing
+        // in production): the only post-input state with a restore target.
+        unavailable.phase = .parentSettlementUnknown
+        unavailable.submissions[0].phase = .responseObserved
+        #expect(unavailable.isValid(for: makeTask(vendorIdentity: identity)))
         unavailable = try unavailable.applying(.unavailable)
         // The exact recorded identity re-binds through the rebind target.
         let rebound = try unavailable.applying(.sessionBound(identity))
@@ -323,6 +302,36 @@ struct AgentTaskNativeDispatchTests {
         // no prior conversation.
         let launched = launchedJournal()
         #expect(try launched.applying(.sessionBound(identity)).phase == .sessionBound)
+    }
+
+    @Test func deadEndJournalsRefuseRestore() throws {
+        let identity = AgentVendorSessionIdentity(provider: "codex", opaqueIdentifier: "thr_1")
+        // A mid-turn crash state (.inputAcknowledged) is not a post-session
+        // phase: there is no rebind target at all.
+        let midTurn = try launchedJournal()
+            .applying(.sessionBound(identity))
+            .applying(.initialInputIntent)
+            .applying(.initialInputAcknowledged(operationID: "turn_1"))
+        #expect(midTurn.phase == .inputAcknowledged)
+        #expect(midTurn.restoreRebindPhase() == nil)
+        #expect(!midTurn.isRestoreEligible)
+        // A settled-then-cancelled turn keeps the sticky cancellation flag
+        // forever; a restored owner could load the session but no
+        // submission transition would apply. Refused at the shared
+        // eligibility point, not after admission.
+        var cancelled = midTurn
+        cancelled.phase = .parentSettlementUnknown
+        cancelled.submissions[0].phase = .responseObserved
+        #expect(cancelled.isValid(for: makeTask(vendorIdentity: identity)))
+        cancelled = try cancelled.applying(.cancellationRequested)
+        cancelled = try cancelled.applying(.cancellationConfirmed)
+        cancelled = try cancelled.applying(.unavailable)
+        #expect(cancelled.cancellationRequested)
+        #expect(cancelled.restoreRebindPhase() == nil)
+        #expect(!cancelled.isRestoreEligible)
+        #expect(throws: AgentTaskNativeAdmissionError.invalidTransition) {
+            _ = try cancelled.applying(.sessionBound(identity))
+        }
     }
 
     @Test func journalRoundTripsAndRedacts() throws {

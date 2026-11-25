@@ -29,30 +29,32 @@ nonisolated struct AgentTaskNativeDispatch: Codable, Equatable, Sendable,
     static let maximumSubmissions = 32
     /// The journal phase an explicit exact-session restore rebind (#1811)
     /// returns to, or nil when no documented post-session state can be
-    /// re-entered. Admitted-but-dead-end journal states (a recorded intent
-    /// that never settled, an unknown input outcome, a confirmed
-    /// cancellation, or a failed operation) refuse restore: no submission
-    /// transition applies there and checkControl blocks answering. Restore
-    /// is only eligible when the last submission is nil, .acknowledged, or
-    /// .responseObserved — otherwise it is refused, never guessed.
-    static func restoreRebindPhase(from phase: Phase, submissions: [Submission]) -> Phase? {
-        guard phase != .reserved, phase != .launchIntent,
-              phase != .inputIntent, phase != .inputUnknown,
-              phase != .cancellationConfirmed, phase != .operationFailed else { return nil }
-        guard phase == .unavailable else { return phase }
+    /// re-entered. Only post-session phases are rebind targets: mid-turn
+    /// crash states (.inputIntent, .inputAcknowledged, .inputUnknown) have
+    /// no re-entry. Admitted-but-dead-end journals refuse restore: a
+    /// recorded intent that never settled, an acknowledged-but-unobserved
+    /// input, an unknown input outcome, a pending (sticky) cancellation,
+    /// or a failed operation — no submission transition applies there and
+    /// checkControl blocks answering. Restore is only eligible when the
+    /// last submission is nil or .responseObserved — otherwise refused,
+    /// never guessed.
+    func restoreRebindPhase() -> Phase? {
+        guard !cancellationRequested,
+              phase == .sessionBound || phase == .parentSettlementUnknown || phase == .unavailable else {
+            return nil
+        }
         switch submissions.last?.phase {
         case nil: return .sessionBound
-        case .acknowledged, .responseObserved: return .parentSettlementUnknown
-        case .intent, .unknown: return nil
+        case .responseObserved: return .parentSettlementUnknown
+        case .intent, .acknowledged, .unknown: return nil
         }
     }
 
     /// Admission eligibility for a new-owner exact-session restore: a
     /// post-session journal with the exact recorded conversation, whose
-    /// rebind target exists. Every such phase has an observed run.
-    static func isRestoreEligible(_ phase: Phase, submissions: [Submission]) -> Bool {
-        restoreRebindPhase(from: phase, submissions: submissions) != nil
-    }
+    /// rebind target exists and whose restored owner can actually submit.
+    /// Every such phase has an observed run.
+    var isRestoreEligible: Bool { restoreRebindPhase() != nil }
     let taskID: UUID
     let runID: UUID
     var bindingID: UUID?
@@ -141,7 +143,7 @@ nonisolated struct AgentTaskNativeDispatch: Codable, Equatable, Sendable,
             // `restoreRebindPhase`). No input is replayed. A fresh launch
             // still requires launchIntent with no conversation.
             if let conversation, conversation == identity,
-               let rebind = Self.restoreRebindPhase(from: phase, submissions: submissions) {
+               let rebind = restoreRebindPhase() {
                 next.phase = rebind
                 return next
             }
