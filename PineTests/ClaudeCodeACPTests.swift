@@ -36,9 +36,10 @@ struct ClaudeCodeACPTests {
     }
 
     /// #1765: the session setup `configOptions` observation fills the
-    /// read-only discovery report. The fixture transport has no launch-boundary
-    /// input, so the report attributes no executable and no effective values —
-    /// the capabilities stay the honest observed states.
+    /// read-only discovery report. The fixture factory supplies the
+    /// launch-boundary input, so the report attributes the resolved
+    /// executable, the pinned version, and the confirmed effective values
+    /// from the observed `currentValue`s.
     @Test func sessionSetupConfigOptionsFillTheDiscoveryReport() async throws {
         let fixture = try await fixture(sessionNewResult: .object([
             "sessionId": .string("ses_fixture"),
@@ -83,6 +84,26 @@ struct ClaudeCodeACPTests {
         #expect(report?.configurationCapabilities.model.state == .probed)
         #expect(report?.configurationCapabilities.reasoningEffort.state == .probed)
         #expect(report?.configurationCapabilities.permissions.state == .probed)
+        // The report belongs to the live session: stopping clears it so a
+        // future view wiring cannot render a stale observation.
+        await fixture.session.stop(deadline: .now.advanced(by: .seconds(1)))
+        #expect(await fixture.concrete.discoveryReport == nil)
+    }
+
+    /// #1765 review: a shape-malformed `configOptions` payload (not an array)
+    /// is a throwing observation — the session stays healthy but produces no
+    /// report at all, never a floor report from a half-observed peer.
+    @Test func malformedConfigOptionsKeepTheSessionButDropTheReport() async throws {
+        let fixture = try await fixture(sessionNewResult: .object([
+            "sessionId": .string("ses_fixture"),
+            "configOptions": .object(["id": .string("model")]),
+        ]))
+        defer { fixture.transport.close() }
+        try await fixture.session.start()
+        // The session itself is healthy and bound despite the malformed
+        // observation: only the report is dropped.
+        #expect(await fixture.concrete.snapshot().nativeSession != nil)
+        #expect(await fixture.concrete.discoveryReport == nil)
         await fixture.session.stop(deadline: .now.advanced(by: .seconds(1)))
     }
 

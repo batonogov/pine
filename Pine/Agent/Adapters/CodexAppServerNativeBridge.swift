@@ -339,7 +339,7 @@ actor CodexAppServerNativeSession: AgentAdapterSession,
 
             // Discovery only: non-mutating catalog/config reads of the pinned
             // app-server surface. Failures keep the documented floor state;
-            // neither call blocks the thread start or applies an override.
+            // neither call gates the thread start or applies an override.
             let modelList = try? await client.call(
                 method: "model/list", params: .object([:])
             )
@@ -395,6 +395,9 @@ actor CodexAppServerNativeSession: AgentAdapterSession,
         phase = .tornDown
         pumpTask?.cancel()
         pumpTask = nil
+        // The observation belongs to the live session: a stopped session
+        // must not leave a stale report for a future view wiring.
+        discoveryReport = nil
         replayFence.deactivate()
         actionable.removeAll()
         activeSubmission = nil

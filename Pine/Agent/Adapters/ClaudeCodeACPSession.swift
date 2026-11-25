@@ -847,6 +847,9 @@ actor ClaudeCodeACPSession: AgentAdapterControlledSession, CustomStringConvertib
         sentResponses.removeAll()
         sentMessages.removeAll()
         nativeSubmission = nil
+        // The observation belongs to the live session: a stopped session
+        // must not leave a stale report for a future view wiring.
+        discoveryReport = nil
         request.controlAuthority.revoke()
         revokeOwnership()
         ownedTransport?.close()

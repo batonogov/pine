@@ -1038,6 +1038,9 @@ actor KimiACPSession: AgentAdapterReviewingSession, CustomStringConvertible,
         for item in sentResponses.values { item.fence.revoke() }
         pending.removeAll()
         sentResponses.removeAll()
+        // The observation belongs to the live session: a stopped session
+        // must not leave a stale report for a future view wiring.
+        discoveryReport = nil
         mapper?.close()
         connection.close()
         request.controlAuthority.revoke()

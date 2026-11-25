@@ -133,6 +133,8 @@ struct OpenCodeTaskView: View {
                 .frame(width: 130, alignment: .leading)
             howToRunValue(line)
         }
+        // One VoiceOver stop per row: label and value read together.
+        .accessibilityElement(children: .combine)
         .accessibilityIdentifier(howToRunAccessibilityID(for: line.kind))
     }
 

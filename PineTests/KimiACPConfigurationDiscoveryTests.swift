@@ -192,7 +192,6 @@ struct KimiACPConfigurationDiscoveryTests {
             options: KimiFixtureOptions(discovery: input),
             ingest: { _ in .accepted }
         )
-        defer { await fixture.session.stop(deadline: .now.advanced(by: .seconds(2))) }
         try await fixture.session.start()
         let report = await fixture.concrete.discoveryReport
         #expect(report != nil)
@@ -204,5 +203,9 @@ struct KimiACPConfigurationDiscoveryTests {
         #expect(report?.configurationCapabilities.reasoningEffort.state == .researched)
         #expect(report?.effectivePermissions == .confirmed("ask"))
         #expect(report?.executableIdentity == .resolved(executable))
+        // The report belongs to the live session: stopping clears it so a
+        // future view wiring cannot render a stale observation.
+        await fixture.session.stop(deadline: .now.advanced(by: .seconds(2)))
+        #expect(await fixture.concrete.discoveryReport == nil)
     }
 }

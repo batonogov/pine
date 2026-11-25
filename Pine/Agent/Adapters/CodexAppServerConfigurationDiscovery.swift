@@ -7,9 +7,13 @@ import Foundation
 /// catalog including `supportedReasoningEfforts`, and `config/read` answers
 /// with the effective configuration after layering.
 ///
-/// Both the version floor and the transport observations stay fail-closed:
-/// a missing or malformed observation keeps the documented floor (researched)
-/// or unknown; nothing here manufactures a capability or an effective value.
+/// Both the version floor and the transport observations stay fail-closed.
+/// A shape-malformed observation (unparseable envelope or field) is a
+/// negative observation: the conformance gate keeps every capability at
+/// the documented floor and the effective values unknown. A throwing
+/// observation (over the documented bounds, or an invalid entry) makes
+/// `report` throw, and the session then produces NO report at all —
+/// absence of claims, never a floor report from a half-observed peer.
 nonisolated enum CodexAppServerConfigurationDiscovery {
     /// Documented at the pinned 0.169.0, not observed by Pine before a live
     /// session: `model/list` (model + supported reasoning efforts),
