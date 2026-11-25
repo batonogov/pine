@@ -172,6 +172,21 @@ struct AgentInboxTests {
         #expect(snapshot.rows.first?.state == .idle)
     }
 
+    @Test("a settled non-success owned task renders a dismiss-only inbox row")
+    func settledOwnedTaskRowIsDismissOnly() throws {
+        var task = ADEContractFixtures.settledTask(seed: 1741)
+        #expect(task.runs.last?.outcome != .success)
+        task.route = AgentTaskRoute(ownedProcessAvailability: .missing)
+        let row = try #require(AgentInboxSnapshot(tasks: [task]).rows.first)
+        // No verified result and no actionable decision request: the row
+        // cannot open a result, navigate to a terminated run, or recover
+        // (owned tasks are not project-window surfaced). Dismiss is the
+        // only action.
+        #expect(!row.canOpenResult)
+        #expect(!row.canNavigateToLiveRun)
+        #expect(!row.canRecover)
+    }
+
     @Test("row order stays stable when polling-driven activity timestamps flip")
     func rowOrderStableAcrossPollFlips() throws {
         // Two working tasks with write-once-stable start times.
