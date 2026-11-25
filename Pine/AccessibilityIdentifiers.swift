@@ -225,6 +225,12 @@ nonisolated enum AccessibilityID {
     static let openCodeTaskResult = "openCodeTaskResult"
     static let openCodeTaskQuestion = "openCodeTaskQuestion"
     static let openCodeTaskError = "openCodeTaskError"
+    static let howToRunDisclosure = "howToRunDisclosure"
+    static let howToRunAgentLine = "howToRunAgentLine"
+    static let howToRunAccountLine = "howToRunAccountLine"
+    static let howToRunModelLine = "howToRunModelLine"
+    static let howToRunEffortLine = "howToRunEffortLine"
+    static let howToRunPermissionsLine = "howToRunPermissionsLine"
 
     // MARK: - Agent Inbox
     static let agentInbox = "agentInbox"

@@ -671,6 +671,7 @@ jobs:
               -only-testing:PineUITests/AgentAttentionKeyboardUITests
               -only-testing:PineUITests/SidebarFolderClickTests
               -only-testing:PineUITests/CheckForUpdatesTests
+              -only-testing:PineUITests/OpenCodeRealModelJourneyUITests
           # Shard 4 — Editor Chrome (35 tests)
           - shard-name: "Editor Chrome"
             test-classes: >-

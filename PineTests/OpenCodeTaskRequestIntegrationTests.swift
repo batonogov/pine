@@ -157,7 +157,7 @@ static void send(const char *text) {
 
 int main(int argc, char **argv) {
     if (argc > 1 && strcmp(argv[1], "--version") == 0) {
-        puts("opencode v2.3.2");
+        puts("opencode v2.4.0");
         return 0;
     }
     char *line = NULL;
@@ -166,7 +166,7 @@ int main(int argc, char **argv) {
     while (getline(&line, &capacity, stdin) >= 0) {
         if (strstr(line, "\"initialize\"")) {
             send("{\"jsonrpc\":\"2.0\",\"id\":0,\"result\":{\"protocolVersion\":1,"
-                 "\"agentInfo\":{\"name\":\"OpenCode\",\"version\":\"2.3.2\"},"
+                 "\"agentInfo\":{\"name\":\"OpenCode\",\"version\":\"2.4.0\"},"
                  "\"agentCapabilities\":{\"loadSession\":true,"
                  "\"_meta\":{\"opencode/child-session-updates\":true}}}}");
         } else if (strstr(line, "\"session\\/new\"")) {

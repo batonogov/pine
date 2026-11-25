@@ -3,6 +3,62 @@ import Synchronization
 import Testing
 @testable import Pine
 
+/// Reads one bounded JSONL line from a supervised child's stdout with a
+/// deadline and a force-close escape. Shared by the opt-in real-binary
+/// probes (KimiACPSmokeTests, ACPv2ProbeTests). Never retains stderr or
+/// provider payloads beyond the single settled frame.
+nonisolated func readACPSmokeHandshakeLine(
+    _ handle: FileHandle, deadline: ContinuousClock.Instant,
+    forceClose: @escaping @Sendable () -> Void
+) async throws -> String {
+    try await withTaskCancellationHandler {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<String, any Error>) in
+            let state = Mutex<CheckedContinuation<String, any Error>?>(continuation)
+            func finish(_ result: Result<String, any Error>) {
+                let pending: CheckedContinuation<String, any Error>? = state.withLock { value in
+                    guard let pending = value else { return nil }
+                    value = nil
+                    return pending
+                }
+                switch result {
+                case .success(let value): pending?.resume(returning: value)
+                case .failure(let error): pending?.resume(throwing: error)
+                }
+            }
+            DispatchQueue.global().async {
+                var data = Data()
+                while data.last != 10 {
+                    guard let byte = try? handle.read(upToCount: 1), let first = byte.first else {
+                        finish(.failure(KimiACPWireError.closed))
+                        return
+                    }
+                    guard first == 10 || data.count < KimiACPWire.maximumFrameBytes else {
+                        finish(.failure(KimiACPWireError.capacity))
+                        return
+                    }
+                    data.append(first)
+                }
+                guard let text = String(data: data, encoding: .utf8) else {
+                    finish(.failure(KimiACPWireError.invalidProtocol))
+                    return
+                }
+                finish(.success(text))
+            }
+            let watchdog = Task {
+                do {
+                    try await Task.sleep(until: deadline, clock: .continuous)
+                    // finish() is idempotent: a settled read makes this a
+                    // no-op; only a still-pending handshake force-closes
+                    // the child (EOF unblocks the reader) and fails.
+                    if state.withLock({ $0 != nil }) { forceClose() }
+                    finish(.failure(KimiACPWireError.unavailable))
+                } catch { /* The read settled first. */ }
+            }
+            _ = watchdog
+        }
+    } onCancel: { forceClose() }
+}
+
 extension CodexAppServerMessage {
     var params: AgentEventJSON {
         switch self {
@@ -134,7 +190,11 @@ nonisolated final class KimiFakeTransport: KimiACPTransport, Sendable {
                     "configOptions": .array([
                         .object([
                             "id": .string("mode"), "name": .string("Session Mode"),
-                            "type": .string("select"), "currentValue": .string("ask")
+                            "type": .string("select"), "currentValue": .string("ask"),
+                            "options": .array([
+                                .object(["value": .string("ask"), "name": .string("Ask")]),
+                                .object(["value": .string("neverAsk"), "name": .string("Never Ask")]),
+                            ]),
                         ]),
                         .object([
                             "id": .string("future"), "name": .string("Future"),
@@ -225,6 +285,8 @@ nonisolated struct KimiFixtureOptions: Sendable {
     var foreignReplay = false
     var imageCapability = true
     var embeddedContextCapability = true
+    /// Launch-boundary observation for the discovery report.
+    var discovery: KimiACPConfigurationDiscovery.Input?
 }
 
 nonisolated final class KimiSessionRecorder: Sendable {
@@ -261,7 +323,9 @@ nonisolated struct KimiFixtureFactory: AgentAdapterFactory {
     }
 
     func makeSession(_ request: AgentAdapterSessionRequest) async throws -> any AgentAdapterSession {
-        let factory = KimiACPFactory(id: id, observation: try await probe()) { request in
+        let factory = KimiACPFactory(
+            id: id, observation: try await probe(), discovery: options.discovery
+        ) { request in
             KimiACPAdmission(
                 launch: { _ in self.transport },
                 cwd: request.reviewBinding?.lease.canonicalWorktree.path ?? "/fixture/task",

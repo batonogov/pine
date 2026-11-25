@@ -27,6 +27,34 @@ nonisolated struct AgentTaskNativeDispatch: Codable, Equatable, Sendable,
         var customMirror: Mirror { Mirror(self, children: ["value": description]) }
     }
     static let maximumSubmissions = 32
+    /// The journal phase an explicit exact-session restore rebind (#1811)
+    /// returns to, or nil when no documented post-session state can be
+    /// re-entered. Only post-session phases are rebind targets: mid-turn
+    /// crash states (.inputIntent, .inputAcknowledged, .inputUnknown) have
+    /// no re-entry. Admitted-but-dead-end journals refuse restore: a
+    /// recorded intent that never settled, an acknowledged-but-unobserved
+    /// input, an unknown input outcome, a pending (sticky) cancellation,
+    /// or a failed operation — no submission transition applies there and
+    /// checkControl blocks answering. Restore is only eligible when the
+    /// last submission is nil or .responseObserved — otherwise refused,
+    /// never guessed.
+    func restoreRebindPhase() -> Phase? {
+        guard !cancellationRequested,
+              phase == .sessionBound || phase == .parentSettlementUnknown || phase == .unavailable else {
+            return nil
+        }
+        switch submissions.last?.phase {
+        case nil: return .sessionBound
+        case .responseObserved: return .parentSettlementUnknown
+        case .intent, .acknowledged, .unknown: return nil
+        }
+    }
+
+    /// Admission eligibility for a new-owner exact-session restore: a
+    /// post-session journal with the exact recorded conversation, whose
+    /// rebind target exists and whose restored owner can actually submit.
+    /// Every such phase has an observed run.
+    var isRestoreEligible: Bool { restoreRebindPhase() != nil }
     let taskID: UUID
     let runID: UUID
     var bindingID: UUID?
@@ -108,6 +136,17 @@ nonisolated struct AgentTaskNativeDispatch: Codable, Equatable, Sendable,
         var next = self
         switch transition {
         case .sessionBound(let identity):
+            // Explicit restore re-binds the exact recorded identity on a
+            // post-session phase: the journal re-enters its documented
+            // post-session state (a `.unavailable` journal, the normal one
+            // after a clean stop, rebinds through
+            // `restoreRebindPhase`). No input is replayed. A fresh launch
+            // still requires launchIntent with no conversation.
+            if let conversation, conversation == identity,
+               let rebind = restoreRebindPhase() {
+                next.phase = rebind
+                return next
+            }
             guard phase == .launchIntent, conversation == nil else { throw AgentTaskNativeAdmissionError.invalidTransition }
             next.conversation = identity
             next.phase = .sessionBound

@@ -14,6 +14,7 @@ comparative effectiveness is claimed anywhere in it.**
 | [scenarios/](scenarios/README.md) | The issue's six benchmark scenarios (SC1–SC6) and the representative-failure suite (F1–F6) as reproducible facilitator protocols; [ledger/](scenarios/ledger/README.md) fixture: three independent tasks with exactly one controlled question. |
 | [baseline-access.md](baseline-access.md) | Trial-machine access record, 2026-11-16: the three required baselines (Zed, herdr, one result-oriented) each carry a **named concrete access blocker**; available provider CLIs recorded. |
 | [scorecard.md](scorecard.md) | Row template, pre-registered thresholds marked HYPOTHESIS with the pilot-refinement rule, small-sample reporting rules, and the measured-finding → owning-issue trace. |
+| [trial-runbook.md](trial-runbook.md) | The exact maintainer procedure for the live 5–8 developer cohort trial: required inputs (machines, the three baseline installs, Pine candidate, provider accounts, time budget), pre-trial checklist, session/scenario assignments, measurement fields, pre-registered pass/fail. |
 | [ade-boundary-ux-acceptance.md](../../ade-boundary-ux-acceptance.md) | #1810 boundary cards B1–B6 this suite operationalizes; its evidence-row format and entry conditions are reused, not duplicated. |
 
 ## Running the offline parts (no provider, no network)
@@ -33,6 +34,9 @@ require the live cohort trial and an authorized provider; see
 [scenarios/README.md](scenarios/README.md) for per-scenario runnability labels.
 
 ## Running the live trial (maintainer-run)
+
+The exact steps live in [trial-runbook.md](trial-runbook.md); the numbered
+steps below summarize it.
 
 1. Resolve each required baseline per
    [baseline-access.md](baseline-access.md): install + authorized session +

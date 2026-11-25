@@ -2656,6 +2656,22 @@ enum Strings {
     static let openCodeTaskAllowOnce: LocalizedStringKey = "openCodeTask.allowOnce"
     static let openCodeTaskDeny: LocalizedStringKey = "openCodeTask.deny"
     static let openCodeTaskAnswer: LocalizedStringKey = "openCodeTask.answer"
+
+    // MARK: - How to run (#1765)
+
+    static let howToRunTitle: LocalizedStringKey = "howToRun.title"
+    static let howToRunAgent: LocalizedStringKey = "howToRun.agent"
+    static let howToRunAccount: LocalizedStringKey = "howToRun.account"
+    static let howToRunModel: LocalizedStringKey = "howToRun.model"
+    static let howToRunEffort: LocalizedStringKey = "howToRun.effort"
+    static let howToRunPermissions: LocalizedStringKey = "howToRun.permissions"
+    static let howToRunAgentSettings: LocalizedStringKey = "howToRun.agentSettings"
+    static let howToRunCliControls: LocalizedStringKey = "howToRun.cliControls"
+    static let howToRunUnknown: LocalizedStringKey = "howToRun.unknown"
+    static let howToRunLoginRequired: LocalizedStringKey = "howToRun.loginRequired"
+    static let howToRunAccountUnavailable: LocalizedStringKey = "howToRun.accountUnavailable"
+    static let howToRunExpiredCredentials: LocalizedStringKey = "howToRun.expiredCredentials"
+    static let howToRunNativeCredentials: LocalizedStringKey = "howToRun.nativeCredentials"
     static let agentResumeTask: LocalizedStringKey = "agent.resumeTask"
     static let tabMoveLeading: LocalizedStringKey = "tab.moveLeading"
     static let tabMoveTrailing: LocalizedStringKey = "tab.moveTrailing"

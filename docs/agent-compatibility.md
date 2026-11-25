@@ -11,20 +11,22 @@ matrix, and accessibility checklist live in the
 
 The checked-in catalog schema is version 1. **Catalog fixture version** below
 identifies the version label in the synthetic process-name fixture; it is not
-a minimum protocol version or a certified integration version. All retained
-first-party entries remain **Detected**: process snapshots with observed
-process-generation trust, manual terminal launch/new sessions, and process
-termination observations only. No structured transport, approval, provider
-resume, account/model discovery, or verified completion is enabled by these
-entries. The manual terminal can still run arbitrary programs.
+a minimum protocol version or a certified integration version. Retained
+**Detected** entries provide process snapshots with observed process-generation
+trust, manual terminal launch/new sessions, and process termination observations
+only. A separately marked structured adapter adds its documented owned transport;
+it does not add account/model discovery or verified completion. The manual
+terminal can still run arbitrary programs.
 
 The [dated capability evidence audit](cli-capability-evidence-2026-11-14.md)
 separates source review, fixtures, limited version/help observations, handshake,
 and end-to-end checks for every entry. It records identity, evidence dates and
 platform gaps, current upstream transport candidates, and required follow-up.
 The catalog's version labels are intentionally unchanged by the newer
-version/help observations: OpenCode 2.3.0 help does not upgrade the existing
-1.18.10 fixture into a verified V2 ACP integration.
+version/help observations: the 1.18.10 fixture remains the V1 detection
+record. The OpenCode V2 ACP integration landed on `main` on 2026-11-22
+(#1843), pinned to `opencode v2.3.2`, and is recorded in the OpenCode row
+and section below.
 
 Empry⊙ first-party recognition/presentation is retired with
 [#1766](https://github.com/batonogov/pine/issues/1766) (2026-11-14 decision).
@@ -37,8 +39,8 @@ The active catalog and all nine Help pages reflect this retirement.
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | [Pi](https://github.com/badlogic/pi-mono) | `pi` | 0.83.0 | Detected | Process snapshot; observed process generation | Manual terminal / new session only | Process termination only | No structured transport enabled; upstream candidates and limitations are recorded in the dated audit. |
 | [Codex](https://github.com/openai/codex) | `codex` | 0.146.0 | Detected | Process snapshot; observed process generation | Manual terminal / new session only | Process termination only | No structured transport enabled; upstream candidates and limitations are recorded in the dated audit. |
-| [Claude Code](https://github.com/anthropics/claude-code) | `claude` | 2.1.220 | Detected | Process snapshot; observed process generation | Manual terminal / new session only; native resume only by explicit user action as a new attempt | Process termination only | Structured transport not enabled in the app yet; the owned stream-json/control codec/model foundation is implemented with pinned floors (see below), recorded in the [2026-11-16 evidence](claude-stream-control-evidence-2026-11-16.md). |
-| [OpenCode](https://github.com/anomalyco/opencode) | `opencode` | 1.18.10 | Detected | Process snapshot; observed process generation | Manual terminal / new session only | Process termination only | No structured transport enabled; upstream candidates and limitations are recorded in the dated audit. |
+| [Claude Code](https://github.com/anthropics/claude-code) | `claude` (terminal detection), `claude-agent-acp` (owned adapter) | 2.1.220 | Structured via official ACP adapter | ACP v1 over Pine-owned child stdio; observed process generation | Owned official adapter; exact `session/load` only by explicit user action as a new attempt; no auto-resume | Main-turn end is unverified, never Ready by itself | Adapter pin 0.109.1; synthetic fixtures and composition only. Real adapter handshake, provider authentication, and an authenticated real-model journey are not claimed. Provider auth/configuration remains adapter-owned. |
+| [OpenCode](https://github.com/anomalyco/opencode) | `opencode` (terminal detection), `opencode acp` (owned V2 adapter) | 1.18.10 (V1 detection); 2.3.2 (V2 ACP) | Structured via OpenCode V2 `acp` adapter | ACP v1 over Pine-owned child stdio; observed process generation | Owned V2 adapter task dispatch from the Pine UI (in development; not in the latest release) plus manual terminal / new session; exact-ID `session/load` only by explicit user action as a new attempt; no auto-resume | Process termination only | Pinned `opencode v2.3.2`; deterministic fixtures and composition only, with an opt-in real-binary smoke that uses no model prompt and no auth mutation. Provider authentication and an authenticated real-model journey are not claimed. Main-turn end is unverified, never Ready by itself. |
 | [GitHub Copilot CLI](https://github.com/github/copilot-cli) | `github-copilot-cli`, `copilot` | 1.0.77 | Detected | Process snapshot; observed process generation | Manual terminal / new session only | Process termination only | No structured transport enabled; upstream candidates and limitations are recorded in the dated audit. |
 | [Aider](https://github.com/Aider-AI/aider) | `aider` | 0.86.0 | Detected | Process snapshot; observed process generation | Manual terminal / new session only | Process termination only | No structured transport enabled; upstream candidates and limitations are recorded in the dated audit. |
 | [Gemini CLI](https://github.com/google-gemini/gemini-cli) | `gemini` | 0.53.1 | Detected | Process snapshot; observed process generation | Manual terminal / new session only | Process termination only | No structured transport enabled; upstream candidates and limitations are recorded in the dated audit. |
@@ -60,30 +62,60 @@ metadata, and remembered defaults require a new explicit agent choice. Manual
 terminal commands remain available. Empry⊙ is excluded from Pine 3.0 structured
 adapter plans; historical release records remain unchanged.
 
-## Structured transport floors (Pine-owned, first slice)
+## Claude Code official ACP adapter (#1727)
 
-The first owned structured-adapter slice is Claude Code's
-stream-json/control protocol over supervised child stdio
-(#1727). Codex's owned app-server slice precedes it and Kimi/OpenCode
-extend the shared contracts; this table records the exact transport and
-version floors for Claude at the codec/model level. These floors are
-requirements of the implemented slice, not broad compatibility claims,
-and the app does not enable the transport until the registry integration
-and the real-version final gate (full turns, live permission exchange)
-pass.
+Claude's structured route is the official standalone `claude-agent-acp`
+process, launched as a Pine-owned child. It is not the earlier native
+stream-json/control launch path. The adapter wraps and owns the bundled Claude
+CLI, provider authentication, and native configuration; Pine neither reads nor
+manages Claude credentials, OAuth state, or keychain entries. The standalone
+macOS x64/arm64 archives need no Node.js installation. The inherited
+`CLAUDE_CODE_EXECUTABLE` setting may select a local CLI instead of the bundled
+one; this does not relax the adapter identity/version pin.
 
 | Item | Claude Code value |
 | --- | --- |
-| Transport | Owned child stdio; `-p --input-format stream-json --output-format stream-json --verbose`; JSONL frames ≤ 1 MiB |
-| Pinned executable | 2.1.311 (verified handshake, 2026-11-16, unauthenticated, no model calls) |
-| Structured-slice minimum | 2.1.296 (max of the required feature floors) |
-| Feature floors | `capabilities` field and interrupt receipts ≥ 2.1.205; `cancel_queued` ≥ 2.1.219; `--system-prompt-snapshot off` ≥ 2.1.257; `--permission-prompts` ≥ 2.1.259; `pending_permission_requests` ≥ 2.1.268; `claude_code_version` ≥ 2.1.296 |
-| Feature detection | Observed `capabilities` array first (open set; unrecognized values ignored); recorded version floors when the array is absent; missing evidence is unknown, never "absent" |
-| Pending-request recovery | `pending_permission_requests` on the `initialize` response wrapper; a missing field means an older CLI, so post-reconnect approval state stays unknown rather than "no pending requests" |
-| Cancellation | `interrupt` control request; receipt (`still_queued`/`cancelled`) is observation only — queued messages are never auto-resent; a late completion after cancellation is a race outcome, never Ready |
-| Stop semantics | `result success` = agent-reported main-turn end only; may coexist with background work; never independently establishes verified completion or Ready |
-| Resume | Native `--resume` only through explicit user action, as a new Pine attempt/source namespace; registry checkpoints are never persisted as resume data; a new process is never live reattachment |
-| Limitations | No transport reconnect on owned stdio (process death ends the attempt); native user questions (`pending_user_dialog_requests`) are parsed as count-only and unmapped; `can_use_tool` wire shape implemented from the documented contract, live exchange is the final gate; hooks are reporting-only with consent/preview and project-local settings only |
+| Transport | Literal-argv `claude-agent-acp` with no subcommand; ACP v1 JSON-RPC 2.0 over the shared bounded Pine-owned stdio channel/framer (JSONL frames ≤ 1 MiB); process-group stop/reap and bounded secret-free stderr drain |
+| Pinned adapter | 0.109.1 exactly; `--version` has a 5-second cap and initialize requires protocol 1 plus `agentInfo.name == "@agentclientprotocol/claude-agent-acp"` and the same exact version |
+| Protocol floor | ACP v1 only in this slice. ACP v2 Preview is not negotiated or enabled |
+| Sessions | `session/new`; exact-ID `session/load` is a separate explicit action in a new Pine attempt/source namespace. No process reattachment, auto-resume, reconnect, or automatic prompt resend |
+| User input | One-shot `session/request_permission` (`allow_once`/`reject_once`) and the strict form-only `elicitation/create` subset. Identical redelivery of an answered request replays its exact response; unsupported schemas and unowned reverse RPC fail closed |
+| Cancellation | `session/cancel`; remains requested until the provider confirms cancellation. Late completion is a race outcome and queued input is never automatically resent |
+| Main-turn end | `session/prompt` `end_turn` (including the other bounded terminal reasons) is unverified main-turn completion only. It never proves background-work settlement, checks, review, or Ready |
+| Provider configuration | `mcpServers: []` from Pine and inherited native adapter configuration. Provider authentication is not inferred from process ownership or a successful ACP handshake |
+| Verification boundary | Executable identity, framing, session/control behavior, ownership composition, stopped-provider replacement, and teardown have deterministic local coverage. This slice records no real adapter handshake result; no authenticated real-model turn or live permission exchange is claimed |
+
+The opt-in `PINE_RUN_CLAUDECODE_ACP_SMOKE=1` (or
+`$TMPDIR/pine-claude-acp-smoke`) check uses
+`PINE_CLAUDECODE_ACP_BINARY`, a synthetic working directory, no model prompt,
+and no auth mutation. It composes without launching, starts to idle with a
+bound native session, and tears down the owned process. It remains the final
+local smoke gate for the real adapter handshake; provider authentication and a
+real-model journey are separate acceptance evidence, not implications of this
+integration slice.
+
+## OpenCode V2 ACP adapter (#1843)
+
+OpenCode's structured route is the `opencode acp` entry point, launched as a
+Pine-owned child with ACP v1 JSON-RPC 2.0 over the shared bounded Pine-owned
+stdio channel/framer, per the [ACP reuse and dual-stack v1/v2 decision
+record](ade-acp-reuse-comparison-2026-11-23.md).
+
+| Item | OpenCode value |
+| --- | --- |
+| Transport | Literal-argv `opencode acp`; ACP v1 JSON-RPC 2.0 over the shared bounded Pine-owned stdio channel/framer; process-group stop/reap |
+| Pinned binary | `opencode v2.3.2` exactly (`--version` has a 5-second cap and ACP `agentInfo.version` must equal `2.3.2`; re-probe 2026-11-21); any other version is refused |
+| Protocol floor | ACP v1 only (`protocolVersion` 1); no v2 preview negotiation |
+| Sessions | `session/new`; exact-ID `session/load` is a separate explicit action that replays bounded saved updates in a new Pine attempt. No process reattachment, auto-resume, or automatic prompt resend |
+| User input | Request and same-session feedback through the Pine UI task sheet (in development); `session/request_permission` answered once with `allow_once`/`reject_once`; `session/cancel` remains requested until the provider confirms |
+| Configuration | ACP `configOptions` discovery maps model/effort to probed capabilities with native options; explicit overrides for unknown/unsupported capabilities fail the launch policy closed (#1850); no configuration UI yet |
+| Verification boundary | Deterministic fixture/contract suites (2.3.2 turn and fault fixtures) are the CI gate. The opt-in `PINE_RUN_OPENCODE_ACP_SMOKE=1` (or `$TMPDIR/pine-opencode-acp-smoke`) spawn check uses `PINE_OPENCODE_BINARY`, a synthetic working directory, no model prompt, and no auth mutation; it is the local gate for the real handshake. Provider authentication and an authenticated real-model journey are not claimed |
+
+In-app status: the task sheet is dispatchable from the Pine UI on `main`
+(#1848) and reports working, waiting, result, and unverified states as adapter
+observations; it is in development and is not part of the latest release.
+Notification accuracy remains process termination only: verified waiting-input
+notifications are not claimed for OpenCode (#1753/#1754).
 
 ## Tier meanings
 
@@ -93,10 +125,11 @@ pass.
   process generation. Lookalike names remain generic.
 - **Attention-aware:** Pine has a verified provider signal for a user-action
   transition. No first-party adapter currently claims this tier.
-- **Structured:** Pine negotiates a documented, authenticated structured
-  lifecycle contract. No first-party adapter currently claims this tier in
-  the catalog above: the Kimi Code CLI structured adapter (#1732) below
-  stays **Detected** until its real-version smoke passes on the pinned binary.
+- **Structured:** Pine negotiates a documented structured lifecycle contract
+  over an owned authenticated channel. Claude's and OpenCode's rows mark
+  integrated ACP adapter composition, not a completed authenticated provider
+  journey. The Kimi Code CLI structured adapter (#1732) below stays
+  **Detected** until its real-version smoke passes on the pinned binary.
 
 ## Kimi Code CLI structured ACP floor (#1732)
 
@@ -178,6 +211,49 @@ Deliberate boundaries:
 - MCP inheritance is not recorded because Pine forwards no MCP servers
   (`mcpServers: []` on every session call).
 
+## Configuration capability observations (#1765)
+
+Per-setting execution capability is recorded with the shared
+`AgentTaskConfigurationCapabilities` model: `researched` (documented at the
+pinned version, not observed by Pine), `probed` (observed on a live pinned
+connection, no apply/readback cycle), `supported` (override applied and its
+effective value read back — none claimed yet), `unsupported`, and `unknown`.
+Transport observation beats the version floor; a setting absent from both
+stays unknown. Every state below is produced from actual session observations
+and stays fail-closed: a malformed or missing observation degrades to the
+floor or unknown, never to a manufactured capability.
+
+| Adapter (pinned) | model | reasoning effort | permissions | Effective-value readback |
+| --- | --- | --- | --- | --- |
+| Codex `0.169.0` (app-server) | researched floor; probed only when `model/list` is observed **with a non-empty catalog** at session start (native catalog options enumerated) | researched floor; probed only when the observed catalog carries `supportedReasoningEfforts` | researched floor (documented per-thread `approvalPolicy`/`sandbox`); probed only when `config/read` carries `approval_policy` or `sandbox_mode` | `config/read` confirms effective `model`, `model_reasoning_effort`, `approval_policy`(+`sandbox_mode`) as native labels; an empty catalog or config keeps the floor |
+| Kimi `2.6.2` (ACP) | researched floor (re-probed 2026-11-17: `session/new` auth-gated); observed `configOptions` entry `model` (select) → probed | researched floor; observed `thinking` (select) → probed | researched floor; observed `mode` (select — the session permission mode: ask / never-ask / plan, per the CLI reference) → probed | ACP `currentValue` of an observed option is readback evidence for that setting only |
+| Claude adapter `0.109.1` (ACP) | researched floor (v0.109.1 source-reviewed 2026-11-23; no real handshake claimed); observed `model` option (category `model`; present only when the gateway lists models) → probed | researched floor; observed `effort` option (category `thought_level`; present only when the model supports effort) → probed | researched floor; observed `mode` option (category `mode`, "Session permission mode"; always present) → probed | ACP `currentValue` of an observed option is readback evidence for that setting only |
+| OpenCode `2.3.x` (ACP, #1850) | observed ACP `configOptions` → probed | observed → probed | unknown (OpenCode's `mode` is a primary agent, never mapped) | deferred in #1850; `currentValue` is validated but not yet recovered |
+
+Evidence notes:
+
+- Codex: `model/list`, `config/read`, and per-thread `approvalPolicy`/`sandbox`
+  are verified against the pinned `rust-v0.169.0` protocol sources
+  (non-mutating reads; `config/read` answers with the effective config after
+  layering). The installed-machine version may differ from the pin; the
+  session always re-admits the exact pinned image before the connection
+  exists.
+- Kimi: the documented `model`/`thinking`/`mode` option IDs come from the
+  Kimi ACP reference (the `set_config_option` "unified model / thinking /
+  mode picker dispatcher") and the pinned fixture (`mode`, `currentValue:
+  "ask"`). Pine never calls `session/set_config_option` in this slice, so no
+  overridable scope is claimed and no override is ever applied.
+- Claude: the option set (and that `agent`, `fast_mode`, and `ultracode` are
+  not Pine settings) comes from the reviewed v0.109.1 adapter source. The
+  adapter's `auth/status_update` pushes carry no Pine authentication evidence,
+  so the report's authentication stays unknown.
+- No adapter in this slice applies session-local overrides: the contextual
+  "How to run" surface (inside the task surface, not a permanent settings
+  pane, per #1760) therefore shows confirmed effective values where the
+  adapter reports them, "uses agent settings" where the setting is
+  researched/probed/supported, and "the CLI controls this" where the state is
+  unknown or unsupported. Override application remains deferred.
+
 ## Lifecycle and evidence contract (#1722)
 
 The tier decides what the shared ADE lifecycle/evidence contract can
@@ -189,7 +265,7 @@ establish for a durable task:
   silence, is `unknown`). A terminated attempt settles as `unverified`;
   process exit, terminal silence, and an agent claim alone can never produce
   a verified result or Ready.
-- Structured sessions (future) may additionally record agent-reported
+- Structured sessions may additionally record agent-reported
   completion claims with provider session references and source sequences.
   Even then, `success` and Ready require independent check and reviewer
   outcome facts bound to one code-state identity, so a structured claim
