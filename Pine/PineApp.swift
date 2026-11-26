@@ -985,7 +985,6 @@ struct AgentInboxWindowSources {
 }
 
 class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
-                   GlobalTabSwitcherKeyControllerDelegate,
                    AgentInboxHostEnvironment {
     typealias TerminationAlertPresenter = @MainActor (
         AlertTemplate,
@@ -1078,12 +1077,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
         CommandLine.arguments.contains("--disable-quick-terminal")
             || ProcessInfo.processInfo.environment["PINE_DISABLE_QUICK_TERMINAL"] != nil
     }
-
-    // MARK: - Visual MRU tab switcher (#1239)
-
-    /// Owns the Control-Tab / flags-changed monitors driving the visual MRU
-    /// switcher overlay. Installed once in `applicationDidFinishLaunching`.
-    private let tabSwitcherKeyController = GlobalTabSwitcherKeyController()
 
     // MARK: - SPUUpdaterDelegate
 
@@ -1611,11 +1604,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
         // Run data migrations before any other UserDefaults access
         MigrationManager.withDefaultMigrations().runMigrations()
 
-        // Default blame to ON for first launch
-        if PineStorageContext.defaults.object(forKey: BlameConstants.storageKey) == nil {
-            PineStorageContext.defaults.set(true, forKey: BlameConstants.storageKey)
-        }
-
         // Preload syntax grammars at startup instead of lazily on first tab open
         _ = SyntaxHighlighter.shared
 
@@ -1669,11 +1657,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
         bindQuickTerminalAgentRouting()
         agentNotifications.start()
         agentPresence.start()
-
-        // The key-down half is routed through the single precedence monitor
-        // below; this installs Control-release and owner-window cancellation.
-        tabSwitcherKeyController.delegate = self
-        tabSwitcherKeyController.install()
 
         // Clean up stale recovery files across all projects. The recovery
         // sheet states this same window, so a snapshot the user keeps putting
@@ -1759,9 +1742,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
     /// AppKit state. Called only after user overrides decline the event.
     /// Returns `true` when the event was consumed.
     private func handleBuiltInKeyDown(_ event: NSEvent) -> Bool {
-        if tabSwitcherKeyController.handleKeyDownEvent(event) {
-            return true
-        }
         let documentWindow = CommandOverlayOwnerResolver.documentWindow(
             for: NSApp.keyWindow
         )
@@ -1821,41 +1801,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
             }
         }
 
-        // Cmd+Shift+B opens branch switching only for Git projects.
-        if KeyboardShortcutMatcher.matches(
-            keyCode: KeyboardShortcutMatcher.PhysicalKey.b,
-            modifiers: [.command, .shift],
-            in: event
-        ),
-           let window = documentWindow,
-           let closeDelegate = window.delegate as? CloseDelegate,
-           closeDelegate.projectManager.workspace.gitProvider.isGitRepository {
-            NotificationCenter.default.post(
-                name: .showBranchSwitcher,
-                object: closeDelegate.projectManager
-            )
-            return true
-        }
-
-        // Immediate fallback retained for call paths where the visual
-        // controller is not installed (notably synthetic test harnesses that
-        // invoke the built-in dispatcher directly).
-        if event.keyCode == 48,
-           let window = documentWindow,
-           let closeDelegate = window.delegate as? CloseDelegate {
-            let modifiers = KeyboardShortcutMatcher.normalizedModifiers(
-                event.modifierFlags
-            )
-            if modifiers == .control {
-                closeDelegate.projectManager.paneManager.switchToNextTabGlobally()
-                return true
-            }
-            if modifiers == [.control, .shift] {
-                closeDelegate.projectManager.paneManager.switchToPreviousTabGlobally()
-                return true
-            }
-        }
-
         // Cmd+1...8 select a tab by index; Cmd+9 selects the last tab.
         if let digit = KeyboardShortcutMatcher.digit(
             from: event,
@@ -1874,20 +1819,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
         }
 
         return false
-    }
-
-    /// Atomically resolves the project that owns the current key window.
-    var globalTabSwitcherTarget: GlobalTabSwitcherTarget? {
-        guard let window = CommandOverlayOwnerResolver.documentWindow(
-            for: NSApp.keyWindow
-        ),
-              let closeDelegate = window.delegate as? CloseDelegate else {
-            return nil
-        }
-        return GlobalTabSwitcherTarget(
-            window: window,
-            paneManager: closeDelegate.projectManager.paneManager
-        )
     }
 
     /// Called when the user clicks the dock icon with no visible windows.

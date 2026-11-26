@@ -138,7 +138,7 @@ final class ScrollPerformanceTests: XCTestCase {
                 let range = NSRange(location: offset, length: length)
                 layoutManager.ensureLayout(forGlyphRange: range)
 
-                // Read color attributes per line fragment (minimap/gutter path)
+                // Read color attributes per line fragment (gutter path)
                 layoutManager.enumerateLineFragments(forGlyphRange: range) { _, _, _, glyphRange, _ in
                     let charRange = layoutManager.characterRange(
                         forGlyphRange: glyphRange, actualGlyphRange: nil

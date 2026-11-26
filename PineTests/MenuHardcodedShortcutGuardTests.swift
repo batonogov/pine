@@ -27,15 +27,9 @@ struct MenuHardcodedShortcutGuardTests {
     /// ``exemptChordsAreNotRebindable`` checks that claim against the chord,
     /// so an exemption written for a rebindable command still fails.
     static let exemptItems: Set<String> = [
-        // Control-Tab MRU switching; handled by a local event monitor, with
-        // the menu equivalents kept only as the Accessibility fallback.
-        "tabSwitchNext",
-        "tabSwitchPrevious",
         // Move Tab — pane and tab arrangement, not a registered command.
         "tabMoveLeading",
         "tabMoveTrailing",
-        "tabMoveToPreviousPane",
-        "tabMoveToNextPane",
         // Recover Terminal Display — a renderer escape hatch (#1472).
         "menuRecoverTerminalDisplay",
         // New Folder (⌘⇧N) — a sidebar context-menu operation mirrored into

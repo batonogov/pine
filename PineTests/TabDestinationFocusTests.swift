@@ -318,59 +318,6 @@ struct TabDestinationFocusTests {
         #expect(coordinator.pendingRequestID == nil)
     }
 
-    @Test("Pane switch cancels delayed editor focus before AppKit can steal it")
-    func paneSwitchCancelsDelayedEditorFocus() throws {
-        let paneManager = PaneManager()
-        let destinationPaneID = paneManager.activePaneID
-        let tabManager = try #require(paneManager.tabManager(for: destinationPaneID))
-        let tab = EditorTab(url: URL(fileURLWithPath: "/tmp/readme.md"))
-        tabManager.tabs = [tab]
-        tabManager.activeTabID = tab.id
-        tabManager.pendingFocusTabID = tab.id
-        let requestID = try #require(tabManager.pendingFocusRequestID)
-        let otherPaneID = try #require(
-            paneManager.splitPane(destinationPaneID, axis: .horizontal)
-        )
-        #expect(paneManager.activePaneID == otherPaneID)
-
-        let host = NSView(frame: NSRect(x: 0, y: 0, width: 400, height: 300))
-        let target = FocusAcceptingTestView(frame: host.bounds)
-        host.addSubview(target)
-        let window = NSWindow(
-            contentRect: host.frame,
-            styleMask: [.titled],
-            backing: .buffered,
-            defer: false
-        )
-        window.contentView = host
-        let originalResponder = window.firstResponder
-        let coordinator = AppKitFocusRequestCoordinator()
-        coordinator.update(
-            requestID: requestID,
-            hostView: host,
-            targetView: target,
-            canAttempt: { candidateRequestID in
-                paneManager.activePaneID == destinationPaneID
-                    && tabManager.activeTabID == tab.id
-                    && tabManager.pendingFocusTabID == tab.id
-                    && tabManager.pendingFocusRequestID == candidateRequestID
-            },
-            onResult: { completedRequestID, succeeded in
-                tabManager.acknowledgeFocusRequest(
-                    requestID: completedRequestID,
-                    for: tab.id,
-                    succeeded: succeeded
-                )
-            }
-        )
-
-        #expect(!coordinator.attemptNow())
-        #expect(coordinator.pendingRequestID == nil)
-        #expect(tabManager.pendingFocusTabID == nil)
-        #expect(window.firstResponder === originalResponder)
-        #expect(window.firstResponder !== target)
-    }
-
     @Test("Deferred editor creation revalidates its pane before taking focus")
     func deferredEditorCreationRevalidatesPane() {
         let host = NSView(frame: NSRect(x: 0, y: 0, width: 400, height: 300))
@@ -435,11 +382,7 @@ struct TabDestinationFocusTests {
         editorManager.tabs = [firstEditorTab, secondEditorTab]
         editorManager.activeTabID = firstEditorTab.id
 
-        let terminalPaneID = try #require(paneManager.createTerminalPane(
-            relativeTo: editorPaneID,
-            axis: .vertical,
-            workingDirectory: nil
-        ))
+        let terminalPaneID = try #require(Optional(paneManager.createTerminalPaneAtBottom(workingDirectory: nil)))
         let terminalState = try #require(paneManager.terminalState(for: terminalPaneID))
         let firstTerminalTab = try #require(terminalState.activeTab)
         #expect(paneManager.activePaneID == terminalPaneID)
@@ -477,48 +420,6 @@ struct TabDestinationFocusTests {
         #expect(terminalState.pendingFocusRequestID == previousRequestID)
     }
 
-    @Test("Selection can preserve source focus and cancels stale AppKit requests")
-    func selectionWithoutDestinationFocusCancelsPendingRequest() throws {
-        let paneManager = PaneManager()
-        let editorPaneID = paneManager.activePaneID
-        let editorManager = try #require(paneManager.tabManager(for: editorPaneID))
-        let tab = EditorTab(url: URL(fileURLWithPath: "/tmp/sidebar-preview.swift"))
-        editorManager.tabs = [tab]
-        editorManager.activeTabID = tab.id
-
-        let terminalPaneID = try #require(paneManager.createTerminalPane(
-            relativeTo: editorPaneID,
-            axis: .vertical,
-            workingDirectory: nil
-        ))
-        #expect(paneManager.activePaneID == terminalPaneID)
-
-        // Seed a request for the already-active tab. Because activeTabID does
-        // not change below, only the explicit no-focus path can cancel it.
-        editorManager.pendingFocusTabID = tab.id
-        #expect(editorManager.pendingFocusRequestID != nil)
-
-        #expect(paneManager.selectEditorTab(
-            tab.id,
-            in: editorPaneID,
-            requestFocus: false
-        ))
-        #expect(paneManager.activePaneID == editorPaneID)
-        #expect(editorManager.activeTabID == tab.id)
-        #expect(editorManager.pendingFocusTabID == nil)
-        #expect(editorManager.pendingFocusRequestID == nil)
-
-        let identity = GlobalTabIdentity(
-            paneID: editorPaneID,
-            tabID: tab.id,
-            contentType: .editor
-        )
-        #expect(paneManager.validGlobalTabSwitchOrder().first == identity)
-
-        #expect(paneManager.selectEditorTab(tab.id, in: editorPaneID))
-        #expect(editorManager.pendingFocusTabID == tab.id)
-    }
-
     @Test("Sidebar focus claim invalidates an active editor request only")
     func sidebarClaimInvalidatesActiveEditorRequest() async throws {
         let paneManager = PaneManager()
@@ -528,11 +429,7 @@ struct TabDestinationFocusTests {
         editorManager.tabs = [editorTab]
         editorManager.activeTabID = editorTab.id
 
-        let terminalPaneID = try #require(paneManager.createTerminalPane(
-            relativeTo: editorPaneID,
-            axis: .vertical,
-            workingDirectory: nil
-        ))
+        let terminalPaneID = try #require(Optional(paneManager.createTerminalPaneAtBottom(workingDirectory: nil)))
         let terminalState = try #require(paneManager.terminalState(for: terminalPaneID))
         let terminalRequestID = try #require(terminalState.pendingFocusRequestID)
 
@@ -609,11 +506,7 @@ struct TabDestinationFocusTests {
         editorManager.pendingFocusTabID = editorTab.id
         let editorRequestID = try #require(editorManager.pendingFocusRequestID)
 
-        let terminalPaneID = try #require(paneManager.createTerminalPane(
-            relativeTo: editorPaneID,
-            axis: .vertical,
-            workingDirectory: nil
-        ))
+        let terminalPaneID = try #require(Optional(paneManager.createTerminalPaneAtBottom(workingDirectory: nil)))
         let terminalState = try #require(paneManager.terminalState(for: terminalPaneID))
         let terminalTab = try #require(terminalState.activeTab)
         let terminalRequestID = try #require(terminalState.pendingFocusRequestID)

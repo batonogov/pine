@@ -14,7 +14,7 @@ import Testing
 @Suite("Editor Canvas Background Tests")
 @MainActor
 struct EditorCanvasBackgroundTests {
-    @Test("Gutter and minimap follow the editor background")
+    @Test("Gutter follows the editor background")
     func chromeFollowsEditorBackground() {
         let editor = NSTextView()
         let customBackground = NSColor(
@@ -26,22 +26,17 @@ struct EditorCanvasBackgroundTests {
         editor.backgroundColor = customBackground
 
         let gutter = LineNumberView(textView: editor)
-        let minimap = MinimapView(textView: editor)
 
         #expect(gutter.canvasBackgroundColor == customBackground)
-        #expect(minimap.canvasBackgroundColor == customBackground)
     }
 
     @Test("Detached editor chrome falls back to the semantic text background")
     func detachedChromeUsesSemanticFallback() {
         let editor = NSTextView()
         let gutter = LineNumberView(textView: editor)
-        let minimap = MinimapView(textView: editor)
 
         gutter.textView = nil
-        minimap.textView = nil
 
         #expect(gutter.canvasBackgroundColor == NSColor.textBackgroundColor)
-        #expect(minimap.canvasBackgroundColor == NSColor.textBackgroundColor)
     }
 }

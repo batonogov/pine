@@ -59,19 +59,12 @@ nonisolated enum UserCommand: String, Sendable, CaseIterable {
     case revertChange
     case acceptAllChanges
     case revertAllChanges
-    case foldCode
-    case unfoldCode
-    case foldAll
-    case unfoldAll
     case commandPalette
     case openFolder
-    case showBranchSwitcher
     case increaseFontSize
     case decreaseFontSize
     case resetFontSize
     case toggleWordWrap
-    case toggleMinimap
-    case toggleBlame
     case togglePreview
     case revealFileInFinder
     case revealProjectInFinder
@@ -113,16 +106,12 @@ nonisolated enum UserCommand: String, Sendable, CaseIterable {
         case .acceptChange, .revertChange,
              .acceptAllChanges, .revertAllChanges:
             "inlineDiffAction"
-        case .foldCode, .unfoldCode, .foldAll, .unfoldAll: "foldCode"
         case .commandPalette: "showCommandPalette"
         case .openFolder: "openFolder"
-        case .showBranchSwitcher: "showBranchSwitcher"
         case .increaseFontSize: "user.increaseFontSize"
         case .decreaseFontSize: "user.decreaseFontSize"
         case .resetFontSize: "user.resetFontSize"
         case .toggleWordWrap: "toggleWordWrap"
-        case .toggleMinimap: "user.toggleMinimap"
-        case .toggleBlame: "user.toggleBlame"
         case .togglePreview: "user.togglePreview"
         case .revealFileInFinder: "user.revealFileInFinder"
         case .revealProjectInFinder: "user.revealProjectInFinder"
@@ -231,6 +220,8 @@ final class UserKeybindingRegistry {
     // Removed commands stay inert without invalidating other user bindings.
     nonisolated private static let retiredCommandIDs: Set<String> = [
         "showProblems", "nextDiagnostic", "previousDiagnostic",
+        "foldCode", "unfoldCode", "foldAll", "unfoldAll",
+        "showBranchSwitcher", "toggleMinimap", "toggleBlame",
         "findInFile", "findAndReplace", "findNext", "findPrevious",
         "useSelectionForFind", "findInProject", "goToLine",
         "symbolNavigator", "quickOpen",

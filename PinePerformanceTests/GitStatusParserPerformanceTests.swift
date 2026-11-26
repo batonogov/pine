@@ -63,26 +63,6 @@ final class GitStatusParserPerformanceTests: XCTestCase {
         return lines.joined(separator: "\n")
     }
 
-    /// Generates `git blame --porcelain` output.
-    private func generateBlameOutput(lineCount: Int) -> String {
-        var lines: [String] = []
-        let hashes = (0..<10).map { String(format: "%040x", $0) }
-
-        for i in 0..<lineCount {
-            let hash = hashes[i % hashes.count]
-            let isFirst = i < hashes.count
-
-            lines.append("\(hash) \(i + 1) \(i + 1) 1")
-            if isFirst {
-                lines.append("author Developer\(i % 5)")
-                lines.append("author-time \(1700000000 + i * 3600)")
-                lines.append("summary Commit message \(i)")
-            }
-            lines.append("\tlet line\(i) = \(i)")
-        }
-        return lines.joined(separator: "\n")
-    }
-
     // MARK: - Status Parsing
 
     func testParseStatus500Entries() {
@@ -124,22 +104,6 @@ final class GitStatusParserPerformanceTests: XCTestCase {
         let output = generateDiffOutput(hunkCount: 500)
         measure {
             _ = GitStatusProvider.parseDiff(output)
-        }
-    }
-
-    // MARK: - Blame Parsing
-
-    func testParseBlame500Lines() {
-        let output = generateBlameOutput(lineCount: 500)
-        measure {
-            _ = GitStatusProvider.parseBlame(output)
-        }
-    }
-
-    func testParseBlame2000Lines() {
-        let output = generateBlameOutput(lineCount: 2000)
-        measure {
-            _ = GitStatusProvider.parseBlame(output)
         }
     }
 

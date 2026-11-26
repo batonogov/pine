@@ -443,7 +443,6 @@ jobs:
             -derivedDataPath DerivedData \
             -only-testing:PineTests \
             -skip-testing:PineTests/FuzzGitDiffParserTests \
-            -skip-testing:PineTests/FuzzGitBlameParserTests \
             -skip-testing:PineTests/FuzzGitStatusParserTests \
             -skip-testing:PineTests/FuzzSyntaxHighlighterTests \
             -skip-testing:PineTests/FuzzConfigValidatorTests \
@@ -622,7 +621,7 @@ jobs:
             --workflow .github/workflows/ci.yml \
             --max-delta 3
 
-  # UI test shards — 7 shards × 2 OS axes = 14 jobs, 32-34 tests each (delta 2).
+  # UI test shards — 7 shards × 2 OS axes = 14 jobs, 30-33 tests each (delta 3).
   # To rebalance: count tests per class, redistribute so shards stay within ±3 tests.
   # List classes with: grep -r "func test" PineUITests/ | sed 's/:.*//' | sort | uniq -c | sort -rn
   # shard-name is a real matrix axis (not only an include key): an include
@@ -648,71 +647,67 @@ jobs:
           - "Panes & Files"
           - "Security & Layout"
         include:
-          # Shard 1 — Terminal
+          # Shard 1 — Terminal (33 tests)
           - shard-name: "Terminal"
             test-classes: >-
               -only-testing:PineUITests/TerminalTests
               -only-testing:PineUITests/TerminalMenuTests
               -only-testing:PineUITests/SessionRestoreTests
-              -only-testing:PineUITests/AgentMenuBarCommandsUITests
-          # Shard 2 — Welcome & Session (35 tests)
+          # Shard 2 — Welcome & Session (32 tests)
           - shard-name: "Welcome & Session"
             test-classes: >-
               -only-testing:PineUITests/WelcomeWindowTests
               -only-testing:PineUITests/NativeFileWindowMenuUITests
-              -only-testing:PineUITests/CheckForUpdatesTests
-          # Shard 3 — Navigation (accessibility matrix skips here)
+          # Shard 3 — Navigation (32 tests; accessibility matrix skips here)
           - shard-name: "Navigation"
             test-classes: >-
               -only-testing:PineUITests/TabOverflowExternalChangesUITests
               -only-testing:PineUITests/CommandPaletteUITests
               -only-testing:PineUITests/AgentTaskResultUITests
               -only-testing:PineUITests/EditorTabNavigationTests
-              -only-testing:PineUITests/DiffNavigationUITests
               -only-testing:PineUITests/AccessibilityLocalizationSmokeTests
-              -only-testing:PineUITests/AgentAttentionKeyboardUITests
-              -only-testing:PineUITests/SidebarFolderClickTests
               -only-testing:PineUITests/OpenCodeRealModelJourneyUITests
-          # Shard 4 — Editor Chrome (35 tests)
+              -only-testing:PineUITests/CheckForUpdatesTests
+              -only-testing:PineUITests/InlineRenameAlignmentTests
+          # Shard 4 — Editor Chrome (32 tests)
           - shard-name: "Editor Chrome"
             test-classes: >-
               -only-testing:PineUITests/EditorWindowTests
               -only-testing:PineUITests/ScreenshotTests
-              -only-testing:PineUITests/BranchSwitcherTests
-              -only-testing:PineUITests/SplitPaneRoutingUITests
-              -only-testing:PineUITests/BlameViewTests
               -only-testing:PineUITests/ToggleCommentTests
               -only-testing:PineUITests/OpenCodeTaskUITests
+              -only-testing:PineUITests/SidebarFolderClickTests
+              -only-testing:PineUITests/LineNumberGutterUITests
           # Shard 5 — Files & Save (33 tests, release smoke skips outside release CI)
           - shard-name: "Files & Save"
             test-classes: >-
               -only-testing:PineUITests/EditorSaveFlowTests
+              -only-testing:PineUITests/DiffNavigationUITests
               -only-testing:PineUITests/DeleteTests
               -only-testing:PineUITests/SidebarRenameTests
               -only-testing:PineUITests/SidebarFileOperationsTests
               -only-testing:PineUITests/UserTaskExecutionUITests
-              -only-testing:PineUITests/UnsavedChangesUITests
               -only-testing:PineUITests/ReleaseArtifactSmokeTests
-          # Shard 6 — Panes & Files
+          # Shard 6 — Panes & Files (32 tests)
           - shard-name: "Panes & Files"
             test-classes: >-
+              -only-testing:PineUITests/SidebarCollapseFlakeProbeUITests
+              -only-testing:PineUITests/HCLFormatOnSaveTests
               -only-testing:PineUITests/CloseProjectMenuTests
               -only-testing:PineUITests/DuplicateTests
-              -only-testing:PineUITests/SplitPaneLifecycleTests
+              -only-testing:PineUITests/AdjacentTerminalLifecycleTests
               -only-testing:PineUITests/FontSizeTests
               -only-testing:PineUITests/AgentActivityFilterUITests
-              -only-testing:PineUITests/MinimapTests
-              -only-testing:PineUITests/SidebarCollapseFlakeProbeUITests
-              -only-testing:PineUITests/LineNumberGutterUITests
-              -only-testing:PineUITests/HCLFormatOnSaveTests
-          # Shard 7 — Security & Layout (34 tests)
+              -only-testing:PineUITests/AgentAttentionKeyboardUITests
+              -only-testing:PineUITests/UnsavedChangesUITests
+              -only-testing:PineUITests/AgentMenuBarCommandsUITests
+          # Shard 7 — Security & Layout (30 tests)
           - shard-name: "Security & Layout"
             test-classes: >-
               -only-testing:PineUITests/AgentInboxToolbarButtonTests
               -only-testing:PineUITests/GitignoreFilterTests
               -only-testing:PineUITests/SymlinkSecurityUITests
               -only-testing:PineUITests/MultiWindowTests
-              -only-testing:PineUITests/InlineRenameAlignmentTests
               -only-testing:PineUITests/SettingsUITests
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
@@ -1157,7 +1152,6 @@ jobs:
             -destination "platform=macOS" \
             -derivedDataPath DerivedData \
             -only-testing:PineTests/FuzzGitDiffParserTests \
-            -only-testing:PineTests/FuzzGitBlameParserTests \
             -only-testing:PineTests/FuzzGitStatusParserTests \
             -only-testing:PineTests/FuzzSyntaxHighlighterTests \
             -only-testing:PineTests/FuzzConfigValidatorTests \

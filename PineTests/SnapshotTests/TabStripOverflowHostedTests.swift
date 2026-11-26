@@ -19,7 +19,6 @@ struct TabStripOverflowHostedTests {
         let paneManager: PaneManager
         let paneID: PaneID
         let tabManager: TabManager
-        var indicatorX: CGFloat = 164
 
         var body: some View {
             EditorTabBar(
@@ -28,9 +27,6 @@ struct TabStripOverflowHostedTests {
                 overridePaneID: paneID
             )
             .environment(paneManager)
-            .overlay(alignment: .topLeading) {
-                TabInsertionIndicator(x: indicatorX)
-            }
         }
     }
 
@@ -47,9 +43,6 @@ struct TabStripOverflowHostedTests {
             )
             .environment(paneManager)
             .environment(projectRegistry)
-            .overlay(alignment: .topLeading) {
-                TabInsertionIndicator(x: 164)
-            }
         }
     }
 
@@ -59,7 +52,7 @@ struct TabStripOverflowHostedTests {
     // while allowing that bounded cross-OS glyph delta in the preview lane.
     private static let terminalCrossVersionTolerance = 0.02
 
-    @Test("Overflowing editor strip snapshots pinned, preview, active, and indicator states")
+    @Test("Overflowing editor strip snapshots pinned, preview, and active states")
     func editorOverflow() throws {
         let paneManager = PaneManager()
         let paneID = paneManager.activePaneID
@@ -89,7 +82,7 @@ struct TabStripOverflowHostedTests {
         }
     }
 
-    @Test("Overflowing terminal strip snapshots active and indicator states")
+    @Test("Overflowing terminal strip snapshots the active tab")
     func terminalOverflow() throws {
         let paneManager = PaneManager()
         let projectRegistry = ProjectRegistry()
@@ -114,7 +107,7 @@ struct TabStripOverflowHostedTests {
         }
     }
 
-    @Test("Empty editor strip snapshots its sole insertion gap")
+    @Test("Empty editor strip snapshots the empty state")
     func emptyEditorStrip() throws {
         let paneManager = PaneManager()
         let paneID = paneManager.activePaneID
@@ -125,8 +118,7 @@ struct TabStripOverflowHostedTests {
                 of: EditorHarness(
                     paneManager: paneManager,
                     paneID: paneID,
-                    tabManager: tabManager,
-                    indicatorX: 4
+                    tabManager: tabManager
                 ),
                 size: Self.renderSize,
                 appearance: appearance,

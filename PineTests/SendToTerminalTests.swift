@@ -37,7 +37,6 @@ struct SendToTerminalTests {
             contentVersion: 0,
             language: "swift",
             fileName: "test.swift",
-            foldState: .constant(FoldState())
         )
         return CodeEditorView.Coordinator(parent: editorView)
     }

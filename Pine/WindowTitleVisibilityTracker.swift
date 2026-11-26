@@ -13,7 +13,7 @@ import SwiftUI
 /// the window's identity for the Window menu, Mission Control, and window
 /// cycling — but the title bar never renders it. On the strip, identity is
 /// split the Safari way: the switcher pill names the project, the status-bar
-/// branch button names the checkout, and editor tabs name files.
+/// task environment details name the checkout, and editor tabs name files.
 ///
 /// The hiding costs the whole native title block, subtitle and document
 /// proxy icon included (verified empirically: `titleVisibility = .hidden`

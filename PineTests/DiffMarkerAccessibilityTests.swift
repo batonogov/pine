@@ -3,7 +3,7 @@
 //  PineTests
 //
 //  Differentiate Without Color support for the git diff markers drawn by the
-//  editor gutter and the minimap (#1540).
+//  editor gutter (#1540).
 //
 
 import AppKit
@@ -112,45 +112,6 @@ struct DiffMarkerAccessibilityTests {
         #expect(view.accessibilityOptionsChangeCount == 1, "The gutter observer must fire")
         #expect(
             !(view.accessibilityValue() as? String ?? "").isEmpty,
-            "The AX value must stay in sync with the current cue"
-        )
-    }
-
-    // MARK: - MinimapView wiring
-
-    @Test("Minimap exposes the marker cue mode once diffs arrive")
-    func minimapAccessibilityValueFollowsDiffs() {
-        let (_, textView) = makeGutterView()
-        let minimap = MinimapView(textView: textView)
-        minimap.lineDiffs = []
-        #expect((minimap.accessibilityValue() as? String ?? "").isEmpty)
-
-        minimap.lineDiffs = [GitLineDiff(line: 1, kind: .modified)]
-        let expected = GitDiffMarkerCue.accessibilityValue(
-            hasMarkers: true,
-            cue: GitDiffMarkerCue.resolve(
-                differentiateWithoutColor: NSWorkspace.shared
-                    .accessibilityDisplayShouldDifferentiateWithoutColor
-            )
-        )
-        #expect((minimap.accessibilityValue() as? String ?? "") == expected)
-    }
-
-    @Test("Minimap repaints and refreshes its AX value when display options change")
-    func minimapRepaintsOnDisplayOptionsChange() {
-        let (_, textView) = makeGutterView()
-        let minimap = MinimapView(textView: textView)
-        minimap.lineDiffs = [GitLineDiff(line: 1, kind: .modified)]
-        #expect(minimap.accessibilityOptionsChangeCount == 0)
-
-        NSWorkspace.shared.notificationCenter.post(
-            name: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification,
-            object: nil
-        )
-
-        #expect(minimap.accessibilityOptionsChangeCount == 1, "The minimap observer must fire")
-        #expect(
-            !(minimap.accessibilityValue() as? String ?? "").isEmpty,
             "The AX value must stay in sync with the current cue"
         )
     }

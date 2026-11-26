@@ -3,7 +3,7 @@
 //  Pine
 //
 //  Drag data for dragging files from the sidebar to editor panes.
-//  Separate from TabDragInfo to distinguish sidebar file drags from tab drags.
+//  Payload for dragging a file from the sidebar.
 //
 
 import CoreTransferable
@@ -11,7 +11,7 @@ import Foundation
 import UniformTypeIdentifiers
 
 /// Custom UTType for sidebar file drag operations.
-/// Distinct from `.paneTabDrag` so drop delegates can distinguish sidebar drags from tab reorders.
+/// Sidebar file drags use a dedicated type identifier.
 nonisolated extension UTType {
     static let sidebarFileDrag = UTType(exportedAs: "com.pine.sidebar-file-drag")
 }

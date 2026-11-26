@@ -75,12 +75,10 @@ Russian-language browser demo, not the downloadable app.
 - **Agent-aware workflow** — Agent Inbox keeps task context across projects and links to live sessions. Current process-only integrations send no agent notifications, including on process exit. Waiting-input, failure, and completion notifications require verified lifecycle events from a supported structured integration; no such integration is app-enabled yet. Released binaries may behave differently.
 - **Multi-project workspaces** — Keep related projects in one native window, switch from the toolbar, and close one project without disturbing the rest of the workspace
 - **Syntax highlighting** — bundled grammars for Swift, TypeScript, Python, Go, Rust, Java, Kotlin, Ruby, C/C++, and more
-- **Split panes** — Drag tabs to edges to split horizontally or vertically. Drag between panes to move. Resize with divider
+- **Adjacent terminal** — Keep an editor and a full-width terminal side by side, with a resizable divider and terminal zoom
 - **Built-in terminal** — Full VT100/xterm emulator via [SwiftTerm](https://github.com/migueldeicaza/SwiftTerm) (upstream, with Pine's terminal-rendering patches merged in). Multiple tabs, themes, TUI apps, clickable file and OSC 8 links, send-to-terminal, pane maximize, a global quick-terminal hotkey, and display recovery that preserves the running shell
 - **Lightweight extensibility** — User grammars, tasks, and keybindings without an extension marketplace
-- **Git integration** — File status in sidebar, diff markers in gutter, blame view, branch switching from title bar or Git menu
-- **Code folding** — Fold/unfold blocks from the gutter or via menu
-- **Minimap** — Scaled code overview with syntax colors and diff markers. Click to navigate
+- **Git integration** — File status in sidebar, diff markers in gutter, and branch identity in task environment details
 - **Markdown preview** — Source, rendered, or side-by-side via [swift-markdown](https://github.com/swiftlang/swift-markdown)
 - **Status bar** — Cursor position, line endings, indentation style, file size
 - **Bracket matching** — Highlights matching pairs while skipping strings and comments
@@ -96,7 +94,7 @@ Russian-language browser demo, not the downloadable app.
 <summary>Screenshots</summary>
 
 ### Code Editor
-<img src="assets/screenshot-editor.png" width="800" alt="Pine code editor with syntax highlighting and minimap">
+<img src="assets/screenshot-editor.png" width="800" alt="Pine code editor with syntax highlighting">
 
 ### Built-in Terminal
 <img src="assets/screenshot-terminal.png" width="800" alt="Pine Terminal">
@@ -109,9 +107,6 @@ Russian-language browser demo, not the downloadable app.
 
 ### Sidebar
 <img src="assets/screenshot-sidebar.png" width="800" alt="Pine sidebar with the project file tree">
-
-### Minimap
-<img src="assets/screenshot-minimap.png" width="800" alt="Pine minimap with syntax-colored code overview">
 
 ### Welcome Screen
 <img src="assets/screenshot-welcome.png" width="600" alt="Pine Welcome Screen">
@@ -155,9 +150,7 @@ release disk image without publishing a release.
 | `Cmd+Shift+D` | Duplicate file |
 | `Cmd+W` | Close tab |
 | `Cmd+/` | Toggle comment |
-| `Cmd+Shift+B` | Switch branch |
 | `Cmd+Shift+A` | New agent in a worktree |
-| `Cmd+Shift+M` | Toggle minimap |
 | `Cmd+Shift+P` | Markdown preview |
 | `Ctrl+Option+Down` / `Up` | Next / Previous change |
 | `` Cmd+` `` | Toggle terminal |

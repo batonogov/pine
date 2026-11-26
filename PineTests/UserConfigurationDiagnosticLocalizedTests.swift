@@ -21,7 +21,7 @@ struct UserConfigDiagnosticLocalizedTests {
             .unreadable(details: "permission denied"),
             .malformedDocument(details: "unexpected token"),
             .unknownCommand(id: "nope"),
-            .unavailableCommand(id: "toggleMinimap"),
+            .unavailableCommand(id: "legacy.command"),
             .invalidChord(value: "cmd+hyper+f"),
             .textInputChord(value: "f"),
             .reservedSystemChord(value: "cmd+c"),

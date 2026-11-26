@@ -49,7 +49,6 @@ struct UndoHighlightSafetyTests {
             contentVersion: 0,
             language: language,
             fileName: fileName,
-            foldState: .constant(FoldState())
         )
         let coordinator = CodeEditorView.Coordinator(parent: editorView)
         coordinator.scrollView = scrollView
@@ -137,7 +136,6 @@ struct UndoHighlightSafetyTests {
             contentVersion: 0,
             language: "swift",
             fileName: "test.swift",
-            foldState: .constant(FoldState())
         )
 
         let (scrollView, textView, _) = makeTextStack(text: "hello")

@@ -11,6 +11,12 @@ import Foundation
 @MainActor
 struct TerminalManagerCoordinatorTests {
 
+    /// No-op `ps` runner used by agent-detection tests so the coordinator never
+    /// forks a real subprocess (avoids the macos-26 fork/spawn hang, #1060).
+    private static let noOpProcessRunner: ProcessRunner = { _, _, _, _ in
+        ProcessRunResult(stdout: "", stderr: "", exitCode: 0, timedOut: false)
+    }
+
     @Test func createTerminalTab_noTerminalPane_createsOne() {
         let paneManager = PaneManager()
         let terminal = TerminalManager()
@@ -34,9 +40,7 @@ struct TerminalManagerCoordinatorTests {
         terminal.paneManager = paneManager
 
         let editorPane = paneManager.activePaneID
-        guard let tpID = paneManager.createTerminalPane(
-            relativeTo: editorPane, axis: .vertical, workingDirectory: nil
-        ) else {
+        guard let tpID = Optional(paneManager.createTerminalPaneAtBottom(workingDirectory: nil)) else {
             Issue.record("createTerminalPane failed")
             return
         }
@@ -52,9 +56,7 @@ struct TerminalManagerCoordinatorTests {
         terminal.paneManager = paneManager
 
         let editorPane = paneManager.activePaneID
-        guard let tpID = paneManager.createTerminalPane(
-            relativeTo: editorPane, axis: .vertical, workingDirectory: nil
-        ) else {
+        guard let tpID = Optional(paneManager.createTerminalPaneAtBottom(workingDirectory: nil)) else {
             Issue.record("createTerminalPane failed")
             return
         }
@@ -71,9 +73,7 @@ struct TerminalManagerCoordinatorTests {
         terminal.paneManager = paneManager
 
         let editorPane = paneManager.activePaneID
-        guard let tpID = paneManager.createTerminalPane(
-            relativeTo: editorPane, axis: .vertical, workingDirectory: nil
-        ) else {
+        guard let tpID = Optional(paneManager.createTerminalPaneAtBottom(workingDirectory: nil)) else {
             Issue.record("createTerminalPane failed")
             return
         }
@@ -92,9 +92,7 @@ struct TerminalManagerCoordinatorTests {
         terminal.paneManager = paneManager
 
         let editorPane = paneManager.activePaneID
-        guard let tpID = paneManager.createTerminalPane(
-            relativeTo: editorPane, axis: .vertical, workingDirectory: nil
-        ) else {
+        guard let tpID = Optional(paneManager.createTerminalPaneAtBottom(workingDirectory: nil)) else {
             Issue.record("createTerminalPane failed")
             return
         }
@@ -113,9 +111,7 @@ struct TerminalManagerCoordinatorTests {
         terminal.paneManager = paneManager
 
         let editorPane = paneManager.activePaneID
-        guard let tpID = paneManager.createTerminalPane(
-            relativeTo: editorPane, axis: .vertical, workingDirectory: nil
-        ) else {
+        guard let tpID = Optional(paneManager.createTerminalPaneAtBottom(workingDirectory: nil)) else {
             Issue.record("createTerminalPane failed")
             return
         }
@@ -138,381 +134,6 @@ struct TerminalManagerCoordinatorTests {
 
         #expect(paneManager.terminalPaneIDs.count == 1)
     }
-
-    @Test("Exact activation validates before changing any destination state")
-    func exactActivationFailsAtomically() throws {
-        let paneManager = PaneManager()
-        let terminal = TerminalManager()
-        terminal.paneManager = paneManager
-        let editorPane = paneManager.activePaneID
-        let firstPane = try #require(paneManager.createTerminalPane(
-            relativeTo: editorPane,
-            axis: .vertical,
-            workingDirectory: nil
-        ))
-        let secondPane = try #require(paneManager.createTerminalPane(
-            relativeTo: firstPane,
-            axis: .horizontal,
-            workingDirectory: nil
-        ))
-        let firstTab = try #require(
-            paneManager.terminalState(for: firstPane)?.activeTab
-        )
-        let secondState = try #require(
-            paneManager.terminalState(for: secondPane)
-        )
-        let secondActive = try #require(secondState.activeTerminalID)
-
-        #expect(terminal.activateTerminal(
-            paneID: firstPane,
-            tabID: firstTab.id
-        ))
-        let initialFocus = paneManager.terminalState(for: firstPane)?
-            .pendingFocusTabID
-
-        #expect(!terminal.activateTerminal(
-            paneID: secondPane,
-            tabID: UUID()
-        ))
-        #expect(paneManager.activePaneID == firstPane)
-        #expect(terminal.lastActiveTerminalPaneID == firstPane)
-        #expect(
-            paneManager.terminalState(for: firstPane)?.activeTerminalID
-                == firstTab.id
-        )
-        #expect(
-            paneManager.terminalState(for: firstPane)?.pendingFocusTabID
-                == initialFocus
-        )
-        #expect(secondState.activeTerminalID == secondActive)
-
-        #expect(!terminal.activateTerminal(
-            paneID: PaneID(),
-            tabID: firstTab.id
-        ))
-        #expect(paneManager.activePaneID == firstPane)
-        #expect(terminal.lastActiveTerminalPaneID == firstPane)
-    }
-
-    @Test("Destination resolver rejects stale panes and invalid active tabs")
-    func resolverUsesValidatedStableFallback() throws {
-        let paneManager = PaneManager()
-        let terminal = TerminalManager()
-        terminal.paneManager = paneManager
-        let editorPane = paneManager.activePaneID
-        let firstPane = try #require(paneManager.createTerminalPane(
-            relativeTo: editorPane,
-            axis: .vertical,
-            workingDirectory: nil
-        ))
-        let secondPane = try #require(paneManager.createTerminalPane(
-            relativeTo: firstPane,
-            axis: .horizontal,
-            workingDirectory: nil
-        ))
-
-        terminal.lastActiveTerminalPaneID = PaneID()
-        paneManager.activePaneID = secondPane
-        #expect(terminal.resolvedDestination()?.paneID == secondPane)
-
-        paneManager.activePaneID = editorPane
-        #expect(terminal.resolvedDestination()?.paneID == firstPane)
-
-        paneManager.terminalState(for: firstPane)?.activeTerminalID = UUID()
-        #expect(terminal.resolvedDestination()?.paneID == secondPane)
-    }
-
-    @Test("Removing the pointed pane picks a stable fallback then nil")
-    func removalReconcilesDestination() throws {
-        let paneManager = PaneManager()
-        let terminal = TerminalManager()
-        terminal.paneManager = paneManager
-        let editorPane = paneManager.activePaneID
-        let firstPane = try #require(paneManager.createTerminalPane(
-            relativeTo: editorPane,
-            axis: .vertical,
-            workingDirectory: nil
-        ))
-        let secondPane = try #require(paneManager.createTerminalPane(
-            relativeTo: firstPane,
-            axis: .horizontal,
-            workingDirectory: nil
-        ))
-        terminal.lastActiveTerminalPaneID = secondPane
-        paneManager.activePaneID = editorPane
-
-        paneManager.removePane(secondPane)
-        #expect(terminal.lastActiveTerminalPaneID == firstPane)
-
-        paneManager.removePane(firstPane)
-        #expect(terminal.lastActiveTerminalPaneID == nil)
-    }
-
-    @Test("A pane focus gesture activates its exact terminal destination")
-    func paneActivationUpdatesDestination() throws {
-        let paneManager = PaneManager()
-        let terminal = TerminalManager()
-        terminal.paneManager = paneManager
-        let editorPane = paneManager.activePaneID
-        let firstPane = try #require(paneManager.createTerminalPane(
-            relativeTo: editorPane,
-            axis: .vertical,
-            workingDirectory: nil
-        ))
-        let secondPane = try #require(paneManager.createTerminalPane(
-            relativeTo: firstPane,
-            axis: .horizontal,
-            workingDirectory: nil
-        ))
-        let secondTab = try #require(
-            paneManager.terminalState(for: secondPane)?.activeTab
-        )
-        terminal.lastActiveTerminalPaneID = firstPane
-
-        #expect(paneManager.activatePane(secondPane))
-
-        #expect(paneManager.activePaneID == secondPane)
-        #expect(
-            paneManager.terminalState(for: secondPane)?.activeTerminalID
-                == secondTab.id
-        )
-        #expect(
-            paneManager.terminalState(for: secondPane)?.pendingFocusTabID
-                == secondTab.id
-        )
-        #expect(terminal.lastActiveTerminalPaneID == secondPane)
-        #expect(
-            paneManager.globalTabSwitchOrder.first
-                == GlobalTabIdentity(
-                    paneID: secondPane,
-                    tabID: secondTab.id,
-                    contentType: .terminal
-                )
-        )
-    }
-
-    @Test("Same-pane terminal reorder publishes destination exactly once")
-    func samePaneReorderPublishesOnce() throws {
-        let paneManager = PaneManager()
-        let terminal = TerminalManager()
-        terminal.paneManager = paneManager
-        let pane = paneManager.createTerminalPaneAtBottom(
-            workingDirectory: nil
-        )
-        let state = try #require(paneManager.terminalState(for: pane))
-        let firstTab = try #require(state.activeTab)
-        let secondTab = state.addTab(workingDirectory: nil)
-        let beforeInactiveMove =
-            terminal.paneActivationPublicationCountForTesting
-
-        #expect(paneManager.moveTab(
-            firstTab.id,
-            from: pane,
-            contentType: .terminal,
-            action: .trailing
-        ))
-        #expect(
-            terminal.paneActivationPublicationCountForTesting
-                == beforeInactiveMove + 1
-        )
-        #expect(terminal.lastActiveTerminalPaneID == pane)
-        #expect(state.activeTerminalID == firstTab.id)
-
-        let beforeActiveMove =
-            terminal.paneActivationPublicationCountForTesting
-        #expect(paneManager.moveTab(
-            firstTab.id,
-            from: pane,
-            contentType: .terminal,
-            action: .leading
-        ))
-        #expect(
-            terminal.paneActivationPublicationCountForTesting
-                == beforeActiveMove + 1
-        )
-        #expect(state.activeTerminalID == firstTab.id)
-        #expect(
-            paneManager.globalTabSwitchOrder.first
-                == GlobalTabIdentity(
-                    paneID: pane,
-                    tabID: firstTab.id,
-                    contentType: .terminal
-                )
-        )
-        #expect(state.terminalTabs.contains(where: { $0 === secondTab }))
-    }
-
-    @Test("Move, prune, Send, and Cmd+T keep the surviving pane current")
-    func movePruneSendAndNewTabUseSurvivingPane() throws {
-        let paneManager = PaneManager()
-        let terminal = TerminalManager()
-        terminal.paneManager = paneManager
-        let editorPane = paneManager.activePaneID
-        let sourcePane = try #require(paneManager.createTerminalPane(
-            relativeTo: editorPane,
-            axis: .vertical,
-            workingDirectory: nil
-        ))
-        let destinationPane = try #require(paneManager.createTerminalPane(
-            relativeTo: sourcePane,
-            axis: .horizontal,
-            workingDirectory: nil
-        ))
-        let movedTab = try #require(
-            paneManager.terminalState(for: sourcePane)?.activeTab
-        )
-        let existingTab = try #require(
-            paneManager.terminalState(for: destinationPane)?.activeTab
-        )
-        let session = AgentSession(agentType: .codex, state: .executing)
-        let evidence = AgentProcessEvidence(
-            processIdentifier: 420,
-            processGeneration: 7,
-            startIdentifier: "generation-7",
-            observedStartedAt: Date(timeIntervalSince1970: 7),
-            startIsAuthoritative: true
-        )
-        #expect(session.bindProcessEvidence(evidence))
-        movedTab.agentSession = session
-        var movedWrites: [String] = []
-        var existingWrites: [String] = []
-        movedTab.sendTextOverrideForTesting = {
-            movedWrites.append($0)
-            return true
-        }
-        existingTab.sendTextOverrideForTesting = {
-            existingWrites.append($0)
-            return true
-        }
-        terminal.lastActiveTerminalPaneID = sourcePane
-
-        #expect(paneManager.moveTerminalTab(
-            movedTab.id,
-            from: sourcePane,
-            to: destinationPane
-        ))
-        #expect(!paneManager.terminalPaneIDs.contains(sourcePane))
-        #expect(terminal.lastActiveTerminalPaneID == destinationPane)
-        #expect(
-            paneManager.terminalState(for: destinationPane)?.activeTab
-                === movedTab
-        )
-        #expect(movedTab.agentSession === session)
-        #expect(movedTab.agentSession?.processEvidence == evidence)
-
-        let routed = try #require(terminal.activateResolvedDestination())
-        #expect(routed.paneID == destinationPane)
-        #expect(routed.tab === movedTab)
-        #expect(terminal.sendText("survived\n", to: routed))
-        #expect(movedWrites == ["survived\n"])
-        #expect(existingWrites.isEmpty)
-
-        let paneCount = paneManager.terminalPaneIDs.count
-        let tabCount = try #require(
-            paneManager.terminalState(for: destinationPane)?.tabCount
-        )
-        terminal.createTerminalTab(
-            relativeTo: editorPane,
-            workingDirectory: nil
-        )
-        #expect(paneManager.terminalPaneIDs.count == paneCount)
-        #expect(
-            paneManager.terminalState(for: destinationPane)?.tabCount
-                == tabCount + 1
-        )
-        #expect(terminal.lastActiveTerminalPaneID == destinationPane)
-    }
-
-    @Test("Cmd+T repairs a stale pointer without creating a third split")
-    func createTerminalTabRepairsStalePointer() throws {
-        let paneManager = PaneManager()
-        let terminal = TerminalManager()
-        terminal.paneManager = paneManager
-        let editorPane = paneManager.activePaneID
-        let removedPane = try #require(paneManager.createTerminalPane(
-            relativeTo: editorPane,
-            axis: .vertical,
-            workingDirectory: nil
-        ))
-        let survivingPane = try #require(paneManager.createTerminalPane(
-            relativeTo: removedPane,
-            axis: .horizontal,
-            workingDirectory: nil
-        ))
-        paneManager.removePane(removedPane)
-        terminal.lastActiveTerminalPaneID = removedPane
-        paneManager.activePaneID = editorPane
-        let initialCount = try #require(
-            paneManager.terminalState(for: survivingPane)?.tabCount
-        )
-
-        terminal.createTerminalTab(
-            relativeTo: editorPane,
-            workingDirectory: nil
-        )
-
-        #expect(paneManager.terminalPaneIDs == [survivingPane])
-        #expect(
-            paneManager.terminalState(for: survivingPane)?.tabCount
-                == initialCount + 1
-        )
-        #expect(terminal.lastActiveTerminalPaneID == survivingPane)
-    }
-
-    @Test func allTerminalTabs_delegatesToPaneManager() {
-        let paneManager = PaneManager()
-        let terminal = TerminalManager()
-        terminal.paneManager = paneManager
-
-        let editorPane = paneManager.activePaneID
-        _ = paneManager.createTerminalPane(
-            relativeTo: editorPane, axis: .vertical, workingDirectory: nil
-        )
-
-        #expect(terminal.allTerminalTabs.count == 1)
-    }
-
-    @Test func hasActiveProcesses_checksAllPanes() {
-        let paneManager = PaneManager()
-        let terminal = TerminalManager()
-        terminal.paneManager = paneManager
-        #expect(!terminal.hasActiveProcesses)
-    }
-
-    // MARK: - Agent detection wiring (regression: startTerminals was dead code)
-
-    /// No-op `ps` runner used by agent-detection tests so the coordinator never
-    /// forks a real subprocess (avoids the macos-26 fork/spawn hang, #1060).
-    private static let noOpProcessRunner: ProcessRunner = { _, _, _, _ in
-        ProcessRunResult(stdout: "", stderr: "", exitCode: 0, timedOut: false)
-    }
-
-    @Test func agentDetection_notPolling_beforeAnyTerminal() {
-        let paneManager = PaneManager()
-        let terminal = TerminalManager()
-        terminal.paneManager = paneManager
-        // Fresh manager with no terminals must not have started polling.
-        #expect(!terminal.isAgentDetectionPolling)
-    }
-
-    @Test func createTerminalTab_startsAgentDetection() {
-        let paneManager = PaneManager()
-        // Inject a no-op runner at construction so the coordinator polls
-        // without forking `ps`.
-        let terminal = TerminalManager(agentDetectionProcessRunner: Self.noOpProcessRunner)
-        terminal.paneManager = paneManager
-
-        let editorPane = paneManager.activePaneID
-        terminal.createTerminalTab(relativeTo: editorPane, workingDirectory: nil)
-
-        // Regression: previously `startTerminals` (the sole boot path for the
-        // agent-detection coordinator) was never called from anywhere in the
-        // app, so the coordinator never started and agent badges never
-        // appeared. Creating a terminal must now boot detection. This now
-        // asserts `isRunning` (not just non-nil) via `isAgentDetectionPolling`.
-        #expect(terminal.isAgentDetectionPolling)
-    }
-
     @Test func terminationFreezePreservesAgentAuthorization() throws {
         let paneManager = PaneManager()
         let terminal = TerminalManager(
@@ -598,6 +219,34 @@ struct TerminalManagerCoordinatorTests {
         #expect(terminal.agentDetector.detectedSessions.count == 1)
         #expect(terminal.agentDetector.detectedSessions.first?.agentType == .claudeCode)
     }
+
+    // MARK: - Agent detection wiring (regression: startTerminals was dead code)
+
+    @Test func allTerminalTabs_delegatesToPaneManager() {
+        let paneManager = PaneManager()
+        let terminal = TerminalManager()
+        terminal.paneManager = paneManager
+
+        _ = paneManager.createTerminalPaneAtBottom(workingDirectory: nil)
+
+        #expect(terminal.allTerminalTabs.count == 1)
+    }
+
+    @Test func hasActiveProcesses_checksAllPanes() {
+        let paneManager = PaneManager()
+        let terminal = TerminalManager()
+        terminal.paneManager = paneManager
+        #expect(!terminal.hasActiveProcesses)
+    }
+
+    @Test func agentDetection_notPolling_beforeAnyTerminal() {
+        let paneManager = PaneManager()
+        let terminal = TerminalManager()
+        terminal.paneManager = paneManager
+        // Fresh manager with no terminals must not have started polling.
+        #expect(!terminal.isAgentDetectionPolling)
+    }
+
 }
 
 nonisolated private func completeClaudePsSnapshot() -> String {

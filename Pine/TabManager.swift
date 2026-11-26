@@ -757,11 +757,6 @@ final class TabManager {
         recoveryManager?.scheduleSnapshot()
     }
 
-    func updateFoldState(_ state: FoldState) {
-        guard let index = activeTabIndex else { return }
-        tabs[index].foldState = state
-    }
-
     func updateHighlightCache(_ result: HighlightMatchResult) {
         guard let index = activeTabIndex else { return }
         tabs[index].cachedHighlightResult = result
@@ -1145,11 +1140,11 @@ final class TabManager {
 
     // MARK: - Reorder & Pin
 
-    /// Removes a tab for an in-window pane transfer.
+    /// Removes a tab without deleting recovery data, returning its
+    /// pre-removal state for the caller.
     ///
-    /// Unlike ``closeTab(id:force:)``, extraction does not delete recovery
-    /// data or otherwise treat the tab as discarded. Callers must either
-    /// insert the returned value into another manager or restore it here.
+    /// Unlike ``closeTab(id:force:)``, extraction does not treat the tab as
+    /// discarded; a transient preview is promoted before it leaves.
     func extractTab(id: UUID) -> ExtractedTab? {
         guard let index = tabs.firstIndex(where: { $0.id == id }) else { return nil }
 
@@ -1175,87 +1170,6 @@ final class TabManager {
             previousActiveTabID: previousActiveTabID,
             shouldResumeAutoSave: shouldResumeAutoSave
         )
-    }
-
-    /// Whether this manager can accept the exact tab from another pane.
-    /// Duplicate identities and file URLs are rejected so each pane keeps
-    /// the same one-file/one-tab invariant as ``openTab(url:)``.
-    func canInsertTransferredTab(_ tab: EditorTab) -> Bool {
-        canInsertTransferredTab(tab, at: tab.isPinned ? pinnedTabCount : tabs.count)
-    }
-
-    /// Validates an exact destination gap without changing either manager.
-    /// Pinned tabs may only enter the pinned prefix; regular tabs may only
-    /// enter at or after the shared pinned/unpinned boundary.
-    func canInsertTransferredTab(_ tab: EditorTab, at insertionIndex: Int) -> Bool {
-        guard (0...tabs.count).contains(insertionIndex) else { return false }
-        let respectsPinnedBoundary = tab.isPinned
-            ? insertionIndex <= pinnedTabCount
-            : insertionIndex >= pinnedTabCount
-        guard respectsPinnedBoundary else { return false }
-        return !tabs.contains { existing in
-            if existing.id == tab.id {
-                return true
-            }
-            guard let existingURL = existing.fileURL,
-                  let incomingURL = tab.fileURL else {
-                return false
-            }
-            return existingURL.standardizedFileURL
-                == incomingURL.standardizedFileURL
-        }
-    }
-
-    /// Inserts a transferred tab and activates it. Pinned tabs join the end
-    /// of the pinned prefix; regular tabs are appended after that prefix.
-    @discardableResult
-    func insertTransferredTab(_ tab: EditorTab) -> Bool {
-        let insertionIndex = tab.isPinned ? pinnedTabCount : tabs.count
-        return insertTransferredTab(tab, at: insertionIndex)
-    }
-
-    /// Inserts at an exact N+1 gap and activates/focuses the transferred tab.
-    @discardableResult
-    func insertTransferredTab(_ tab: EditorTab, at insertionIndex: Int) -> Bool {
-        guard canInsertTransferredTab(tab, at: insertionIndex) else { return false }
-        tabs.insert(tab, at: insertionIndex)
-        activeTabID = tab.id
-        pendingFocusTabID = tab.id
-        onTabInventoryChanged?()
-        return true
-    }
-
-    /// Inserts a detached tab and resumes any auto-save that was pending in
-    /// its source manager. The destination owns the timer after the move, so
-    /// the callback resolves the tab in the manager that now contains it.
-    @discardableResult
-    func insertTransferredTab(_ extraction: ExtractedTab) -> Bool {
-        let insertionIndex = extraction.tab.isPinned ? pinnedTabCount : tabs.count
-        return insertTransferredTab(extraction, at: insertionIndex)
-    }
-
-    /// Indexed counterpart used by cross-pane strip drops.
-    @discardableResult
-    func insertTransferredTab(_ extraction: ExtractedTab, at insertionIndex: Int) -> Bool {
-        guard insertTransferredTab(extraction.tab, at: insertionIndex) else { return false }
-        if extraction.shouldResumeAutoSave {
-            scheduleAutoSave(for: extraction.tab.id)
-        }
-        return true
-    }
-
-    /// Restores a failed extraction at its exact previous position and
-    /// selection. This is intentionally separate from normal insertion,
-    /// whose pinned-prefix policy is destination-oriented.
-    func restoreExtractedTab(_ extraction: ExtractedTab) {
-        guard !tabs.contains(where: { $0.id == extraction.tab.id }) else { return }
-        let index = min(extraction.originalIndex, tabs.count)
-        tabs.insert(extraction.tab, at: index)
-        activeTabID = extraction.previousActiveTabID
-        onTabInventoryChanged?()
-        if extraction.shouldResumeAutoSave {
-            scheduleAutoSave(for: extraction.tab.id)
-        }
     }
 
     func moveTab(fromOffsets source: IndexSet, toOffset destination: Int) {

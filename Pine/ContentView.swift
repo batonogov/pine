@@ -23,7 +23,7 @@ struct ContentView: View {
     ///
     /// See issues #971 and #998: the previous `tabManager` naming conflated
     /// primary with active and caused commands to target the wrong pane in
-    /// split layouts.
+    /// adjacent-terminal layout.
     @Environment(TabManager.self) var primaryTabManager
     @Environment(PaneManager.self) var paneManager
     @Environment(ProjectRegistry.self) var registry
@@ -44,7 +44,6 @@ struct ContentView: View {
     /// launch-time question (#1541).
     @State var recoveryRestoreFailed = false
     @State var isDragTargeted = false
-    @State var isBranchSwitcherPresented = false
     @State var isAgentActivityPresented = false
     @State var isAgentHistoryPresented = false
     @State var isAgentInboxPresented = false
@@ -61,8 +60,6 @@ struct ContentView: View {
     /// overlay (including Agent Attention)
     /// and captures/restores the previous AppKit first responder.
     @State var commandOverlayRouter = CommandOverlayRouter()
-    @AppStorage("minimapVisible", store: PineStorageContext.defaults) var isMinimapVisible = true
-    @AppStorage(BlameConstants.storageKey, store: PineStorageContext.defaults) var isBlameVisible = true
     @AppStorage("wordWrapEnabled", store: PineStorageContext.defaults) var isWordWrapEnabled = true
 
     /// The TabManager for the currently focused editor pane. Use this for
@@ -225,7 +222,6 @@ struct ContentView: View {
             #if DEBUG
             seedAccessibilityDirtyBufferIfNeeded()
             #endif
-            refreshBlame()
             #if DEBUG
             // Seed only after the project window has installed its native
             // delegate. The #1407 fixture must reproduce the live-agent UI
@@ -244,37 +240,6 @@ struct ContentView: View {
                 entries: recoveryEntries,
                 didFailToRestore: recoveryRestoreFailed,
                 onChoose: { resolveRecoveryOffer($0) }
-            )
-        }
-        .overlay {
-            // The controller pins every gesture to the key project window and
-            // discards it when that window resigns. Mirror that ownership in
-            // the render gate so a shared/stale scene can never show another
-            // window's switcher session.
-            //
-            // The animation is scoped to this overlay's own subtree (via the
-            // ZStack wrapper) so it animates the switcher's appear/disappear
-            // transition without bleeding into sibling modifiers such as the
-            // task output panel's safeAreaInset. A top-level .animation here
-            // wraps the entire ContentView in an animation context, which
-            // delays conditional content — e.g. the copy button inside the
-            // task run LazyVStack — from becoming interactive when the panel
-            // is toggled closed and reopened.
-            ZStack {
-                if paneManager.isGlobalTabSwitcherActive,
-                   controlActiveState == .key {
-                    GlobalTabSwitcherOverlay()
-                        .transition(
-                            reduceMotion
-                                ? .identity
-                                : .opacity.combined(with: .scale(scale: 0.96))
-                        )
-                        .zIndex(100)
-                }
-            }
-            .animation(
-                reduceMotion ? nil : PineAnimation.overlay,
-                value: paneManager.isGlobalTabSwitcherActive
             )
         }
         // MARK: - Command overlays (#975)
@@ -300,26 +265,6 @@ struct ContentView: View {
                     ),
                     onDismiss: { isOpenCodeTaskPresented = false }
                 )
-            }
-        }
-        .sheet(isPresented: $isBranchSwitcherPresented) {
-            BranchSwitcherView(
-                gitProvider: workspace.gitProvider,
-                isPresented: $isBranchSwitcherPresented,
-                projectManager: projectManager
-            )
-            .padding(12)
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .showBranchSwitcher)) { notification in
-            guard Self.shouldPresentBranchSwitcher(
-                notificationObject: notification.object,
-                currentProject: projectManager,
-                isKeyWindow: controlActiveState == .key,
-                isGitRepository: workspace.gitProvider.isGitRepository
-            ) else { return }
-            // Defer to break reentrancy (#1051).
-            DispatchQueue.main.async {
-                isBranchSwitcherPresented = true
             }
         }
         .modifier(AgentActivityPresenter(
@@ -354,18 +299,12 @@ struct ContentView: View {
             seedAccessibilityDirtyBufferIfNeeded()
             #endif
             refreshLineDiffs()
-            refreshBlame()
             projectManager.saveSession()
         }
-        .modifier(BlameObserver(
-            isBlameVisible: isBlameVisible,
-            onRefresh: { refreshBlame() }
-        ))
         .onChange(of: workspace.rootNodes) { _, _ in
             let disposition = restoreSessionIfNeeded()
             if case .restored(let result) = disposition, result.didRestoreEditorTabs {
                 refreshLineDiffs()
-                refreshBlame()
             }
             // Seed an initial terminal for a no-session project once the file
             // tree is ready. The `rootNodes` change is the deferred-retry
@@ -375,17 +314,16 @@ struct ContentView: View {
             syncSidebarSelection()
         }
         .onChange(of: primaryTabManager.tabs.count) { _, _ in
-            // Note: this observes only the primary pane's tab count. Tabs in
-            // other split panes are still saved by `projectManager.saveSession()`
+            // Note: this observes the primary tab count. The fixed editor
+            // destination is saved by `projectManager.saveSession()`
             // (which iterates every pane); this observer is a best-effort
-            // trigger for the common single-pane case and is preserved for
+            // trigger for the common case and is preserved for
             // backward compatibility.
             projectManager.saveSession()
         }
         .modifier(GitAndNotificationObserver(
             lineDiffs: $lineDiffs,
             onRefreshLineDiffs: { refreshLineDiffs() },
-            onRefreshBlame: { refreshBlame() },
             onOpenNewProject: { openNewProject() },
             onCloseProject: { closeActiveProject() },
             onHandleFileDeletion: { handleFileDeletion($0) },
@@ -485,26 +423,8 @@ struct ContentView: View {
                 onShowAttention: {
                     commandOverlayRouter.present(.agentAttention)
                 },
-                branchTitle: branchSubtitle.isEmpty ? nil : branchSubtitle,
-                branchName: workspace.gitProvider.isGitRepository
-                    ? workspace.gitProvider.currentBranch
-                    : nil,
-                onSwitchBranch: {
-                    isBranchSwitcherPresented = true
-                }
             )
         }
-    }
-
-    /// Branch indicator text as a plain String to avoid generating a
-    /// localization key. Empty hides the status-bar branch button.
-    var branchSubtitle: String {
-        Self.branchSubtitle(
-            isGitRepo: workspace.gitProvider.isGitRepository,
-            branchName: workspace.gitProvider.currentBranch,
-            hasActiveWorktree: projectWindowSession
-                .managedWorktrees[projectWindowSession.activeProjectURL] != nil
-        )
     }
 
     /// Number of the focused project's durable agent tasks currently in the
@@ -513,35 +433,6 @@ struct ContentView: View {
     private var agentInboxAttentionCount: Int {
         guard let rootURL = workspace.rootURL else { return 0 }
         return registry.agentInboxAttentionCount(for: rootURL)
-    }
-
-    /// Builds the branch indicator text — "main ▾" — shown by the status-bar
-    /// branch button (formerly the navigation subtitle, then a toolbar
-    /// button). Kept as a static function for testability.
-    ///
-    /// Every fact on the strip sounds once: with an agent worktree active the
-    /// switcher pill already reads "project — branch"
-    /// (`ProjectWindowSession.activeDisplayName`), so the button would
-    /// repeat the same branch and stays empty. The branch switcher the "▾"
-    /// advertises remains reachable through ⌘⇧B and the Git menu.
-    static func branchSubtitle(
-        isGitRepo: Bool,
-        branchName: String,
-        hasActiveWorktree: Bool
-    ) -> String {
-        isGitRepo && !hasActiveWorktree ? "\(branchName) ▾" : ""
-    }
-
-    static func shouldPresentBranchSwitcher(
-        notificationObject: Any?,
-        currentProject: ProjectManager,
-        isKeyWindow: Bool,
-        isGitRepository: Bool
-    ) -> Bool {
-        guard isGitRepository else { return false }
-        guard let notificationObject else { return isKeyWindow }
-        guard let targetProject = notificationObject as? ProjectManager else { return false }
-        return targetProject === currentProject
     }
 
     static func shouldHandleTargetedCommand(

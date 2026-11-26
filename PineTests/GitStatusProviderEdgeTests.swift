@@ -280,54 +280,6 @@ struct GitStatusProviderEdgeTests {
         #expect(diffs.isEmpty)
     }
 
-    // MARK: - parseBlame
-
-    @Test func parseBlame_emptyOutput() {
-        let result = GitStatusProvider.parseBlame("")
-        #expect(result.isEmpty)
-    }
-
-    @Test func parseBlame_singleLine() {
-        let hash = String(repeating: "a", count: 40)
-        let output = """
-        \(hash) 1 1 1
-        author Test User
-        author-time 1700000000
-        summary Initial commit
-        \tline content
-        """
-        let result = GitStatusProvider.parseBlame(output)
-        #expect(result.count == 1)
-        #expect(result[0].hash == hash)
-        #expect(result[0].author == "Test User")
-        #expect(result[0].summary == "Initial commit")
-        #expect(result[0].finalLine == 1)
-    }
-
-    @Test func parseBlame_multipleLines_cachedCommit() {
-        let hash = String(repeating: "b", count: 40)
-        let output = """
-        \(hash) 1 1 2
-        author Author Name
-        author-time 1700000000
-        summary Some message
-        \tline 1
-        \(hash) 1 2
-        \tline 2
-        """
-        let result = GitStatusProvider.parseBlame(output)
-        #expect(result.count == 2)
-        #expect(result[0].author == "Author Name")
-        #expect(result[1].author == "Author Name") // Cached
-        #expect(result[1].finalLine == 2)
-    }
-
-    @Test func parseBlame_invalidHashSkipped() {
-        let output = "invalid line that is not a hash\n\tanother line\n"
-        let result = GitStatusProvider.parseBlame(output)
-        #expect(result.isEmpty)
-    }
-
     // MARK: - GitLineDiff navigation
 
     @Test func changeRegionStarts_emptyDiffs() {

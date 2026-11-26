@@ -375,7 +375,6 @@ struct HighlightFlickerTests {
             contentVersion: 0,
             language: "flickerswift",
             fileName: "test.swift",
-            foldState: .constant(FoldState())
         )
         let coordinator = CodeEditorView.Coordinator(parent: editorView)
         coordinator.scrollView = scrollView

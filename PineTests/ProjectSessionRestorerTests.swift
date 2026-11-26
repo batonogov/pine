@@ -1,325 +1,194 @@
-//
-//  ProjectSessionRestorerTests.swift
-//  PineTests
-//
-
 import Foundation
 import Testing
-
 @testable import Pine
 
-@Suite("Complete Pane Session Restoration")
+@Suite("Project session fixed-layout migration")
 @MainActor
 struct ProjectSessionRestorerTests {
     private func fixture(files: [String]) throws -> (URL, [String: URL]) {
         let root = FileManager.default.temporaryDirectory
-            .appendingPathComponent("PineSessionRestore-\(UUID().uuidString)")
+            .appendingPathComponent("pine-restore-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         var urls: [String: URL] = [:]
         for name in files {
             let url = root.appendingPathComponent(name)
-            try Data("// \(name)\n".utf8).write(to: url)
+            try "// \(name)\n".write(to: url, atomically: true, encoding: .utf8)
             urls[name] = url
         }
         return (root, urls)
     }
 
-    @Test("Restores pane-local active, pinned, preview, terminal, focus, and MRU state")
-    func restoresCompleteState() throws {
-        let (root, files) = try fixture(files: ["a.swift", "b.swift", "c.swift"])
+    @Test("Legacy multi-pane documents and terminal sessions merge without loss")
+    func restoresMergedLegacyLayout() throws {
+        let (root, urls) = try fixture(files: ["a.swift", "b.swift", "c.swift"])
         defer { try? FileManager.default.removeItem(at: root) }
-        let fileA = try #require(files["a.swift"])
-        let fileB = try #require(files["b.swift"])
-        let fileC = try #require(files["c.swift"])
-
         let editorA = PaneID()
         let editorB = PaneID()
-        let terminal = PaneID()
+        let terminalA = PaneID()
+        let terminalB = PaneID()
+        let layout = PaneNode.split(
+            .horizontal,
+            first: .split(.vertical, first: .leaf(editorA, .editor), second: .leaf(terminalA, .terminal), ratio: 0.5),
+            second: .split(.vertical, first: .leaf(editorB, .editor), second: .leaf(terminalB, .terminal), ratio: 0.5),
+            ratio: 0.5
+        )
+        let a = try #require(urls["a.swift"])
+        let b = try #require(urls["b.swift"])
+        let c = try #require(urls["c.swift"])
+        let folded = PerTabEditorState.SerializableFoldRange(
+            startLine: 1,
+            endLine: 2,
+            startCharIndex: 0,
+            endCharIndex: 5,
+            kind: "braces"
+        )
+        let session = SessionState(
+            projectPath: root.path,
+            openFilePaths: [a, b, c].map(\.path),
+            activeFilePath: b.path,
+            editorStates: [
+                a.path: PerTabEditorState(
+                    cursorPosition: 3,
+                    scrollOffset: 42,
+                    foldedRanges: [folded]
+                ),
+            ],
+            paneLayoutData: try JSONEncoder().encode(layout),
+            paneTabAssignments: [
+                editorA.id.uuidString: [a.path],
+                editorB.id.uuidString: [b.path, c.path],
+            ],
+            activePaneID: terminalB.id.uuidString,
+            paneActiveEditorPaths: [editorB.id.uuidString: b.path],
+            panePinnedPaths: [
+                editorA.id.uuidString: [a.path],
+                editorB.id.uuidString: [b.path],
+            ],
+            paneTransientPreviewPaths: [editorB.id.uuidString: c.path],
+            globalTabSwitchOrder: [
+                .editor(paneID: editorA, filePath: a.path),
+            ],
+            terminalPaneTabCounts: [
+                terminalA.id.uuidString: 2,
+                terminalB.id.uuidString: 3,
+            ],
+            terminalPaneActiveIndices: [
+                terminalA.id.uuidString: 0,
+                terminalB.id.uuidString: 1,
+            ]
+        )
+        let project = ProjectManager()
+
+        let result = ProjectSessionRestorer.restore(
+            session,
+            into: project,
+            rootURL: root
+        )
+
+        #expect(result.didRestoreEditorTabs)
+        #expect(result.restoredTerminalPanes)
+        #expect(project.paneManager.root.leafCount == 2)
+        #expect(project.paneManager.tabManagers.count == 1)
+        #expect(project.paneManager.terminalStates.count == 1)
+        let tabs = project.primaryTabManager.tabs
+        #expect(tabs.map(\.fileURL) == [a, b, c])
+        #expect(tabs.filter(\.isPinned).map(\.fileURL) == [a, b])
+        #expect(project.primaryTabManager.activeTab?.fileURL == b)
+        #expect(tabs.first(where: { $0.fileURL == c })?.isTransientPreview == true)
+        #expect(tabs.first(where: { $0.fileURL == a })?.cursorPosition == 3)
+        #expect(tabs.first(where: { $0.fileURL == a })?.scrollOffset == 42)
+        #expect(tabs.first(where: { $0.fileURL == a })?.content == "// a.swift\n")
+        #expect(project.paneManager.activePaneID == migrationEditorID(session: session))
+        let terminal = try #require(project.paneManager.terminalStates.values.first)
+        #expect(terminal.tabCount == 5)
+        // Merged layout keeps the active source's tab first, mirroring the
+        // editor merge order above ([a, b, c]).
+        #expect(terminal.terminalTabs.firstIndex(where: {
+            $0.id == terminal.activeTerminalID
+        }) == 1)
+    }
+
+    @Test("Missing pane assignments fall back to the saved document union")
+    func preservesDocumentUnion() throws {
+        let (root, urls) = try fixture(files: ["a.swift", "b.swift"])
+        defer { try? FileManager.default.removeItem(at: root) }
+        let editorA = PaneID()
+        let editorB = PaneID()
         let layout = PaneNode.split(
             .horizontal,
             first: .leaf(editorA, .editor),
-            second: .split(
-                .vertical,
-                first: .leaf(editorB, .editor),
-                second: .leaf(terminal, .terminal),
-                ratio: 0.7
-            ),
-            ratio: 0.45
-        )
-
-        var session = SessionState(
-            projectPath: root.path,
-            openFilePaths: [fileA.path, fileB.path, fileC.path]
-        )
-        session.paneLayoutData = try JSONEncoder().encode(layout)
-        session.paneTabAssignments = [
-            editorA.id.uuidString: [fileA.path, fileB.path],
-            editorB.id.uuidString: [fileA.path, fileC.path]
-        ]
-        session.activePaneID = editorB.id.uuidString
-        session.paneActiveEditorPaths = [
-            editorA.id.uuidString: fileB.path,
-            editorB.id.uuidString: fileC.path
-        ]
-        session.panePinnedPaths = [
-            editorA.id.uuidString: [fileA.path],
-            editorB.id.uuidString: [fileC.path]
-        ]
-        session.paneTransientPreviewPaths = [
-            editorB.id.uuidString: fileA.path
-        ]
-        session.terminalPaneTabCounts = [terminal.id.uuidString: 3]
-        session.terminalPaneActiveIndices = [terminal.id.uuidString: 1]
-        session.globalTabSwitchOrder = [
-            .editor(paneID: editorB, filePath: fileC.path),
-            .terminal(paneID: terminal, tabIndex: 1),
-            .editor(paneID: editorA, filePath: fileB.path),
-            .editor(paneID: editorA, filePath: root.appendingPathComponent("gone.swift").path),
-            .editor(paneID: editorB, filePath: fileC.path)
-        ]
-
-        let projectManager = ProjectManager()
-        let result = ProjectSessionRestorer.restore(
-            session,
-            into: projectManager,
-            rootURL: root
-        )
-
-        #expect(result == ProjectSessionRestoreResult(
-            didRestoreEditorTabs: true,
-            restoredTerminalPanes: true
-        ))
-        #expect(projectManager.paneManager.root == layout)
-        #expect(projectManager.paneManager.activePaneID == editorB)
-        #expect(projectManager.terminal.lastActiveTerminalPaneID == terminal)
-
-        let managerA = try #require(projectManager.paneManager.tabManager(for: editorA))
-        let managerB = try #require(projectManager.paneManager.tabManager(for: editorB))
-        #expect(managerA.tabs.map(\.url) == [fileA, fileB])
-        #expect(managerA.tabs.map(\.isPinned) == [true, false])
-        #expect(managerA.activeTab?.url == fileB)
-
-        #expect(managerB.tabs.map(\.url) == [fileC, fileA])
-        #expect(managerB.tabs.map(\.isPinned) == [true, false])
-        #expect(managerB.tabs.first(where: { $0.url == fileA })?.isTransientPreview == true)
-        #expect(managerB.activeTab?.url == fileC)
-        #expect(managerB.pendingFocusTabID == managerB.activeTabID)
-
-        let terminalState = try #require(
-            projectManager.paneManager.terminalState(for: terminal)
-        )
-        #expect(terminalState.terminalTabs.count == 3)
-        #expect(terminalState.activeTerminalID == terminalState.terminalTabs[1].id)
-        #expect(projectManager.terminal.lastActiveTerminalPaneID == terminal)
-
-        let order = projectManager.paneManager.validGlobalTabSwitchOrder()
-        #expect(order.count == 7)
-        #expect(editorPath(for: order[0], in: projectManager.paneManager) == fileC.path)
-        #expect(order[1].paneID == terminal)
-        #expect(order[1].tabID == terminalState.terminalTabs[1].id)
-        #expect(editorPath(for: order[2], in: projectManager.paneManager) == fileB.path)
-        #expect(Set(order).count == order.count)
-    }
-
-    @Test("Restores a single terminal pane instead of falling back to an editor")
-    func restoresSingleTerminalPane() throws {
-        let (root, _) = try fixture(files: [])
-        defer { try? FileManager.default.removeItem(at: root) }
-        let terminalPane = PaneID()
-        var session = SessionState(projectPath: root.path, openFilePaths: [])
-        session.paneLayoutData = try JSONEncoder().encode(
-            PaneNode.leaf(terminalPane, .terminal)
-        )
-        session.activePaneID = terminalPane.id.uuidString
-        session.terminalPaneTabCounts = [terminalPane.id.uuidString: 2]
-        session.terminalPaneActiveIndices = [terminalPane.id.uuidString: 0]
-
-        let projectManager = ProjectManager()
-        let result = ProjectSessionRestorer.restore(
-            session,
-            into: projectManager,
-            rootURL: root
-        )
-
-        #expect(result.didRestoreEditorTabs == false)
-        #expect(result.restoredTerminalPanes)
-        #expect(projectManager.paneManager.root == .leaf(terminalPane, .terminal))
-        #expect(projectManager.paneManager.activePaneID == terminalPane)
-        let state = try #require(projectManager.paneManager.terminalState(for: terminalPane))
-        #expect(state.terminalTabs.count == 2)
-        #expect(state.activeTerminalID == state.terminalTabs[0].id)
-        #expect(state.pendingFocusTabID == state.activeTerminalID)
-        #expect(projectManager.terminal.lastActiveTerminalPaneID == terminalPane)
-        #expect(projectManager.paneManager.validGlobalTabSwitchOrder().count == 2)
-    }
-
-    @Test("Legacy terminal fields populate a restored terminal leaf without adding a pane")
-    func migratesLegacyTerminalStateIntoRestoredPane() throws {
-        let (root, _) = try fixture(files: [])
-        defer { try? FileManager.default.removeItem(at: root) }
-        let terminalPane = PaneID()
-        var session = SessionState(projectPath: root.path, openFilePaths: [])
-        session.paneLayoutData = try JSONEncoder().encode(
-            PaneNode.leaf(terminalPane, .terminal)
-        )
-        session.activePaneID = terminalPane.id.uuidString
-        session.isTerminalVisible = true
-        session.terminalTabCount = 2
-        session.activeTerminalIndex = 1
-
-        let projectManager = ProjectManager()
-        _ = ProjectSessionRestorer.restore(
-            session,
-            into: projectManager,
-            rootURL: root
-        )
-
-        #expect(projectManager.paneManager.root == .leaf(terminalPane, .terminal))
-        let state = try #require(
-            projectManager.paneManager.terminalState(for: terminalPane)
-        )
-        #expect(state.terminalTabs.count == 2)
-        #expect(state.activeTerminalID == state.terminalTabs[1].id)
-        #expect(projectManager.terminal.lastActiveTerminalPaneID == terminalPane)
-    }
-
-    @Test("Legacy active file selects its owning non-primary pane")
-    func restoresLegacyActiveFileAcrossPanes() throws {
-        let (root, files) = try fixture(files: ["left.swift", "right.swift"])
-        defer { try? FileManager.default.removeItem(at: root) }
-        let leftURL = try #require(files["left.swift"])
-        let rightURL = try #require(files["right.swift"])
-        let leftPane = PaneID()
-        let rightPane = PaneID()
-        let layout = PaneNode.split(
-            .horizontal,
-            first: .leaf(leftPane, .editor),
-            second: .leaf(rightPane, .editor),
+            second: .leaf(editorB, .editor),
             ratio: 0.5
         )
-        var session = SessionState(
+        let a = try #require(urls["a.swift"])
+        let b = try #require(urls["b.swift"])
+        let session = SessionState(
             projectPath: root.path,
-            openFilePaths: [leftURL.path, rightURL.path],
-            activeFilePath: rightURL.path
+            openFilePaths: [a, b].map(\.path),
+            paneLayoutData: try JSONEncoder().encode(layout),
+            paneTabAssignments: [editorA.id.uuidString: [a.path]],
+            activePaneID: editorA.id.uuidString
         )
-        session.paneLayoutData = try JSONEncoder().encode(layout)
-        session.paneTabAssignments = [
-            leftPane.id.uuidString: [leftURL.path],
-            rightPane.id.uuidString: [rightURL.path]
-        ]
-        session.activePaneID = rightPane.id.uuidString
+        let project = ProjectManager()
 
-        let projectManager = ProjectManager()
-        _ = ProjectSessionRestorer.restore(
-            session,
-            into: projectManager,
-            rootURL: root
-        )
+        ProjectSessionRestorer.restore(session, into: project, rootURL: root)
 
-        #expect(projectManager.paneManager.activePaneID == rightPane)
-        #expect(projectManager.terminal.lastActiveTerminalPaneID == nil)
-        #expect(projectManager.paneManager.tabManager(for: rightPane)?.activeTab?.url == rightURL)
+        #expect(Set(project.primaryTabManager.tabs.compactMap(\.fileURL)) == [a, b])
     }
 
-    @Test("Editor-focused restore chooses the first valid terminal without stealing focus")
-    func terminalDestinationFallbackUsesStableOrderWithoutFocusTheft() throws {
-        let (root, files) = try fixture(files: ["focused.swift"])
+    @Test("Terminal-only legacy layout restores and can reveal the retained editor")
+    func restoresTerminalOnlyLayout() throws {
+        let (root, _) = try fixture(files: [])
         defer { try? FileManager.default.removeItem(at: root) }
-        let file = try #require(files["focused.swift"])
-        let editor = PaneID()
-        let firstTerminal = PaneID()
-        let secondTerminal = PaneID()
-        let layout = PaneNode.split(
-            .horizontal,
-            first: .leaf(editor, .editor),
-            second: .split(
-                .vertical,
-                first: .leaf(firstTerminal, .terminal),
-                second: .leaf(secondTerminal, .terminal),
-                ratio: 0.5
-            ),
-            ratio: 0.5
-        )
-        var session = SessionState(
+        let terminal = PaneID()
+        let session = SessionState(
             projectPath: root.path,
-            openFilePaths: [file.path]
+            openFilePaths: [],
+            paneLayoutData: try JSONEncoder().encode(PaneNode.leaf(terminal, .terminal)),
+            activePaneID: terminal.id.uuidString,
+            terminalPaneTabCounts: [terminal.id.uuidString: 2],
+            terminalPaneActiveIndices: [terminal.id.uuidString: 1]
         )
-        session.paneLayoutData = try JSONEncoder().encode(layout)
-        session.paneTabAssignments = [editor.id.uuidString: [file.path]]
-        session.paneActiveEditorPaths = [editor.id.uuidString: file.path]
-        session.activePaneID = editor.id.uuidString
-        session.terminalPaneTabCounts = [
-            firstTerminal.id.uuidString: 1,
-            secondTerminal.id.uuidString: 1,
-        ]
+        let project = ProjectManager()
 
-        let projectManager = ProjectManager()
-        _ = ProjectSessionRestorer.restore(
-            session,
-            into: projectManager,
-            rootURL: root
-        )
+        ProjectSessionRestorer.restore(session, into: project, rootURL: root)
 
-        #expect(projectManager.paneManager.activePaneID == editor)
-        #expect(
-            projectManager.paneManager.tabManager(for: editor)?
-                .pendingFocusTabID
-                == projectManager.paneManager.tabManager(for: editor)?
-                    .activeTabID
-        )
-        #expect(
-            projectManager.terminal.lastActiveTerminalPaneID
-                == firstTerminal
-        )
+        #expect(project.paneManager.root.leafCount == 1)
+        #expect(project.paneManager.root.firstLeafID == terminal)
+        #expect(project.paneManager.terminalState(for: terminal)?.tabCount == 2)
+        #expect(project.paneManager.activePaneID == terminal)
+        _ = project.paneManager.ensureEditorPane()
+        #expect(project.paneManager.root.leafCount == 2)
     }
 
-    @Test("Pinned and preview state is pane-scoped for duplicate file paths")
-    func paneScopedStateForDuplicatePaths() throws {
-        let (root, files) = try fixture(files: ["shared.swift"])
+    @Test("Pre-pane editor and terminal fields still restore")
+    func restoresLegacySingleEditorAndTerminal() throws {
+        let (root, urls) = try fixture(files: ["a.swift", "b.swift"])
         defer { try? FileManager.default.removeItem(at: root) }
-        let shared = try #require(files["shared.swift"])
-        let firstPane = PaneID()
-        let secondPane = PaneID()
-        var session = SessionState(projectPath: root.path, openFilePaths: [shared.path])
-        session.paneLayoutData = try JSONEncoder().encode(
-            PaneNode.split(
-                .horizontal,
-                first: .leaf(firstPane, .editor),
-                second: .leaf(secondPane, .editor),
-                ratio: 0.5
-            )
+        let a = try #require(urls["a.swift"])
+        let b = try #require(urls["b.swift"])
+        let session = SessionState(
+            projectPath: root.path,
+            openFilePaths: [a, b].map(\.path),
+            activeFilePath: b.path,
+            terminalTabCount: 2,
+            activeTerminalIndex: 1,
+            isTerminalVisible: true
         )
-        session.paneTabAssignments = [
-            firstPane.id.uuidString: [shared.path],
-            secondPane.id.uuidString: [shared.path]
-        ]
-        // The pane-local map is authoritative for new sessions. A missing
-        // pane entry means "no pins", not "fall back to the legacy global
-        // set" (which would incorrectly pin the duplicate in both panes).
-        session.pinnedPaths = [shared.path]
-        session.panePinnedPaths = [firstPane.id.uuidString: [shared.path]]
-        session.paneTransientPreviewPaths = [secondPane.id.uuidString: shared.path]
+        let project = ProjectManager()
 
-        let projectManager = ProjectManager()
-        _ = ProjectSessionRestorer.restore(
-            session,
-            into: projectManager,
-            rootURL: root
-        )
+        ProjectSessionRestorer.restore(session, into: project, rootURL: root)
 
-        let first = try #require(projectManager.paneManager.tabManager(for: firstPane)?.tabs.first)
-        let second = try #require(projectManager.paneManager.tabManager(for: secondPane)?.tabs.first)
-        #expect(first.isPinned)
-        #expect(!first.isTransientPreview)
-        #expect(!second.isPinned)
-        #expect(second.isTransientPreview)
+        #expect(project.primaryTabManager.tabs.map(\.fileURL) == [a, b])
+        #expect(project.primaryTabManager.activeTab?.fileURL == b)
+        #expect(project.paneManager.terminalStates.values.first?.tabCount == 2)
+        #expect(project.paneManager.terminalStates.values.first?.activeTerminalID
+            == project.paneManager.terminalStates.values.first?.terminalTabs[1].id)
     }
 
-    private func editorPath(
-        for identity: GlobalTabIdentity,
-        in paneManager: PaneManager
-    ) -> String? {
-        paneManager.tabManager(for: identity.paneID)?.tabs
-            .first(where: { $0.id == identity.tabID })?.url.path
+    private func migrationEditorID(session: SessionState) -> PaneID? {
+        session.activePaneID
+            .flatMap(UUID.init(uuidString:))
+            .map(PaneID.init(id:))
     }
 }

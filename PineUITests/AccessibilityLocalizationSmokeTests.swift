@@ -177,7 +177,7 @@ final class AccessibilityLocalizationSmokeTests: PineUITestCase {
     }
 
     /// #1540 — Differentiate Without Color must reach the *application*,
-    /// not just the test runner. The gutter and the minimap publish the cue
+    /// not just the test runner. The gutter publishes the cue
     /// their drawing path uses (colors vs shapes) as an accessibility value
     /// once git diff markers exist, resolved from the app's own read of the
     /// system preference. Each matrix lane asserts its expected cue, so the
@@ -220,15 +220,6 @@ final class AccessibilityLocalizationSmokeTests: PineUITestCase {
             "The gutter must report the \(configuration.differentiateWithoutColor ? "shape" : "color") cue"
         )
 
-        let minimap = app.groups["minimap"].firstMatch
-        XCTAssertTrue(
-            minimap.waitForExistence(timeout: 10),
-            "The minimap should be present once a file is open"
-        )
-        XCTAssertTrue(
-            waitForValue(minimap, in: expectedValues),
-            "The minimap must report the \(configuration.differentiateWithoutColor ? "shape" : "color") cue"
-        )
     }
 
     func testRepresentativeAndPseudolocalizedLayouts() throws {
@@ -753,7 +744,7 @@ final class AccessibilityLocalizationSmokeTests: PineUITestCase {
     }
 
     /// Creates a temp project whose working tree carries one modified and
-    /// one added line, so the editor gutter and minimap have real git diff
+    /// one added line, so the editor gutter has real git diff
     /// markers to render (#1540).
     private func createDiffMarkerProject() throws -> URL {
         let projectURL = try createTempProject(
@@ -765,7 +756,6 @@ final class AccessibilityLocalizationSmokeTests: PineUITestCase {
         )
         // Repo-local identity — CI runners carry no global git config, and
         // `git commit` refuses to run without one (same pattern as
-        // BranchSwitcherTests).
         try git("init", at: projectURL)
         try git("config", "user.email", "test@test.com", at: projectURL)
         try git("config", "user.name", "Test", at: projectURL)

@@ -61,26 +61,4 @@ struct ConstantsTests {
         #expect(EditorConstants.bracketSearchRadius <= 50_000)
     }
 
-    // MARK: - Minimap constants
-
-    @Test func minimapSyntaxAlphaIsBetweenZeroAndOne() {
-        #expect(MinimapConstants.syntaxSegmentAlpha > 0)
-        #expect(MinimapConstants.syntaxSegmentAlpha <= 1)
-    }
-
-    @Test func minimapDiffMarkerWidthIsPositive() {
-        #expect(MinimapConstants.diffMarkerWidth > 0)
-    }
-
-    @Test func minimapLineHeightIsPositive() {
-        #expect(MinimapConstants.lineHeight > 0)
-    }
-
-    @Test func minimapCharWidthIsPositive() {
-        #expect(MinimapConstants.charWidth > 0)
-    }
-
-    @Test func minimapLeadingPaddingIsNonNegative() {
-        #expect(MinimapConstants.leadingPadding >= 0)
-    }
 }

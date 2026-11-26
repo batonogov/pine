@@ -428,7 +428,6 @@ final class SettingsUITests: PineUITestCase {
                     "Format on Save",
                     "Smart List Continuation",
                     "Word Wrap",
-                    "Minimap",
                 ],
                 expectedIdentifiers: ["generalFontSizeSlider"]
             ),
@@ -490,7 +489,6 @@ final class SettingsUITests: PineUITestCase {
                     "Форматировать при сохранении",
                     "Продолжать списки автоматически",
                     "Переносить строки",
-                    "Мини-карта",
                 ],
                 expectedIdentifiers: ["generalFontSizeSlider"]
             ),

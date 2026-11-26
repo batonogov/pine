@@ -2,7 +2,7 @@
 //  GitModels.swift
 //  Pine
 //
-//  Data models for git status, diff markers, and blame display.
+//  Data models for git status and diff markers.
 //
 
 import Foundation

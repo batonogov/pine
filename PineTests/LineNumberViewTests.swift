@@ -38,8 +38,6 @@ struct LineNumberViewTests {
         #expect(view.gutterWidth == 40)
         #expect(view.isFlipped == true)
         #expect(view.lineDiffs.isEmpty)
-        #expect(view.foldableRanges.isEmpty)
-        #expect(view.foldState.foldedRanges.isEmpty)
         #expect(view.accessibilityIdentifier() == AccessibilityID.lineNumberGutter)
     }
 
@@ -78,38 +76,4 @@ struct LineNumberViewTests {
         #expect(view.lineDiffs.isEmpty)
     }
 
-    // MARK: - Foldable ranges
-
-    @Test func foldableRangesRebuildsStartMap() {
-        let (view, _) = makeView()
-        view.foldableRanges = [
-            FoldableRange(startLine: 1, endLine: 5, startCharIndex: 0, endCharIndex: 50, kind: .braces),
-            FoldableRange(startLine: 10, endLine: 15, startCharIndex: 100, endCharIndex: 200, kind: .brackets),
-        ]
-        #expect(view.foldableRanges.count == 2)
-    }
-
-    // MARK: - Fold state
-
-    @Test func foldStateTracksCurrentFolds() {
-        let (view, _) = makeView()
-        var state = FoldState()
-        let range = FoldableRange(startLine: 1, endLine: 5, startCharIndex: 0, endCharIndex: 50, kind: .braces)
-        state.fold(range)
-        view.foldState = state
-        #expect(view.foldState.isFolded(range))
-    }
-
-    // MARK: - onFoldToggle
-
-    @Test func onFoldToggleCallbackInvoked() {
-        let (view, _) = makeView()
-        var toggledRange: FoldableRange?
-        view.onFoldToggle = { toggledRange = $0 }
-
-        let range = FoldableRange(startLine: 1, endLine: 5, startCharIndex: 0, endCharIndex: 50, kind: .braces)
-        view.onFoldToggle?(range)
-        #expect(toggledRange?.startLine == 1)
-        #expect(toggledRange?.endLine == 5)
-    }
 }

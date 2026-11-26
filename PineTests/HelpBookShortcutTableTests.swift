@@ -39,13 +39,12 @@ struct HelpBookShortcutTableTests {
         // material.
         .newFile, .openFile, .commandPalette, .closeTab, .closeProject,
         .closeWindow, .saveAll, .saveAs, .duplicate,
-        // Diff navigation and folding: dense families behind the Edit menu.
-        .acceptChange, .revertChange, .foldCode, .unfoldCode, .foldAll,
-        .unfoldAll,
+        // Diff navigation: dense families behind the Edit menu.
+        .acceptChange, .revertChange,
         // Font zoom, panels, reveal, and agent launch: discoverable in the
         // View and Window menus; the ⌘= / ⇧⌘- aliases are invisible by
         // design.
-        .increaseFontSize, .decreaseFontSize, .resetFontSize, .toggleBlame,
+        .increaseFontSize, .decreaseFontSize, .resetFontSize,
         .revealFileInFinder, .showAgentInbox, .newAgent,
         // Terminal extras beyond the two the table carries.
         .sendToTerminal, .toggleTerminalZoom,
@@ -77,7 +76,6 @@ struct HelpBookShortcutTableTests {
     /// (minus the table's omitted ellipsis) — the renames of #1564.
     private static let titleKeysByCommand: [UserCommand: String] = [
         .togglePreview: "menu.togglePreview",
-        .toggleMinimap: "menu.toggleMinimap",
         .toggleWordWrap: "menu.toggleWordWrap",
     ]
 

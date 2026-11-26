@@ -138,7 +138,7 @@ struct UserConfigurationReloadTests {
         try write(
             """
             [
-              {"command": "toggleMinimap", "key": "cmd+k"},
+              {"command": "toggleWordWrap", "key": "cmd+k"},
               {"command": "commandPalette", "key": "f"},
               {"command": "save", "key": "cmd+c"}
             ]
@@ -150,7 +150,7 @@ struct UserConfigurationReloadTests {
 
         #expect(report.outcome == .rejected)
         #expect(!report.diagnostics.map(\.reason).contains(
-            .unavailableCommand(id: "toggleMinimap")
+            .unavailableCommand(id: "toggleWordWrap")
         ))
         #expect(report.diagnostics.map(\.reason).contains(
             .textInputChord(value: "f")
@@ -161,7 +161,7 @@ struct UserConfigurationReloadTests {
         #expect(registry.isEmpty)
     }
 
-    @Test func retiredLSPCommandsDoNotRejectOtherBindings() async throws {
+    @Test func retiredCommandsDoNotRejectOtherBindings() async throws {
         let directory = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let file = directory.appendingPathComponent("keybindings.json")

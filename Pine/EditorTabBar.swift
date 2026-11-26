@@ -6,7 +6,6 @@
 //
 
 import SwiftUI
-import UniformTypeIdentifiers
 
 /// Internal tab bar for editor tabs, styled like the terminal tab bar.
 struct EditorTabBar: View {
@@ -20,8 +19,6 @@ struct EditorTabBar: View {
     var onCloseTabsToTheRight: ((UUID) -> Void)?
     /// Called when user chooses "Close All Tabs" from context menu.
     var onCloseAllTabs: (() -> Void)?
-    /// Called after tabs are reordered via drag-and-drop.
-    var onReorder: (() -> Void)?
     /// Whether the active tab is a Markdown file.
     var isMarkdownFile: Bool = false
     /// Current preview mode of the active tab.
@@ -32,7 +29,7 @@ struct EditorTabBar: View {
     var isAutoSaving: Bool = false
     /// Project root URL for computing relative paths.
     var projectRootURL: URL?
-    /// Optional pane ID override for drag operations. When nil, uses the active pane.
+    /// Optional fixed destination override. When nil, uses the active destination.
     var overridePaneID: PaneID?
 
     /// Computes the relative path of a file URL relative to a project root URL.
@@ -53,9 +50,6 @@ struct EditorTabBar: View {
     @Environment(PaneManager.self) private var paneManager
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    @State private var tabFrames: [UUID: CGRect] = [:]
-    @State private var autoScrollSession = TabStripAutoScrollSession()
-
     /// Minimum tab width before scrolling kicks in.
     static let minTabWidth: CGFloat = 80
     /// Maximum tab width when there is plenty of space.
@@ -75,25 +69,6 @@ struct EditorTabBar: View {
     private var paneID: PaneID { overridePaneID ?? paneManager.activePaneID }
     private var coordinateSpaceName: String { "editor-tab-strip-\(paneID.id.uuidString)" }
 
-    private var activeAutoScrollOwner: TabStripAutoScrollOwner? {
-        TabStripAutoScrollOwner.current(
-            activeDrag: paneManager.activeDrag,
-            previewIntent: paneManager.tabDragCoordinator.previewIntent
-        )
-    }
-
-    private var insertionIndicatorX: CGFloat? {
-        guard let intent = paneManager.tabDragCoordinator.previewIntent,
-              intent.destinationPaneID == paneID,
-              intent.drag.contentType == .editor,
-              let insertionIndex = intent.insertionIndex else { return nil }
-        return TabStripInsertionGeometry.indicatorX(
-            for: insertionIndex,
-            orderedTabIDs: tabManager.tabs.map(\.id),
-            frames: tabFrames
-        )
-    }
-
     /// Computes one stable width for every unpinned tab. Pinned tabs always
     /// use `pinnedTabWidth` and are excluded from the dynamic calculation.
     static func unpinnedTabWidth(
@@ -111,75 +86,6 @@ struct EditorTabBar: View {
         return min(max(perTab, minTabWidth), maxTabWidth)
     }
 
-    private func dropDelegate(
-        orderedTabIDs: [UUID],
-        frames: [UUID: CGRect],
-        viewportWidth: CGFloat
-    ) -> TabStripDropDelegate {
-        TabStripDropDelegate(
-            paneID: paneID,
-            contentType: .editor,
-            orderedTabIDs: orderedTabIDs,
-            frames: frames,
-            paneManager: paneManager,
-            onCommit: onReorder,
-            onHover: { dragID, locationX in
-                autoScrollSession.updateHover(
-                    owner: TabStripAutoScrollOwner(
-                        dragID: dragID,
-                        destinationPaneID: paneID.id
-                    ),
-                    locationX: locationX,
-                    viewportWidth: viewportWidth,
-                    orderedTabIDs: orderedTabIDs,
-                    frames: frames
-                )
-            },
-            onExit: {
-                autoScrollSession.end()
-            }
-        )
-    }
-
-    private func refreshPreviewAfterGeometryChange(
-        orderedTabIDs: [UUID],
-        frames: [UUID: CGRect],
-        viewportWidth: CGFloat
-    ) {
-        guard let locationX = autoScrollSession.hoverLocationX,
-              autoScrollSession.hoveredOwner == activeAutoScrollOwner else {
-            autoScrollSession.end()
-            return
-        }
-        _ = dropDelegate(
-            orderedTabIDs: orderedTabIDs,
-            frames: frames,
-            viewportWidth: viewportWidth
-        ).preview(atX: locationX)
-    }
-
-    private func runAutoScroll(
-        request: TabStripAutoScrollRequest,
-        proxy: ScrollViewProxy
-    ) async {
-        while !Task.isCancelled {
-            guard autoScrollSession.request == request,
-                  activeAutoScrollOwner == request.owner,
-                  let targetID = autoScrollSession.targetID else {
-                return
-            }
-            proxy.scrollTo(
-                targetID,
-                anchor: request.direction == .leading ? .leading : .trailing
-            )
-            do {
-                try await Task.sleep(for: TabStripAutoScrollGeometry.stepDelay)
-            } catch {
-                return
-            }
-        }
-    }
-
     var body: some View {
         HStack(alignment: .center, spacing: 0) {
             GeometryReader { geometry in
@@ -194,11 +100,6 @@ struct EditorTabBar: View {
                             )
                             ForEach(tabManager.tabs) { tab in
                                 let isActive = tab.id == tabManager.activeTabID
-                                let isDragged = paneManager.activeDrag.map { drag in
-                                    drag.paneID == paneID.id
-                                        && drag.tabID == tab.id
-                                        && drag.contentType == .editor
-                                } ?? false
                                 EditorTabItem(
                                     tab: tab,
                                     isActive: isActive,
@@ -280,53 +181,12 @@ struct EditorTabBar: View {
                                             action: .trailing
                                         )
                                     } : nil,
-                                    onMoveToPreviousPane: paneManager.canMoveTab(
-                                        tab.id,
-                                        from: paneID,
-                                        contentType: .editor,
-                                        action: .previousPane
-                                    ) ? {
-                                        paneManager.moveTab(
-                                            tab.id,
-                                            from: paneID,
-                                            contentType: .editor,
-                                            action: .previousPane
-                                        )
-                                    } : nil,
-                                    onMoveToNextPane: paneManager.canMoveTab(
-                                        tab.id,
-                                        from: paneID,
-                                        contentType: .editor,
-                                        action: .nextPane
-                                    ) ? {
-                                        paneManager.moveTab(
-                                            tab.id,
-                                            from: paneID,
-                                            contentType: .editor,
-                                            action: .nextPane
-                                        )
-                                    } : nil,
                                     constrainedWidth: tab.isPinned
                                         ? Self.pinnedTabWidth
                                         : unpinnedWidth
                                 )
-                                .opacity(isDragged ? 0.4 : 1.0)
-                                .scaleEffect(isDragged ? 0.95 : 1.0)
                                 .transaction { $0.animation = nil }
                                 .id(tab.id)
-                                .reportTabStripFrame(
-                                    tabID: tab.id,
-                                    coordinateSpace: coordinateSpaceName
-                                )
-                                .onDrag {
-                                    let info = paneManager.beginTabDrag(
-                                        paneID: paneID,
-                                        tabID: tab.id,
-                                        fileURL: tab.fileURL,
-                                        contentType: .editor
-                                    )
-                                    return info.itemProvider()
-                                }
                             }
 
                         }
@@ -336,34 +196,6 @@ struct EditorTabBar: View {
                     .frame(maxHeight: .infinity, alignment: .center)
                     .contentShape(Rectangle())
                     .coordinateSpace(name: coordinateSpaceName)
-                    .onPreferenceChange(TabStripFramePreferenceKey.self) { frames in
-                        let orderedTabIDs = tabManager.tabs.map(\.id)
-                        tabFrames = frames
-                        autoScrollSession.updateGeometry(
-                            viewportWidth: geometry.size.width,
-                            orderedTabIDs: orderedTabIDs,
-                            frames: frames
-                        )
-                        refreshPreviewAfterGeometryChange(
-                            orderedTabIDs: orderedTabIDs,
-                            frames: frames,
-                            viewportWidth: geometry.size.width
-                        )
-                    }
-                    .overlay(alignment: .topLeading) {
-                        if let insertionIndicatorX {
-                            TabInsertionIndicator(x: insertionIndicatorX)
-                        }
-                    }
-                    .onDrop(of: [.paneTabDrag], delegate: dropDelegate(
-                        orderedTabIDs: tabManager.tabs.map(\.id),
-                        frames: tabFrames,
-                        viewportWidth: geometry.size.width
-                    ))
-                    .task(id: autoScrollSession.request) {
-                        guard let request = autoScrollSession.request else { return }
-                        await runAutoScroll(request: request, proxy: proxy)
-                    }
                     .onAppear {
                         if let activeID = tabManager.activeTabID {
                             // No anchor: reveal by the smallest necessary
@@ -371,25 +203,6 @@ struct EditorTabBar: View {
                             // already visible (#1537).
                             proxy.scrollTo(activeID)
                         }
-                    }
-                    .onDisappear {
-                        autoScrollSession.end()
-                    }
-                    .onChange(of: geometry.size.width) { _, width in
-                        let orderedTabIDs = tabManager.tabs.map(\.id)
-                        autoScrollSession.updateGeometry(
-                            viewportWidth: width,
-                            orderedTabIDs: orderedTabIDs,
-                            frames: tabFrames
-                        )
-                        refreshPreviewAfterGeometryChange(
-                            orderedTabIDs: orderedTabIDs,
-                            frames: tabFrames,
-                            viewportWidth: width
-                        )
-                    }
-                    .onChange(of: activeAutoScrollOwner) { _, owner in
-                        autoScrollSession.activeOwnerDidChange(to: owner)
                     }
                     .onChange(of: tabManager.activeTabID) {
                         guard let activeID = tabManager.activeTabID else { return }
@@ -527,8 +340,6 @@ struct EditorTabItem: View {
     var onRevealInFinder: (() -> Void)?
     var onMoveLeading: (() -> Void)?
     var onMoveTrailing: (() -> Void)?
-    var onMoveToPreviousPane: (() -> Void)?
-    var onMoveToNextPane: (() -> Void)?
     var constrainedWidth: CGFloat?
 
     @State private var isHovering = false
@@ -601,16 +412,6 @@ struct EditorTabItem: View {
                 onMoveTrailing?()
             }
             .disabled(onMoveTrailing == nil)
-
-            Button(Strings.tabMoveToPreviousPane) {
-                onMoveToPreviousPane?()
-            }
-            .disabled(onMoveToPreviousPane == nil)
-
-            Button(Strings.tabMoveToNextPane) {
-                onMoveToNextPane?()
-            }
-            .disabled(onMoveToNextPane == nil)
 
             Divider()
 
@@ -691,18 +492,6 @@ struct EditorTabItem: View {
                         }
                         if let onMoveTrailing {
                             Button(Strings.tabMoveTrailing, action: onMoveTrailing)
-                        }
-                        if let onMoveToPreviousPane {
-                            Button(
-                                Strings.tabMoveToPreviousPane,
-                                action: onMoveToPreviousPane
-                            )
-                        }
-                        if let onMoveToNextPane {
-                            Button(
-                                Strings.tabMoveToNextPane,
-                                action: onMoveToNextPane
-                            )
                         }
                     }
                 if !tab.isPinned {

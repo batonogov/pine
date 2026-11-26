@@ -402,10 +402,6 @@ final class GitStatusProvider {
         GitParser.parseIgnoredOutput(output)
     }
 
-    nonisolated static func parseBlame(_ output: String) -> [GitBlameLine] {
-        GitParser.parseBlame(output)
-    }
-
     nonisolated static func parseDiff(_ diffOutput: String) -> [GitLineDiff] {
         GitParser.parseDiff(diffOutput)
     }

@@ -87,8 +87,6 @@ struct MenuPlacementGuardTests {
         for item in [
             "Strings.tabMoveLeading",
             "Strings.tabMoveTrailing",
-            "Strings.tabMoveToPreviousPane",
-            "Strings.tabMoveToNextPane",
         ] {
             try Self.assertItem(
                 item,
@@ -123,8 +121,6 @@ struct MenuPlacementGuardTests {
     func viewMenuKeepsItsOwnItems() throws {
         let view = try Self.segment(anchor: Self.viewMenuAnchor)
         for item in [
-            "Strings.menuToggleMinimap",
-            "Strings.menuToggleBlame",
             "Strings.menuToggleWordWrap",
             "Strings.projectSwitcherNewAgent",
             "Strings.menuAgentWorktrees",

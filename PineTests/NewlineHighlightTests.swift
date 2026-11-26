@@ -542,7 +542,6 @@ struct NewlineHighlightTests {
             contentVersion: 0,
             language: "testyaml",
             fileName: "test.yaml",
-            foldState: .constant(FoldState())
         )
         let coordinator = CodeEditorView.Coordinator(parent: editorView)
         coordinator.scrollView = scrollView
@@ -598,7 +597,6 @@ struct NewlineHighlightTests {
             contentVersion: 0,
             language: "testyaml",
             fileName: "test.yaml",
-            foldState: .constant(FoldState())
         )
         let coordinator = CodeEditorView.Coordinator(parent: editorView)
         coordinator.scrollView = scrollView
@@ -813,7 +811,6 @@ struct NewlineHighlightTests {
             contentVersion: 0,
             language: "testyaml",
             fileName: "test.yaml",
-            foldState: .constant(FoldState())
         )
         let coordinator = CodeEditorView.Coordinator(parent: editorView)
         coordinator.scrollView = scrollView
@@ -864,7 +861,6 @@ struct NewlineHighlightTests {
             contentVersion: 0,
             language: "testyaml",
             fileName: "test.yaml",
-            foldState: .constant(FoldState())
         )
         let coordinator = CodeEditorView.Coordinator(parent: editorView)
         coordinator.scrollView = scrollView

@@ -141,16 +141,6 @@ struct AlertTemplateTests {
         #expect(buttons[2].title == Strings.dialogCancel)
     }
 
-    @Test("branchUncommittedChanges has Switch / Cancel")
-    func branchUncommittedChangesButtons() {
-        let template = AlertTemplate.branchUncommittedChanges
-        let alert = template.makeAlert(messageText: "Test")
-        let buttons = alert.buttons
-        #expect(buttons.count == 2)
-        #expect(buttons[0].title == Strings.branchUncommittedChangesSwitch)
-        #expect(buttons[1].title == Strings.dialogCancel)
-    }
-
     @Test("revertAllConfirmation has Revert All / Cancel")
     func revertAllConfirmationButtons() {
         let template = AlertTemplate.revertAllConfirmation
@@ -209,7 +199,6 @@ struct AlertTemplateTests {
             .externalModifyConflict,
             .fileDeletedSaveAs,
             .largeFileWarning,
-            .branchUncommittedChanges,
             .revertAllConfirmation,
             .fileOperationErrorWarning,
             .userTaskRunConfirmation,
@@ -325,12 +314,6 @@ struct AlertTemplateTests {
                 defaultIndex: 0,
                 cancelIndex: 2,
                 destructiveIndices: []
-            ),
-            .init(
-                template: .branchUncommittedChanges,
-                defaultIndex: 1,
-                cancelIndex: 1,
-                destructiveIndices: [0]
             ),
             .init(
                 template: .revertAllConfirmation,
