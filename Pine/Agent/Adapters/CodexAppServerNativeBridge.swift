@@ -103,9 +103,11 @@ nonisolated final class CodexAppServerNativeChild: @unchecked Sendable {
             if case .running = subprocess.pollExit() {
                 let reaper = subprocess.reapInBackground()
                 self.reaperSlot.withLock { $0.reaper = reaper }
-                if group.isAlive {
-                    Task.detached { [group] in group.finishDeferredCleanup() }
-                }
+            }
+            // An exited or reaped child can still leave live group members:
+            // the idempotent deferred cleanup arms on the group, not the child (#1865).
+            if group.isAlive {
+                Task.detached { [group] in group.finishDeferredCleanup() }
             }
         }
         receipt.revoke()
