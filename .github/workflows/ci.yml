@@ -658,13 +658,13 @@ jobs:
             test-classes: >-
               -only-testing:PineUITests/WelcomeWindowTests
               -only-testing:PineUITests/NativeFileWindowMenuUITests
-          # Shard 3 — Navigation (31 tests; accessibility matrix skips here)
+          # Shard 3 — Navigation (32 tests; accessibility matrix skips here)
           - shard-name: "Navigation"
             test-classes: >-
               -only-testing:PineUITests/TabOverflowExternalChangesUITests
               -only-testing:PineUITests/CommandPaletteUITests
+              -only-testing:PineUITests/AgentTaskResultUITests
               -only-testing:PineUITests/EditorTabNavigationTests
-              -only-testing:PineUITests/DiffNavigationUITests
               -only-testing:PineUITests/AccessibilityLocalizationSmokeTests
               -only-testing:PineUITests/OpenCodeRealModelJourneyUITests
               -only-testing:PineUITests/CheckForUpdatesTests
@@ -678,10 +678,11 @@ jobs:
               -only-testing:PineUITests/OpenCodeTaskUITests
               -only-testing:PineUITests/SidebarFolderClickTests
               -only-testing:PineUITests/LineNumberGutterUITests
-          # Shard 5 — Files & Save (30 tests, release smoke skips outside release CI)
+          # Shard 5 — Files & Save (33 tests, release smoke skips outside release CI)
           - shard-name: "Files & Save"
             test-classes: >-
               -only-testing:PineUITests/EditorSaveFlowTests
+              -only-testing:PineUITests/DiffNavigationUITests
               -only-testing:PineUITests/DeleteTests
               -only-testing:PineUITests/SidebarRenameTests
               -only-testing:PineUITests/SidebarFileOperationsTests

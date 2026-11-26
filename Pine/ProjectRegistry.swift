@@ -1540,6 +1540,12 @@ final class ProjectRegistry {
         openCodeNativeComposition.runtime(for: taskID)
     }
 
+    #if DEBUG
+    func installOpenCodeRuntimeForTesting(_ runtime: OpenCodeACPTaskRuntime) {
+        openCodeNativeComposition.installRuntimeForTesting(runtime)
+    }
+    #endif
+
     @discardableResult
     func composeOpenCodeRuntime(
         _ materials: OpenCodeACPNativeMaterials

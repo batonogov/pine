@@ -255,8 +255,10 @@ struct OpenCodeACPTests {
         let fixture = try await fixture()
         defer { fixture.transport.close() }
         let gateWasOnMain = Mutex(false)
+        let taskID = UUID()
+        let runID = UUID()
         let runtime = try OpenCodeACPTaskRuntime(
-            taskID: UUID(), runID: UUID(), bindingID: UUID(),
+            taskID: taskID, runID: runID, bindingID: UUID(),
             registry: fixture.registry, owner: fixture.session, provider: fixture.concrete,
             taskIsCurrent: { true }, prepareControl: { _ in }, beforeDispatch: { _ in
                 if Thread.isMainThread { gateWasOnMain.withLock { $0 = true } }
@@ -281,7 +283,22 @@ struct OpenCodeACPTests {
         try #require(await waitUntilMainActor { runtime.snapshot?.state == .unverified })
         #expect(runtime.snapshot?.result == "Unverified result")
         #expect(runtime.snapshot?.ready == false)
-        _ = try await runtime.submit("Explicit same-session feedback")
+        func decision(runID: UUID) -> AgentTaskReviewDecision {
+            AgentTaskReviewDecision(
+                cycleID: UUID(), taskID: taskID, runID: runID, blocker: .checksFailed,
+                round: 1, unresolvedFindingReference: nil,
+                candidateCodeState: ADEContractFixtures.codeState("a"),
+                candidateEnvironment: ADEContractFixtures.environment
+            )
+        }
+        let writeCount = try fixture.transport.writes().count
+        #expect(await runtime.submitResultDecisionReply(
+            "Wrong attempt", decision: decision(runID: UUID())
+        ) == false)
+        #expect(try fixture.transport.writes().count == writeCount)
+        #expect(await runtime.submitResultDecisionReply(
+            "Explicit same-session feedback", decision: decision(runID: runID)
+        ))
         _ = try await runtime.cancel()
         #expect(runtime.snapshot?.state == .cancelRequested)
         fixture.transport.push(.response(.integer(3), result: .object(["stopReason": .string("cancelled")])))

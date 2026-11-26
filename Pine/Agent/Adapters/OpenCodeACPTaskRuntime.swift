@@ -86,6 +86,20 @@ final class OpenCodeACPTaskRuntime: CustomStringConvertible, CustomDebugStringCo
         try await dispatch(.submitInstruction(instruction))
     }
 
+    /// Dispatches a result reply only through this exact task/run session.
+    /// Acknowledgement is not settlement; uncertain or failed writes stay
+    /// visible to the caller and are never retried here.
+    func submitResultDecisionReply(
+        _ instruction: String, decision: AgentTaskReviewDecision
+    ) async -> Bool {
+        guard decision.taskID == taskID, decision.runID == runID else { return false }
+        do {
+            return try await submit(instruction) == .acknowledged
+        } catch {
+            return false
+        }
+    }
+
     @discardableResult
     func answerQuestion(_ question: OpenCodeACPSession.Question,
                         answers: [String: [String]]) async throws -> AgentAdapterControlDispatch {

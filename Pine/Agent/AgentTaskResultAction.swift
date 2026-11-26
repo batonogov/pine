@@ -1,4 +1,5 @@
 import Foundation
+import Observation
 
 /// A loopback endpoint a result action may own.
 nonisolated struct AgentProjectResultEndpoint: Equatable, Hashable, Sendable {
@@ -29,6 +30,231 @@ nonisolated struct AgentTaskResultActionBinding: Equatable, Sendable {
     let resultActionID: String
     let output: AgentProjectResultOutput
     let snapshot: AgentVerificationIdentitySnapshot
+
+    init(
+        taskID: UUID,
+        project: AgentTaskProjectIdentity,
+        recipeFingerprint: String,
+        resultActionID: String,
+        output: AgentProjectResultOutput,
+        snapshot: AgentVerificationIdentitySnapshot
+    ) {
+        self.taskID = taskID
+        self.project = project
+        self.recipeFingerprint = recipeFingerprint
+        self.resultActionID = resultActionID
+        self.output = output
+        self.snapshot = snapshot
+    }
+
+    /// Selection is side-effect free. It binds exactly one selected recipe
+    /// action to one task candidate; it neither prepares nor launches it.
+    init?(
+        task: AgentTask,
+        selection: AgentProjectRecipe.Selected,
+        actionID: String,
+        snapshot: AgentVerificationIdentitySnapshot
+    ) {
+        guard let action = selection.recipe.results.first(where: { $0.id == actionID }),
+              action.isValid, selection.recipe.isValid,
+              selection.recipe.canonicalProjectPath == task.project.canonicalProjectPath,
+              AgentTaskMetadataStore.validCodeState(snapshot.code),
+              AgentTaskMetadataStore.validEnvironment(snapshot.environment) else {
+            return nil
+        }
+        self.init(
+            taskID: task.id, project: task.project,
+            recipeFingerprint: selection.recipe.fingerprint,
+            resultActionID: action.id, output: action.output, snapshot: snapshot
+        )
+    }
+}
+
+nonisolated enum AgentTaskResultLaunchRefusal: String, Equatable, Sendable {
+    case bindingChanged
+    case notReady
+    case grantNotCurrent
+    case environmentUnavailable
+    case originalCheckout
+    case unsupportedOutput
+    case authorityChanged
+}
+
+/// Live command authority shared by setup and result execution. Every call
+/// recaptures content/tool identity with the exact child environment, re-reads
+/// current task readiness, then rechecks grant and binding/lease authority.
+nonisolated struct AgentTaskResultCommandAuthority: Sendable {
+    let taskID: UUID
+    let project: AgentTaskProjectIdentity
+    let plan: AgentTaskCheckPlan
+    let expected: AgentVerificationIdentitySnapshot
+    private let currentGrant: @Sendable () -> AgentTaskCheckGrant?
+    private let currentReadiness: @Sendable (
+        AgentVerificationIdentitySnapshot
+    ) -> AgentTaskReadiness?
+    private let captureIdentity: @Sendable (
+        [String: String]
+    ) -> AgentVerificationIdentityCaptureResult
+    private let environmentIsCurrent: @Sendable () -> Bool
+
+    init(
+        taskID: UUID,
+        project: AgentTaskProjectIdentity,
+        plan: AgentTaskCheckPlan,
+        expected: AgentVerificationIdentitySnapshot,
+        currentGrant: @escaping @Sendable () -> AgentTaskCheckGrant?,
+        currentReadiness: @escaping @Sendable (
+            AgentVerificationIdentitySnapshot
+        ) -> AgentTaskReadiness?,
+        captureIdentity: @escaping @Sendable (
+            [String: String]
+        ) -> AgentVerificationIdentityCaptureResult,
+        environmentIsCurrent: @escaping @Sendable () -> Bool
+    ) {
+        self.taskID = taskID
+        self.project = project
+        self.plan = plan
+        self.expected = expected
+        self.currentGrant = currentGrant
+        self.currentReadiness = currentReadiness
+        self.captureIdentity = captureIdentity
+        self.environmentIsCurrent = environmentIsCurrent
+    }
+
+    func validate(environment: [String: String]) -> AgentTaskResultLaunchRefusal? {
+        guard project.canonicalProjectPath != project.canonicalWorktreePath else {
+            return .originalCheckout
+        }
+        switch captureIdentity(environment) {
+        case .current(let snapshot):
+            guard snapshot == expected else { return .bindingChanged }
+        case .changed:
+            return .bindingChanged
+        case .cancelled:
+            return .authorityChanged
+        case .unavailable:
+            return .environmentUnavailable
+        }
+        guard let readiness = currentReadiness(expected),
+              readiness.isReady, readiness.gaps.isEmpty else {
+            return .notReady
+        }
+        guard currentGrant()?.matchesScope(
+            taskID: taskID, plan: plan, environment: expected.environment
+        ) == true else {
+            return .grantNotCurrent
+        }
+        guard environmentIsCurrent() else { return .environmentUnavailable }
+        return nil
+    }
+}
+
+/// Fresh authority for one explicit result launch. Preparation remains a
+/// separate observed dimension; the spawn gate never reuses cached readiness.
+nonisolated struct AgentTaskResultLaunchContext: Sendable {
+    let binding: AgentTaskResultActionBinding
+    let command: AgentTaskCheckCommand
+    let preparation: AgentProjectPreparation
+    let authority: AgentTaskResultCommandAuthority
+
+    init(
+        binding: AgentTaskResultActionBinding,
+        command: AgentTaskCheckCommand,
+        preparation: AgentProjectPreparation,
+        authority: AgentTaskResultCommandAuthority
+    ) {
+        self.binding = binding
+        self.command = command
+        self.preparation = preparation
+        self.authority = authority
+    }
+
+    static func make(
+        binding: AgentTaskResultActionBinding,
+        selection: AgentProjectRecipe.Selected,
+        preparation: AgentProjectPreparation,
+        authority: AgentTaskResultCommandAuthority
+    ) -> Self? {
+        guard let action = selection.recipe.results.first(where: {
+            $0.id == binding.resultActionID
+        }), action.output == binding.output,
+              selection.recipe.secretRequirements[action.command.id]?.isEmpty != false,
+              selection.recipe.fingerprint == binding.recipeFingerprint,
+              selection.plan.recipeFingerprint == selection.recipe.checks.fingerprint,
+              authority.taskID == binding.taskID,
+              authority.project == binding.project,
+              authority.plan == selection.plan,
+              authority.expected == binding.snapshot else {
+            return nil
+        }
+        return Self(
+            binding: binding, command: action.command,
+            preparation: preparation, authority: authority
+        )
+    }
+
+    var workingDirectory: URL {
+        let root = URL(
+            fileURLWithPath: binding.project.canonicalWorktreePath,
+            isDirectory: true
+        )
+        guard !command.workingDirectory.isEmpty else { return root }
+        return root.appendingPathComponent(command.workingDirectory, isDirectory: true)
+    }
+
+    /// Called off-main before scheduling and again inside the runner's
+    /// pre-spawn gate with the exact environment inherited by that child.
+    func validate(environment: [String: String]) -> AgentTaskResultLaunchRefusal? {
+        guard preparation.isCurrentFor(binding.recipeFingerprint) else { return .notReady }
+        guard binding.output.isRunnable else { return .unsupportedOutput }
+        // The first slice executes Swift package CLI examples. Other typed
+        // outputs retain their presentation/lifecycle without a fake runner.
+        guard binding.output.isOneShot else { return .unsupportedOutput }
+        guard command.isValid else { return .bindingChanged }
+        return authority.validate(environment: environment)
+    }
+}
+
+nonisolated struct AgentTaskResultLaunchRejection: Error {
+    let refusal: AgentTaskResultLaunchRefusal
+}
+
+nonisolated protocol AgentTaskResultActionExecuting: Sendable {
+    @discardableResult
+    func execute(
+        command: AgentTaskCheckCommand,
+        workingDirectory: URL,
+        preSpawnValidation: @escaping @Sendable ([String: String]) throws -> Void,
+        processObserved: @escaping @Sendable (UInt32) -> Void,
+        progress: UserTaskProgress
+    ) -> UserTaskCancellation
+}
+
+/// Production adapter over Pine's bounded literal-argv, process-group runner.
+nonisolated struct AgentTaskResultProcessExecutor: AgentTaskResultActionExecuting {
+    func execute(
+        command: AgentTaskCheckCommand,
+        workingDirectory: URL,
+        preSpawnValidation: @escaping @Sendable ([String: String]) throws -> Void,
+        processObserved: @escaping @Sendable (UInt32) -> Void,
+        progress: UserTaskProgress
+    ) -> UserTaskCancellation {
+        let runner = UserTaskRunner(
+            timeout: command.timeout,
+            processDidSpawn: { processID in
+                guard processID > 0 else { return }
+                processObserved(UInt32(processID))
+            }
+        )
+        return runner.run(
+            taskID: command.id,
+            executableURL: command.executable,
+            arguments: command.arguments,
+            workingDirectory: workingDirectory,
+            preSpawnValidation: preSpawnValidation,
+            progress: progress
+        )
+    }
 }
 
 /// The presentation verb for a result output; non-runnable changes keep
@@ -91,6 +317,7 @@ nonisolated struct AgentTaskResultActionState: Equatable, Sendable {
         case startupFailed
         case missingPrerequisite(String)
         case processExited(Int32)
+        case launchRefused(AgentTaskResultLaunchRefusal)
     }
 
     let binding: AgentTaskResultActionBinding
@@ -120,6 +347,7 @@ nonisolated struct AgentTaskResultActionState: Equatable, Sendable {
         /// The executor verified readiness (endpoint responded / app alive).
         case readyObserved
         case startupFailed
+        case launchRefused(AgentTaskResultLaunchRefusal)
         case prerequisiteMissing(String)
         /// Bind failed: the endpoint is occupied by a non-owned process.
         case portOccupied
@@ -167,6 +395,10 @@ nonisolated struct AgentTaskResultActionState: Equatable, Sendable {
         case (.starting, .startupFailed):
             next.phase = .failed(.startupFailed)
             next.ownership = nil
+        case (.prepared, .launchRefused(let reason)),
+             (.starting, .launchRefused(let reason)):
+            next.phase = .failed(.launchRefused(reason))
+            next.ownership = nil
         case (.prepared, .prerequisiteMissing(let name)),
              (.starting, .prerequisiteMissing(let name)):
             next.phase = .failed(.missingPrerequisite(name))
@@ -187,13 +419,21 @@ nonisolated struct AgentTaskResultActionState: Equatable, Sendable {
                 next.phase = .failed(.processExited(code))
             }
             next.ownership = nil
-        case (.ready, .stopRequested), (.stale, .stopRequested) where next.ownership != nil:
+        case (.starting, .stopRequested):
+            // Cancellation was accepted by the executor. Keep process
+            // ownership until its final cleanup callback completes.
+            next.phase = .stopping
+        case (.ready, .stopRequested) where next.ownership != nil,
+             (.stale, .stopRequested) where next.ownership != nil:
             next.phase = .stopping
         case (.ready, .processExited(let code)),
              (.stale, .processExited(let code)) where !binding.output.isOneShot:
             // The owned result process ended on its own; a stale preview
             // with a dead process must not keep claiming it.
             next.phase = code == 0 ? .stopped : .failed(.processExited(code))
+            next.ownership = nil
+        case (.stopping, .cancelled):
+            next.phase = .cancelled
             next.ownership = nil
         case (.stopping, .processExited):
             next.phase = .stopped
@@ -207,5 +447,213 @@ nonisolated struct AgentTaskResultActionState: Equatable, Sendable {
             break
         }
         return next
+    }
+}
+
+/// Explicit-user driver for the result-action value lifecycle. Constructing or
+/// presenting it starts nothing. Only `launch` revalidates and may execute;
+/// trying a result has no acceptance, Git, or publication side effect.
+@MainActor
+@Observable
+final class AgentTaskResultActionDriver {
+    private(set) var state: AgentTaskResultActionState
+    private(set) var lastOutcome: UserTaskOutcome?
+
+    @ObservationIgnored private let executor: any AgentTaskResultActionExecuting
+    @ObservationIgnored private var activeAttempt: UUID?
+    @ObservationIgnored private var cancellation: UserTaskCancellation?
+
+    init(
+        binding: AgentTaskResultActionBinding,
+        executor: any AgentTaskResultActionExecuting = AgentTaskResultProcessExecutor()
+    ) {
+        state = AgentTaskResultActionState(binding: binding)
+        self.executor = executor
+    }
+
+    func launch(
+        revalidate: @escaping @Sendable (
+            AgentTaskResultActionBinding
+        ) async -> AgentTaskResultLaunchContext?
+    ) {
+        let next = state.reduced(by: .launchRequested)
+        guard next.phase == .starting, next.attempts == state.attempts + 1 else { return }
+        state = next
+        lastOutcome = nil
+        let attempt = UUID()
+        activeAttempt = attempt
+        let binding = state.binding
+        Task { @MainActor [weak self] in
+            guard let self, self.activeAttempt == attempt else { return }
+            guard let context = await revalidate(binding) else {
+                self.refuse(.authorityChanged, attempt: attempt)
+                return
+            }
+            guard context.binding == binding else {
+                self.refuse(.bindingChanged, attempt: attempt)
+                return
+            }
+            let refusal = await runOnBackground {
+                context.validate(environment: ProcessInfo.processInfo.environment)
+            }
+            guard self.activeAttempt == attempt else { return }
+            if let refusal {
+                self.refuse(refusal, attempt: attempt)
+                return
+            }
+            self.start(context: context, attempt: attempt)
+        }
+    }
+
+    func stop() {
+        switch state.phase {
+        case .starting:
+            if let cancellation {
+                // False means completion already owns the terminal transition.
+                guard cancellation.cancel() else { return }
+                state = state.reduced(by: .stopRequested)
+                // Keep attempt, handle, and ownership through final cleanup.
+            } else {
+                // No executor handle yet: no process cleanup can be outstanding.
+                state = state.reduced(by: .cancelled)
+                activeAttempt = nil
+            }
+        case .ready where state.ownership != nil,
+             .stale where state.ownership != nil:
+            state = state.reduced(by: .stopRequested)
+            cancellation?.cancel()
+        default:
+            break
+        }
+    }
+
+    /// A change during launch revokes that launch before spawn. A live result
+    /// becomes stale and remains owned until the user explicitly stops it.
+    func candidateChanged() {
+        if state.phase == .starting {
+            if let cancellation {
+                guard cancellation.cancel() else { return }
+                state = state.reduced(by: .stopRequested)
+            } else {
+                state = state.reduced(by: .cancelled)
+                activeAttempt = nil
+            }
+        } else {
+            state = state.reduced(by: .candidateChanged)
+        }
+    }
+
+    /// Fresh binding only; stale snapshots are never relaunched. An old live
+    /// process must first be stopped through its own scoped cancellation.
+    @discardableResult
+    func rebind(to binding: AgentTaskResultActionBinding) -> Bool {
+        guard binding != state.binding, state.ownership == nil else { return false }
+        switch state.phase {
+        case .starting, .stopping:
+            return false
+        default:
+            break
+        }
+        state = AgentTaskResultActionState(binding: binding)
+        activeAttempt = nil
+        cancellation = nil
+        lastOutcome = nil
+        return true
+    }
+
+    private func start(context: AgentTaskResultLaunchContext, attempt: UUID) {
+        let handle = executor.execute(
+            command: context.command,
+            workingDirectory: context.workingDirectory,
+            preSpawnValidation: { environment in
+                if let refusal = context.validate(environment: environment) {
+                    throw AgentTaskResultLaunchRejection(refusal: refusal)
+                }
+            },
+            processObserved: { [weak self] processID in
+                Task { @MainActor [weak self] in
+                    guard let self, self.activeAttempt == attempt,
+                          self.state.phase == .starting else { return }
+                    self.state = self.state.reduced(by: .processObserved(
+                        processID: processID, processGroupID: processID
+                    ))
+                }
+            },
+            progress: UserTaskProgress(
+                onFinish: { [weak self] outcome, cancelled in
+                    Task { @MainActor [weak self] in
+                        self?.finish(outcome, cancelled: cancelled, attempt: attempt)
+                    }
+                }
+            )
+        )
+        guard activeAttempt == attempt else {
+            handle.cancel()
+            return
+        }
+        cancellation = handle
+    }
+
+    private func finish(
+        _ outcome: UserTaskOutcome,
+        cancelled: Bool,
+        attempt: UUID
+    ) {
+        guard activeAttempt == attempt else { return }
+        lastOutcome = outcome
+        let handle = cancellation
+        Task { @MainActor [weak self] in
+            guard let self, self.activeAttempt == attempt else { return }
+            // The runner's wait also covers deferred process-tree/pipe
+            // ownership released after an incomplete first cleanup pass.
+            let released = await runOnBackground {
+                handle?.wait(until: .now() + 30) ?? true
+            }
+            guard released else { return } // fail closed: no relaunch/rebind
+            self.applyFinished(outcome, cancelled: cancelled, attempt: attempt)
+        }
+    }
+
+    private func applyFinished(
+        _ outcome: UserTaskOutcome,
+        cancelled: Bool,
+        attempt: UUID
+    ) {
+        guard activeAttempt == attempt else { return }
+        if outcome.preSpawnRejected {
+            guard state.phase == .stopping else {
+                refuse(.authorityChanged, attempt: attempt)
+                return
+            }
+            // Cancellation already owns this launch: finish that transition
+            // instead of emitting a refusal the stopping reducer cannot accept.
+            state = state.reduced(by: .cancelled)
+        } else {
+            switch state.phase {
+            case .starting where cancelled:
+                state = state.reduced(by: .cancelled)
+            case .starting:
+                let exitCode = outcome.succeeded
+                    ? 0 : (outcome.processExitCode == 0 ? -1 : outcome.processExitCode ?? -1)
+                state = state.reduced(by: .processExited(exitCode))
+            case .stopping where cancelled:
+                state = state.reduced(by: .cancelled)
+            case .stopping:
+                state = state.reduced(by: .processExited(outcome.processExitCode ?? 0))
+            case .ready, .stale:
+                state = state.reduced(by: .processExited(outcome.processExitCode ?? -1))
+            default:
+                break
+            }
+        }
+        activeAttempt = nil
+        cancellation = nil
+    }
+
+    private func refuse(_ refusal: AgentTaskResultLaunchRefusal, attempt: UUID) {
+        guard activeAttempt == attempt else { return }
+        state = state.reduced(by: .launchRefused(refusal))
+        activeAttempt = nil
+        cancellation = nil
     }
 }

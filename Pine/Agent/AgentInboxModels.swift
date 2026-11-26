@@ -42,6 +42,17 @@ nonisolated struct AgentInboxRow: Identifiable, Equatable, Sendable {
     let executionState: AgentTaskExecutionState
     /// Recorded outcome of the latest attempt, when it has settled (#1722).
     let outcome: AgentTaskOutcome?
+    /// An actionable needs-decision request is pending on the task's
+    /// correction cycle (#1725).
+    var needsDecision: Bool = false
+
+    /// A settled attempt opens its task-local result, including native owned
+    /// tasks, before live-run or recovery navigation, when it has a verified
+    /// result (success) or an actionable needs-decision request. Failed,
+    /// cancelled, superseded, and plain unverified attempts keep the
+    /// established recovery-action flow (the welcome recovery XCUITests pin
+    /// it: terminated attempts settle unverified without a cycle).
+    var canOpenResult: Bool { outcome == .success || needsDecision }
 
     var canNavigateToLiveRun: Bool {
         lifecycle == .active
@@ -140,7 +151,7 @@ nonisolated struct AgentInboxSnapshot: Equatable, Sendable {
         tasks: [AgentTask],
         accuracyPolicy: AgentLifecycleAccuracyPolicy = .production
     ) {
-        let visibleTasks = tasks.filter { $0.lifecycle != .dismissed && $0.route.surface != .ownedProcess }
+        let visibleTasks = tasks.filter { $0.lifecycle != .dismissed }
         let projectBackedTasks = visibleTasks.filter {
             $0.route.surface.isProjectBacked
         }
@@ -217,7 +228,10 @@ nonisolated struct AgentInboxSnapshot: Equatable, Sendable {
                 ),
                 isUnread: task.isUnread,
                 executionState: task.executionState,
-                outcome: latestRun?.outcome
+                outcome: latestRun?.outcome,
+                needsDecision: AgentTaskReviewOrchestrator.decisionRequest(
+                    for: task
+                ) != nil
             ))
         }
 

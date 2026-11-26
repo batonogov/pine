@@ -393,6 +393,12 @@ final class OpenCodeACPNativeComposition {
 
     func runtime(for taskID: UUID) -> OpenCodeACPTaskRuntime? { runtimes[taskID] }
 
+    #if DEBUG
+    func installRuntimeForTesting(_ runtime: OpenCodeACPTaskRuntime) {
+        runtimes[runtime.taskID] = runtime
+    }
+    #endif
+
     /// `loadSession` is the explicit exact-ID restore (#1811): when set, the
     /// owned materials spawn the new owner against `session/load`, never
     /// `session/new`. Production first-launches pass nil.

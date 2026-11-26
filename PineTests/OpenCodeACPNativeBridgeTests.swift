@@ -7,8 +7,12 @@ import Testing
 @MainActor
 struct OpenCodeACPNativeBridgeTests {
     @Test func registeredOwnerBindsExactTaskAndContinuesAfterUnverifiedResult() async throws {
+        let unverified = AsyncContinuationGate()
         let fixture = try await OpenCodeNativeFixture(mode: .loop)
         defer { fixture.teardown() }
+        try await fixture.provider().observe { snapshot in
+            if snapshot.state == .unverified { unverified.resolve() }
+        }
         try await fixture.session.start()
         #expect(fixture.task()?.nativeDispatch?.phase == .sessionBound)
         #expect(fixture.task()?.nativeDispatch?.conversation?.opaqueIdentifier == "ses_native")
@@ -19,6 +23,7 @@ struct OpenCodeACPNativeBridgeTests {
         try #require(await waitUntilMainActor {
             fixture.task()?.nativeDispatch?.phase == .parentSettlementUnknown
         })
+        await unverified.wait()
         let first = await fixture.provider().snapshot()
         #expect(first.state == .unverified && first.result == "result-1")
         #expect(!first.ready && !first.settlementKnown)
@@ -216,8 +221,18 @@ struct OpenCodeACPNativeBridgeTests {
             fixture.task()?.nativeDispatch?.phase == .cancellationConfirmed
         })
         // The late question follows the cancellation response on the wire.
-        // Wait for its terminal reply before reading the provider snapshot.
-        try #require(await waitUntilMainActor { fixture.server.terminalReplyCount == 1 })
+        // Wait for the session to record its terminal answer (state level,
+        // not the wire count) before reading the provider snapshot.
+        let deadline = ContinuousClock.now.advanced(by: .seconds(5))
+        var terminalAnswerRecorded = false
+        while !terminalAnswerRecorded {
+            terminalAnswerRecorded = !(await fixture.provider().snapshot().submittedQuestions.isEmpty)
+            if !terminalAnswerRecorded {
+                if ContinuousClock.now >= deadline { break }
+                await Task.yield()
+            }
+        }
+        #expect(terminalAnswerRecorded)
         let snapshot = await fixture.provider().snapshot()
         #expect(snapshot.parentOutcome == .cancelled)
         // The late question is answered terminally on the wire; the session
@@ -259,6 +274,101 @@ struct OpenCodeACPNativeBridgeTests {
         #expect(snapshot.submittedQuestions.contains { $0.id == question.id })
         #expect(snapshot.questions.isEmpty)
         #expect(fixture.server.terminalReplyCount == 1)
+        await fixture.session.stop(deadline: .now.advanced(by: .seconds(2)))
+    }
+
+    @Test func inboxReplyReachesExactRuntimeThroughProductionComposition() async throws {
+        let fixture = try await OpenCodeNativeFixture(mode: .loop)
+        defer { fixture.teardown() }
+        let (projects, runtime) = try fixture.projectsWithRuntime()
+        try await runtime.start()
+        _ = try await runtime.submit("Initial request")
+        try #require(await waitUntilMainActor { fixture.server.promptTexts == ["Initial request"] })
+
+        var task = try #require(fixture.task())
+        let run = try #require(task.runs.last)
+        let settlement = AgentTaskLogicalSettlement(
+            settledAt: Date(), processGeneration: run.process.processGeneration,
+            sourceSequence: nil, turn: task.nativeDispatch?.operationID ?? "turn-native"
+        )
+        #expect(fixture.tasks.recordLogicalSettlement(
+            settlement, taskID: task.id, runID: run.id
+        ) == .accepted)
+        task = try #require(fixture.task())
+        #expect(task.lifecycle == .paused)
+        #expect(task.runs.last?.outcome == .unverified)
+        let code = ADEContractFixtures.codeState("a")
+        let environment = ADEContractFixtures.environment
+        var cycle = AgentTaskCorrectionCycle(
+            taskID: task.id, runID: run.id, codeState: code, environment: environment,
+            requestedOutcomeReference: "outcome", criteriaVersion: "criteria",
+            checkPlanIdentity: ADEContractFixtures.hex("f"),
+            reviewerControl: .writeDisabledAtAdapter
+        )
+        cycle.stop(.checksFailed)
+        task.reviewCycle = cycle
+        fixture.tasks.setTasksForTesting([task])
+
+        let inbox = AgentInboxView(registry: projects)
+        inbox.activateSelection(taskID: task.id)
+        #expect(inbox.resultStore.taskID == task.id)
+        let controller = try #require(inbox.resultStore.controllers[task.id])
+        let reply = "Fix the build through the real Inbox"
+        let onReply = try #require(AgentInboxResultSheet(
+            controller: controller
+        ).resultView.onReply)
+        onReply(reply)
+
+        try #require(await waitUntilMainActor {
+            fixture.server.promptTexts == ["Initial request", reply]
+                && fixture.tasks.task(for: task.id)?.revisions.count == 1
+        })
+        #expect(fixture.server.promptSessionIDs == ["ses_native", "ses_native"])
+        #expect(runtime.runID == run.id)
+        await runtime.stop(deadline: .now.advanced(by: .seconds(2)))
+    }
+
+    @Test func pausedTaskWithPendingRevisionRefusesFreshSubmission() async throws {
+        let fixture = try await OpenCodeNativeFixture(mode: .loop)
+        defer { fixture.teardown() }
+        try await fixture.session.start()
+        let task = try #require(fixture.task())
+        let run = try #require(task.runs.last)
+        let settlement = AgentTaskLogicalSettlement(
+            settledAt: Date(), processGeneration: run.process.processGeneration,
+            sourceSequence: nil, turn: "fresh-boundary"
+        )
+        #expect(fixture.tasks.recordLogicalSettlement(
+            settlement, taskID: task.id, runID: run.id
+        ) == .accepted)
+
+        var decisionTask = try #require(fixture.task())
+        #expect(decisionTask.lifecycle == .paused)
+        let code = ADEContractFixtures.codeState("a")
+        let environment = ADEContractFixtures.environment
+        var cycle = AgentTaskCorrectionCycle(
+            taskID: task.id, runID: run.id, codeState: code, environment: environment,
+            requestedOutcomeReference: "outcome", criteriaVersion: "criteria",
+            checkPlanIdentity: ADEContractFixtures.hex("f"),
+            reviewerControl: .writeDisabledAtAdapter
+        )
+        cycle.stop(.checksFailed)
+        decisionTask.reviewCycle = cycle
+        fixture.tasks.setTasksForTesting([decisionTask])
+        let decision = try #require(AgentTaskReviewOrchestrator.decisionRequest(for: decisionTask))
+        let revision = await fixture.tasks.recordResultDecisionReply(
+            decision, feedbackReference: "fresh-boundary"
+        )
+        #expect(revision != nil)
+        #expect(AgentTaskContinuation.hasPendingRevision(
+            try #require(fixture.tasks.task(for: task.id))
+        ))
+
+        await #expect(throws: AgentTaskNativeAdmissionError.unavailable) {
+            _ = try await fixture.tasks.prepareNativeSubmission(
+                afterResponseTo: nil, ownership: fixture.ownership
+            )
+        }
         await fixture.session.stop(deadline: .now.advanced(by: .seconds(2)))
     }
 
@@ -514,6 +624,7 @@ nonisolated private final class OpenCodeNativeServer: Sendable {
     let cancellation = AsyncContinuationGate()
     let acknowledgementRace = AsyncContinuationGate()
     private let promptIDs = Mutex<[String]>([])
+    private let promptText = Mutex<[String]>([])
     private let loadIDs = Mutex<[String]>([])
     private let phases = Mutex<[String]>([])
     private let answers = Mutex<[AgentEventJSON]>([])
@@ -521,6 +632,7 @@ nonisolated private final class OpenCodeNativeServer: Sendable {
     private let cancellationWrites = Mutex(0)
     private let terminalReplies = Mutex(0)
     var promptSessionIDs: [String] { promptIDs.withLock { $0 } }
+    var promptTexts: [String] { promptText.withLock { $0 } }
     var loadedSessionIDs: [String] { loadIDs.withLock { $0 } }
     var phaseAtPrompt: [String] { phases.withLock { $0 } }
     var questionAnswers: [AgentEventJSON] { answers.withLock { $0 } }
@@ -533,8 +645,9 @@ nonisolated private final class OpenCodeNativeServer: Sendable {
     func recordLoad(_ id: String) {
         loadIDs.withLock { $0.append(id) }
     }
-    func recordPrompt(_ id: String, phase: String) {
+    func recordPrompt(_ id: String, text: String, phase: String) {
         promptIDs.withLock { $0.append(id) }
+        promptText.withLock { $0.append(text) }
         phases.withLock { $0.append(phase) }
     }
     func recordAnswer(_ value: AgentEventJSON) { answers.withLock { $0.append(value) } }
@@ -606,6 +719,7 @@ private actor OpenCodeNativeBindingValidator: AgentTaskNativeBindingValidator {
 nonisolated private struct OpenCodeNativeFixture: Sendable {
     let tasks: AgentTaskRegistry
     let adapters: AgentAdapterRegistry
+    let ownership: AgentTaskNativeOwnership
     let session: any AgentAdapterSession
     let taskID: UUID
     let server: OpenCodeNativeServer
@@ -622,6 +736,27 @@ nonisolated private struct OpenCodeNativeFixture: Sendable {
     }
     @MainActor func task() -> AgentTask? { tasks.task(for: taskID) }
     func provider() -> OpenCodeACPSession { recorder.session }
+
+    @MainActor
+    func projectsWithRuntime() throws -> (ProjectRegistry, OpenCodeACPTaskRuntime) {
+        let projects = ProjectRegistry(agentTasks: tasks)
+        let ownership = ownership
+        let runtime = try OpenCodeACPTaskRuntime(
+            taskID: taskID, runID: ownership.policy.runID, bindingID: ownership.binding.id,
+            registry: adapters, owner: session, provider: provider(),
+            taskIsCurrent: { [tasks] in
+                guard let task = tasks.task(for: taskID),
+                      task.nativeDispatch?.runID == ownership.policy.runID,
+                      task.nativeDispatch?.bindingID == ownership.binding.id,
+                      task.nativeDispatch?.phase != .unavailable,
+                      task.lifecycle != .dismissed else { return false }
+                return true
+            },
+            prepareControl: { _ in }, beforeDispatch: { _ in try ownership.validate() }
+        )
+        projects.installOpenCodeRuntimeForTesting(runtime)
+        return (projects, runtime)
+    }
 
     @MainActor
     init(
@@ -661,6 +796,7 @@ nonisolated private struct OpenCodeNativeFixture: Sendable {
             bindingID: binding.id, selection: selection, provenance: testLaunchProvenance
         ) else { throw AgentTaskNativeAdmissionError.invalidPolicy }
         let ownership = try await tasks.prepareNativeLaunch(policy: policy, binding: binding, bindings: validator)
+        self.ownership = ownership
 
         let input = Pipe()
         let output = Pipe()
@@ -815,8 +951,14 @@ nonisolated private struct OpenCodeNativeFixture: Sendable {
                     promptCount += 1
                     let fields = try OpenCodeACPWire.object(params)
                     let sessionID = try OpenCodeACPWire.string(fields["sessionId"])
+                    var text = ""
+                    if case .array(let parts)? = fields["prompt"],
+                       case .object(let part)? = parts.first,
+                       case .string(let value)? = part["text"] {
+                        text = value
+                    }
                     let phase = await tasks.task(for: taskID)?.nativeDispatch?.phase.rawValue ?? "missing"
-                    server.recordPrompt(sessionID, phase: phase)
+                    server.recordPrompt(sessionID, text: text, phase: phase)
                     switch mode {
                     case .loop:
                         try await write(chunk("result-\(promptCount)"), to: peer)

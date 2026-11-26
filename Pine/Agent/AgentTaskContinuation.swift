@@ -277,7 +277,12 @@ nonisolated enum AgentTaskContinuation {
             // idempotent. No second transition, no second candidate.
             return .alreadyRecorded(candidateGeneration: last.candidateGeneration)
         }
-        guard hasPendingRevision(task)
+        let hasCurrentDecision = task.reviewCycle.map {
+            $0.state == .needsDecision && $0.taskID == task.id
+                && $0.runID == latest.id && $0.codeState == codeState
+                && $0.environment == environment
+        } ?? false
+        guard hasPendingRevision(task) || hasCurrentDecision
                 || AgentTaskLifecycleReducer.readiness(
                     for: task,
                     codeState: codeState,

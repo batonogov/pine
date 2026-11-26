@@ -92,7 +92,11 @@ struct AgentTaskResultActionTests {
         var retry = challenger.reduced(by: .launchRequested)
         #expect(retry.phase == .starting)
         #expect(retry.attempts == 2)
-        #expect(retry.reduced(by: .stopRequested) == retry) // nothing owned to stop
+        let stopping = retry.reduced(by: .stopRequested)
+        #expect(stopping.phase == .stopping) // accepted pre-spawn cancellation still cleans up
+        #expect(stopping.ownership == nil)
+        #expect(occupant.isCurrent && occupant.ownership?.processID == 42)
+        #expect(stopping.reduced(by: .cancelled).phase == .cancelled)
     }
 
     @Test func oneShotCLIRunCompletesFromObservedExit() {
