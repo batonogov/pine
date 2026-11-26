@@ -78,7 +78,6 @@ nonisolated final class StructuralGeneration: @unchecked Sendable {
     }
 }
 
-
 // MARK: - Brackets
 
 /// Immutable input for bounded bracket matching. Syntax-derived comment and

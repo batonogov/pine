@@ -3280,7 +3280,6 @@ enum Strings {
     static let a11yCloseTerminalHint: String =
         String(localized: "a11y.terminal.close.hint", defaultValue: "Closes this terminal pane")
 
-
     // Status bar
     static let a11yStatusBarLabel: String =
         String(localized: "a11y.statusBar.label", defaultValue: "Status bar")
