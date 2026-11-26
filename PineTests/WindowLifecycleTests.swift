@@ -1137,7 +1137,7 @@ struct WindowLifecycleTests {
         await project.workspace.waitForLoadingComplete()
     }
 
-    @Test func paneReplacementInvalidatesStagedTerminationSave() async throws {
+    @Test func inventoryChangeInvalidatesStagedTerminationSave() async throws {
         let dir = try makeTempDirectory()
         defer { cleanup(dir) }
         let file = try makeTempFile(in: dir)
@@ -1164,7 +1164,12 @@ struct WindowLifecycleTests {
         }
         let stagedPlan = try #require(staged.1)
 
-        project.paneManager.removePane(project.paneManager.activePaneID)
+        // The fixed single-editor workspace retains its TabManager, so the
+        // topology change that invalidates a staged plan is the tab removal
+        // itself: the commit must not write a save prepared against a tab
+        // that no longer exists.
+        let tabID = try #require(tabManager.activeTabID)
+        _ = tabManager.closeTab(id: tabID, force: true)
         let result = await project.commitStagedSaveAllPaneTabsForTermination(
             stagedPlan,
             until: .now() + 5
@@ -1172,8 +1177,7 @@ struct WindowLifecycleTests {
 
         #expect(result == .invalidated)
         #expect(try String(contentsOf: file, encoding: .utf8) == "// test.swift")
-        #expect(tabManager.activeTab?.content == "// captured dirty")
-        #expect(tabManager.activeTab?.isDirty == true)
+        #expect(tabManager.tabs.isEmpty)
         await project.workspace.waitForLoadingComplete()
     }
 

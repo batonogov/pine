@@ -11,8 +11,6 @@ import Testing
 import Foundation
 @testable import Pine
 
-// swiftlint:disable type_body_length
-
 @Suite("PaneLeaf Close Logic Tests")
 @MainActor
 struct PaneLeafCloseTests {
@@ -29,35 +27,6 @@ struct PaneLeafCloseTests {
     }
 
     // MARK: - Close tab removes pane when empty
-
-    @Test func closingLastTab_removesPane() {
-        let manager = PaneManager()
-        let firstPane = manager.activePaneID
-        let url = URL(fileURLWithPath: "/tmp/test.swift")
-        manager.tabManager(for: firstPane)?.openTab(url: url)
-
-        guard let secondPane = manager.splitPane(firstPane, axis: .horizontal) else {
-            Issue.record("Split failed")
-            return
-        }
-        let url2 = URL(fileURLWithPath: "/tmp/test2.swift")
-        manager.tabManager(for: secondPane)?.openTab(url: url2)
-
-        // Close the only tab in second pane
-        if let tm = manager.tabManager(for: secondPane), let tab = tm.tabs.first {
-            tm.closeTab(id: tab.id)
-        }
-
-        // After closing, manually remove empty pane (mirrors PaneLeafView behavior)
-        if manager.tabManager(for: secondPane)?.tabs.isEmpty == true {
-            manager.removePane(secondPane)
-        }
-
-        #expect(manager.root.leafCount == 1)
-        #expect(manager.tabManagers[secondPane] == nil)
-    }
-
-    // MARK: - Close other tabs
 
     @Test func closeOtherTabs_keepingOne_closesRest() {
         let manager = PaneManager()
@@ -293,28 +262,4 @@ struct PaneLeafCloseTests {
     }
 
     // MARK: - Close all then remove pane
-
-    @Test func closeAllTabs_thenRemovePane_works() {
-        let manager = PaneManager()
-        let firstPane = manager.activePaneID
-        let url = URL(fileURLWithPath: "/tmp/test.swift")
-        manager.tabManager(for: firstPane)?.openTab(url: url)
-
-        guard let secondPane = manager.splitPane(firstPane, axis: .horizontal) else {
-            Issue.record("Split failed")
-            return
-        }
-        let url2 = URL(fileURLWithPath: "/tmp/test2.swift")
-        manager.tabManager(for: secondPane)?.openTab(url: url2)
-
-        // Close all tabs in second pane and remove it
-        manager.tabManager(for: secondPane)?.closeAllTabs(force: true)
-        manager.removePane(secondPane)
-
-        #expect(manager.root.leafCount == 1)
-        #expect(manager.tabManagers[secondPane] == nil)
-        #expect(manager.activePaneID == firstPane)
-    }
 }
-
-// swiftlint:enable type_body_length

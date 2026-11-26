@@ -76,47 +76,6 @@ struct NotificationObserverScopingTests {
                 "LineNumberView must react when its own scroll view scrolls")
     }
 
-    // MARK: - MinimapView observer scoping
-
-    @Test("MinimapView ignores boundsDidChange from unrelated clipView")
-    func minimapViewIgnoresUnrelatedClipView() {
-        let (scrollView, textView) = makeTextStack()
-        let minimapView = MinimapView(textView: textView, clipView: scrollView.contentView)
-
-        let initialCount = minimapView.scrollChangeCount
-
-        // Create a foreign scroll view
-        let foreignScrollView = NSScrollView(frame: NSRect(x: 0, y: 0, width: 200, height: 200))
-        foreignScrollView.documentView = NSTextView()
-
-        // Post from foreign clipView
-        NotificationCenter.default.post(
-            name: NSView.boundsDidChangeNotification,
-            object: foreignScrollView.contentView
-        )
-
-        #expect(minimapView.scrollChangeCount == initialCount,
-                "MinimapView must not react to notifications from unrelated scroll views")
-    }
-
-    @Test("MinimapView reacts to boundsDidChange from its own clipView")
-    func minimapViewReactsToOwnClipView() {
-        let (scrollView, textView) = makeTextStack()
-        let minimapView = MinimapView(textView: textView, clipView: scrollView.contentView)
-
-        let initialCount = minimapView.scrollChangeCount
-
-        NotificationCenter.default.post(
-            name: NSView.boundsDidChangeNotification,
-            object: scrollView.contentView
-        )
-
-        #expect(minimapView.scrollChangeCount == initialCount + 1,
-                "MinimapView must react when its own scroll view scrolls")
-    }
-
-    // MARK: - Deinit / retain cycle tests
-
     @Test("LineNumberView deinit is called — no retain cycles")
     func lineNumberViewDeinitCalled() {
         weak var weakView: LineNumberView?
@@ -130,20 +89,6 @@ struct NotificationObserverScopingTests {
                 "LineNumberView must be deallocated — no retain cycles from NotificationCenter observers")
     }
 
-    @Test("MinimapView deinit is called — no retain cycles")
-    func minimapViewDeinitCalled() {
-        weak var weakView: MinimapView?
-        autoreleasepool {
-            let (scrollView, textView) = makeTextStack()
-            let view = MinimapView(textView: textView, clipView: scrollView.contentView)
-            weakView = view
-            _ = view
-        }
-
-        #expect(weakView == nil,
-                "MinimapView must be deallocated — no retain cycles from NotificationCenter observers")
-    }
-
     @Test("CodeEditorView.Coordinator deinit is called — no retain cycles")
     func coordinatorDeinitCalled() {
         weak var weakCoordinator: CodeEditorView.Coordinator?
@@ -153,7 +98,6 @@ struct NotificationObserverScopingTests {
                 contentVersion: 0,
                 language: "txt",
                 fileName: "test.txt",
-                foldState: .constant(FoldState())
             )
             let coordinator = CodeEditorView.Coordinator(parent: editorView)
             weakCoordinator = coordinator
@@ -174,7 +118,6 @@ struct NotificationObserverScopingTests {
             contentVersion: 0,
             language: "swift",
             fileName: "test.swift",
-            foldState: .constant(FoldState())
         )
         let coordinator = CodeEditorView.Coordinator(parent: editorView)
         coordinator.scrollView = scrollView
@@ -185,27 +128,6 @@ struct NotificationObserverScopingTests {
         let textView = scrollView.documentView as? NSTextView
         #expect(textView?.string == "// hello",
                 "Toggle comment must not fire without a key window")
-    }
-
-    @Test("Coordinator fold code only fires for key window")
-    func coordinatorFoldCodeKeyWindowGuard() {
-        let (scrollView, _) = makeTextStack(text: "func foo() {\n    bar()\n}")
-        let editorView = CodeEditorView(
-            text: .constant("func foo() {\n    bar()\n}"),
-            contentVersion: 0,
-            language: "swift",
-            fileName: "test.swift",
-            foldState: .constant(FoldState())
-        )
-        let coordinator = CodeEditorView.Coordinator(parent: editorView)
-        coordinator.scrollView = scrollView
-
-        let notification = Notification(
-            name: .foldCode,
-            object: nil,
-            userInfo: ["action": "fold"]
-        )
-        coordinator.handleFoldCode(notification)
     }
 
     @Test("Coordinator accepts only its owning project's targeted commands")
@@ -219,7 +141,6 @@ struct NotificationObserverScopingTests {
             fileName: "test.txt",
             commandTarget: owner,
             canHandleCommands: { true },
-            foldState: .constant(FoldState())
         )
         let inactiveEditorView = CodeEditorView(
             text: .constant("other"),
@@ -228,7 +149,6 @@ struct NotificationObserverScopingTests {
             fileName: "other.txt",
             commandTarget: owner,
             canHandleCommands: { false },
-            foldState: .constant(FoldState())
         )
         let activeCoordinator = CodeEditorView.Coordinator(
             parent: activeEditorView
@@ -276,26 +196,4 @@ struct NotificationObserverScopingTests {
                 "LineNumberView 2 must NOT react to scrollView1's scroll")
     }
 
-    @Test("Two MinimapViews do not interfere with each other's scroll notifications")
-    func twoMinimapViewsIsolated() {
-        let (scrollView1, textView1) = makeTextStack(text: "file1\nline2")
-        let (scrollView2, textView2) = makeTextStack(text: "file2\nline2")
-
-        let minimap1 = MinimapView(textView: textView1, clipView: scrollView1.contentView)
-        let minimap2 = MinimapView(textView: textView2, clipView: scrollView2.contentView)
-
-        let count1Before = minimap1.scrollChangeCount
-        let count2Before = minimap2.scrollChangeCount
-
-        // Scroll only scrollView1
-        NotificationCenter.default.post(
-            name: NSView.boundsDidChangeNotification,
-            object: scrollView1.contentView
-        )
-
-        #expect(minimap1.scrollChangeCount == count1Before + 1,
-                "MinimapView 1 must react to its own scroll")
-        #expect(minimap2.scrollChangeCount == count2Before,
-                "MinimapView 2 must NOT react to scrollView1's scroll")
-    }
 }

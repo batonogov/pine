@@ -3,7 +3,7 @@
 //  Pine
 //
 //  Shared rendering language for the git diff markers drawn by the editor
-//  gutter (`LineNumberView`) and the minimap (`MinimapView`) — #1540.
+//  gutter (`LineNumberView`) — #1540.
 //
 
 import AppKit

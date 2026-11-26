@@ -37,7 +37,6 @@ struct CodeEditorStaticTests {
             contentVersion: 0,
             language: "swift",
             fileName: "test.swift",
-            foldState: .constant(FoldState())
         )
         let coordinator = CodeEditorView.Coordinator(parent: editorView)
         #expect(coordinator.didChangeFromTextView == false)
@@ -46,7 +45,6 @@ struct CodeEditorStaticTests {
         #expect(coordinator.lastLanguage == "swift")
         #expect(coordinator.lastFileName == "test.swift")
         #expect(coordinator.lastFontSize == 0)
-        #expect(coordinator.foldableRanges.isEmpty)
         #expect(coordinator.lineStartsCache == nil)
         #expect(coordinator.highlightedCharRange == nil)
     }
@@ -58,14 +56,12 @@ struct CodeEditorStaticTests {
             text: .constant("hello"),
             contentVersion: 0,
             language: "swift",
-            foldState: .constant(FoldState())
         )
         let coordinator = CodeEditorView.Coordinator(parent: editorView)
 
         // All should be no-ops when scrollView is nil
         coordinator.cancelPendingHighlight()
         coordinator.handleToggleComment()
-        coordinator.handleFoldCode(Notification(name: .foldCode, userInfo: ["action": "foldAll"]))
     }
 
     // MARK: - CodeEditorView properties
@@ -74,12 +70,8 @@ struct CodeEditorStaticTests {
         let view = CodeEditorView(
             text: .constant("test"),
             language: "swift",
-            foldState: .constant(FoldState())
         )
         #expect(view.lineDiffs.isEmpty)
-        #expect(view.isBlameVisible == false)
-        #expect(view.blameLines.isEmpty)
-        #expect(view.isMinimapVisible == true)
         #expect(view.syntaxHighlightingDisabled == false)
         #expect(view.initialCursorPosition == 0)
         #expect(view.initialScrollOffset == 0)
@@ -94,9 +86,6 @@ struct CodeEditorStaticTests {
             language: "go",
             fileName: "main.go",
             lineDiffs: diffs,
-            isBlameVisible: true,
-            foldState: .constant(FoldState()),
-            isMinimapVisible: false,
             syntaxHighlightingDisabled: true,
             initialCursorPosition: 100,
             initialScrollOffset: 200
@@ -105,8 +94,6 @@ struct CodeEditorStaticTests {
         #expect(view.language == "go")
         #expect(view.fileName == "main.go")
         #expect(view.lineDiffs.count == 1)
-        #expect(view.isBlameVisible == true)
-        #expect(view.isMinimapVisible == false)
         #expect(view.syntaxHighlightingDisabled == true)
         #expect(view.initialCursorPosition == 100)
         #expect(view.initialScrollOffset == 200)

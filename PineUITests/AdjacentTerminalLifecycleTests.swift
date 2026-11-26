@@ -1,14 +1,13 @@
 //
-//  SplitPaneLifecycleTests.swift
+//  AdjacentTerminalLifecycleTests.swift
 //  PineUITests
 //
-//  Tests for split pane lifecycle: creating terminal panes via menu,
-//  verifying pane dividers, closing panes, and session restore behavior.
+//  Tests for the adjacent terminal lifecycle, divider, and session restore.
 //
 
 import XCTest
 
-final class SplitPaneLifecycleTests: PineUITestCase {
+final class AdjacentTerminalLifecycleTests: PineUITestCase {
 
     private var projectURL: URL!
 
@@ -63,7 +62,7 @@ final class SplitPaneLifecycleTests: PineUITestCase {
         }
     }
 
-    // MARK: - Terminal toggle creates and removes split
+    // MARK: - Terminal toggle creates and removes the adjacent area
 
     func testFreshProjectSeedsProductionTerminalAsOnlyPane() throws {
         enableInitialTerminalSeeding()
@@ -89,7 +88,7 @@ final class SplitPaneLifecycleTests: PineUITestCase {
         )
     }
 
-    func testTerminalToggleCreatesSplitWithDivider() throws {
+    func testTerminalToggleCreatesAdjacentAreaWithDivider() throws {
         launchAndWaitForLoad()
         openFile("main.swift")
 
@@ -142,9 +141,9 @@ final class SplitPaneLifecycleTests: PineUITestCase {
         )
     }
 
-    // MARK: - Multiple terminal tabs via plus button in split pane
+    // MARK: - Multiple terminal tabs in the adjacent area
 
-    func testMultipleTerminalTabsInSplitPane() throws {
+    func testMultipleTerminalTabsInAdjacentArea() throws {
         launchAndWaitForLoad()
         openFile("main.swift")
 

@@ -76,7 +76,6 @@ struct HighlightPersistenceTests {
             contentVersion: 0,
             language: "testyaml556",
             fileName: "test.yaml",
-            foldState: .constant(FoldState())
         )
         let coordinator = CodeEditorView.Coordinator(parent: editorView)
         #expect(coordinator.lastLanguage == "testyaml556")
@@ -93,7 +92,6 @@ struct HighlightPersistenceTests {
             contentVersion: 0,
             language: "testyaml556",
             fileName: "test.yaml",
-            foldState: .constant(FoldState())
         )
         let coordinator = CodeEditorView.Coordinator(parent: editorView)
         coordinator.scrollView = scrollView
@@ -122,7 +120,6 @@ struct HighlightPersistenceTests {
             contentVersion: 0,
             language: "testyaml556",
             fileName: "test.yaml",
-            foldState: .constant(FoldState())
         )
         let coordinator = CodeEditorView.Coordinator(parent: editorView)
         coordinator.scrollView = scrollView
@@ -151,7 +148,6 @@ struct HighlightPersistenceTests {
             contentVersion: 1,  // version bumped, but text is the same
             language: "testyaml556",
             fileName: "test.yaml",
-            foldState: .constant(FoldState())
         )
         coordinator.parent = updatedEditorView
 
@@ -175,7 +171,6 @@ struct HighlightPersistenceTests {
             contentVersion: 0,
             language: "testyaml556",
             fileName: "test.yaml",
-            foldState: .constant(FoldState())
         )
         let coordinator = CodeEditorView.Coordinator(parent: editorView)
         coordinator.scrollView = scrollView
@@ -191,7 +186,6 @@ struct HighlightPersistenceTests {
             contentVersion: 1,
             language: "testyaml556",
             fileName: "test.yaml",
-            foldState: .constant(FoldState())
         )
         coordinator.parent = updatedEditorView
 
@@ -222,7 +216,6 @@ struct HighlightPersistenceTests {
             contentVersion: 0,
             language: "testswift556",
             fileName: "test.swift",
-            foldState: .constant(FoldState())
         )
         let coordinator = CodeEditorView.Coordinator(parent: editorView)
         coordinator.scrollView = scrollView
@@ -238,7 +231,6 @@ struct HighlightPersistenceTests {
             contentVersion: 0,  // same version — only language changed
             language: "testyaml556",
             fileName: "test.yaml",
-            foldState: .constant(FoldState())
         )
         coordinator.parent = yamlEditorView
 
@@ -274,7 +266,6 @@ struct HighlightPersistenceTests {
             contentVersion: 0,
             language: "testyaml556",
             fileName: "test.yaml",
-            foldState: .constant(FoldState())
         )
         let coordinator = CodeEditorView.Coordinator(parent: editorView)
 
@@ -309,7 +300,6 @@ struct HighlightPersistenceTests {
             contentVersion: 0,
             language: "testyaml556",
             fileName: "test.yaml",
-            foldState: .constant(FoldState())
         )
         let coordinator = CodeEditorView.Coordinator(parent: editorView)
 
@@ -341,7 +331,6 @@ struct HighlightPersistenceTests {
             text: .constant("test"),
             contentVersion: 0,
             language: "txt",
-            foldState: .constant(FoldState())
         )
         let coordinator = CodeEditorView.Coordinator(parent: editorView)
 

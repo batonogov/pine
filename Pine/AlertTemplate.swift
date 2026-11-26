@@ -72,11 +72,6 @@ enum AlertTemplate: Sendable, Equatable, CaseIterable {
     /// Open Without Highlighting / Open With Highlighting / Cancel  — large file warning.
     case largeFileWarning
 
-    // MARK: - Git
-
-    /// Switch Anyway / Cancel  — branch switch with uncommitted changes.
-    case branchUncommittedChanges
-
     // MARK: - Revert
 
     /// Revert All / Cancel  — confirm reverting all changes in a file.
@@ -266,7 +261,7 @@ extension AlertTemplate {
              .applicationQuitFailure,
              .externalModifyConflict, .fileDeletedSaveAs,
              .fileOperationErrorWarning, .largeFileWarning,
-             .branchUncommittedChanges, .revertAllConfirmation,
+             .revertAllConfirmation,
              .userTaskRunConfirmation, .userTaskOutputConflict,
              .userTaskNotice:
             return .warning
@@ -306,8 +301,6 @@ extension AlertTemplate {
                 Strings.largeFileOpenWithHighlighting,
                 Strings.dialogCancel,
             ]
-        case .branchUncommittedChanges:
-            return [Strings.branchUncommittedChangesSwitch, Strings.dialogCancel]
         case .revertAllConfirmation:
             return [Strings.revertAllButton, Strings.dialogCancel]
         case .userTaskRunConfirmation:
@@ -358,8 +351,6 @@ extension AlertTemplate {
             return [.default]
         case .largeFileWarning:
             return [.default, [], .cancel]
-        case .branchUncommittedChanges:
-            return [.destructive, [.default, .cancel]]
         case .revertAllConfirmation:
             return [.destructive, [.default, .cancel]]
         case .userTaskRunConfirmation:

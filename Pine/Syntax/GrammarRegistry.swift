@@ -80,7 +80,7 @@ nonisolated struct Theme {
         // require an iterative search — are computed once, here, while the
         // palette table is built. The provider below only picks a ready
         // NSColor, so no contrast search runs per color resolution (the
-        // minimap resolves theme colors per segment per frame, #1540).
+        // editor resolves theme colors per segment per frame, #1540).
         func solid(_ rgb: (Double, Double, Double)) -> NSColor {
             NSColor(red: rgb.0, green: rgb.1, blue: rgb.2, alpha: 1)
         }

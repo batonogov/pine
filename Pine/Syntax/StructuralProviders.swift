@@ -4,10 +4,10 @@
 //
 //  Issue #1008 — structural intelligence (ADR 0001, #1182).
 //
-//  Defines the normalised, provider-agnostic models and protocols consumed by
-//  `FoldRangeCalculator` and bracket matching. These seams let one structural
-//  provider own a feature for a single immutable document revision, with
-//  deterministic fallback to the local calculator.
+//  Defines the normalised, provider-agnostic models and protocols consumed
+//  by bracket matching. These seams let one structural provider own a
+//  feature for a single immutable document revision, with deterministic
+//  fallback to the local calculator.
 //
 //  All types are pure data/protocol definitions with no new dependency.
 //  `nonisolated` opts out of the project-wide MainActor default isolation so
@@ -18,8 +18,8 @@ import Foundation
 
 // MARK: - Document identity
 
-/// A monotonic document revision token. Structural providers and the folding
-/// coordinator compare a captured revision against the live generation before
+/// A monotonic document revision token. Structural providers and their
+/// coordinators compare a captured revision against the live generation before
 /// applying results, discarding anything computed against stale text.
 nonisolated struct DocumentRevision: Hashable, Sendable {
     let value: Int
@@ -42,29 +42,6 @@ nonisolated struct DocumentSnapshot: Sendable, Equatable {
     /// Monotonic revision; consumers compare this against the current
     /// generation before applying results.
     let revision: DocumentRevision
-}
-
-// MARK: - Fold provider protocol
-
-/// A structural-intelligence provider that owns fold ranges for one immutable
-/// document revision.
-///
-/// Provider results are never merged: the coordinator selects exactly one
-/// provider's output per revision (ADR 0001). A provider returns `nil` to
-/// defer to the next provider in the chain (empty result, unsupported
-/// language, transient error, or missing capability).
-///
-/// Conformers must be `Sendable` so they can be queried off the main thread.
-nonisolated protocol FoldRangeProviding: Sendable {
-    /// Whether this provider can serve the given document. Called before
-    /// `foldRanges(for:)`; returning `false` defers to the next provider
-    /// without issuing a request.
-    func canProvide(for snapshot: DocumentSnapshot) -> Bool
-
-    /// Returns fold ranges for the snapshot, or `nil` to defer to the next
-    /// provider. Never throws — surface failures as `nil` so the coordinator
-    /// can fall back deterministically.
-    func foldRanges(for snapshot: DocumentSnapshot) async -> [FoldableRange]?
 }
 
 // MARK: - Generation token
@@ -101,10 +78,6 @@ nonisolated final class StructuralGeneration: @unchecked Sendable {
     }
 }
 
-/// Compatibility name retained for the folding slice introduced before the
-/// generation token became shared by every structural feature.
-typealias FoldGeneration = StructuralGeneration
-
 // MARK: - Brackets
 
 /// Immutable input for bounded bracket matching. Syntax-derived comment and
@@ -117,7 +90,7 @@ nonisolated struct BracketSnapshot: Sendable, Equatable {
 
 /// Provider seam for bracket navigation/highlighting. The production provider
 /// remains Pine's bounded local matcher; this seam keeps its coordinates tied
-/// to the same immutable snapshot model as folds.
+/// to the same immutable snapshot model.
 nonisolated protocol BracketProviding: Sendable {
     func canProvide(for snapshot: DocumentSnapshot) -> Bool
     func highlight(for snapshot: BracketSnapshot) -> BracketHighlightResult?

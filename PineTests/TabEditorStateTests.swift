@@ -2,7 +2,7 @@
 //  TabEditorStateTests.swift
 //  PineTests
 //
-//  Tests for per-tab editor state persistence (scroll, cursor, fold state).
+//  Tests for per-tab editor state persistence (scroll and cursor).
 //
 
 import Foundation
@@ -64,103 +64,6 @@ struct TabEditorStateTests {
         #expect(decoded.cursorPosition == 0)
         #expect(decoded.scrollOffset == 0)
         #expect(decoded.foldedRanges == nil)
-    }
-
-    // MARK: - FoldState conversion
-
-    @Test("FoldState converts to serializable fold ranges")
-    func foldStateToSerializable() {
-        var foldState = FoldState()
-        foldState.fold(FoldableRange(
-            startLine: 5, endLine: 15,
-            startCharIndex: 50, endCharIndex: 200,
-            kind: .braces
-        ))
-        foldState.fold(FoldableRange(
-            startLine: 20, endLine: 25,
-            startCharIndex: 300, endCharIndex: 400,
-            kind: .brackets
-        ))
-        foldState.fold(FoldableRange(
-            startLine: 30, endLine: 32,
-            startCharIndex: 500, endCharIndex: 550,
-            kind: .indentation
-        ))
-
-        let serializable = PerTabEditorState.serializableFoldRanges(from: foldState)
-
-        #expect(serializable.count == 3)
-        #expect(serializable[0].startLine == 5)
-        #expect(serializable[0].endLine == 15)
-        #expect(serializable[0].kind == "braces")
-        #expect(serializable[1].startLine == 20)
-        #expect(serializable[1].kind == "brackets")
-        #expect(serializable[2].startLine == 30)
-        #expect(serializable[2].kind == "indentation")
-    }
-
-    @Test("Serializable fold ranges restore to FoldState")
-    func serializableToFoldState() {
-        let ranges = [
-            PerTabEditorState.SerializableFoldRange(
-                startLine: 5, endLine: 15,
-                startCharIndex: 50, endCharIndex: 200,
-                kind: "braces"
-            ),
-            PerTabEditorState.SerializableFoldRange(
-                startLine: 20, endLine: 25,
-                startCharIndex: 300, endCharIndex: 400,
-                kind: "parentheses"
-            ),
-            PerTabEditorState.SerializableFoldRange(
-                startLine: 30, endLine: 32,
-                startCharIndex: 500, endCharIndex: 550,
-                kind: "indentation"
-            )
-        ]
-
-        let foldState = PerTabEditorState.restoreFoldState(from: ranges)
-
-        #expect(foldState.foldedRanges.count == 3)
-        #expect(foldState.foldedRanges[0].startLine == 5)
-        #expect(foldState.foldedRanges[0].endLine == 15)
-        #expect(foldState.foldedRanges[0].kind == .braces)
-        #expect(foldState.foldedRanges[1].startLine == 20)
-        #expect(foldState.foldedRanges[1].kind == .parentheses)
-        #expect(foldState.foldedRanges[2].startLine == 30)
-        #expect(foldState.foldedRanges[2].kind == .indentation)
-        #expect(foldState.isLineHidden(6))
-        #expect(foldState.isLineHidden(14))
-        #expect(!foldState.isLineHidden(5))
-        #expect(!foldState.isLineHidden(15))
-        #expect(foldState.isLineHidden(32))
-        #expect(!foldState.isLineHidden(33))
-    }
-
-    @Test("Empty fold state produces empty serializable ranges")
-    func emptyFoldState() {
-        let foldState = FoldState()
-        let serializable = PerTabEditorState.serializableFoldRanges(from: foldState)
-        #expect(serializable.isEmpty)
-    }
-
-    @Test("Empty serializable ranges produce empty fold state")
-    func emptySerializableRanges() {
-        let foldState = PerTabEditorState.restoreFoldState(from: [])
-        #expect(foldState.foldedRanges.isEmpty)
-    }
-
-    @Test("Unknown fold kind defaults to braces")
-    func unknownFoldKind() {
-        let ranges = [
-            PerTabEditorState.SerializableFoldRange(
-                startLine: 1, endLine: 5,
-                startCharIndex: 0, endCharIndex: 50,
-                kind: "unknown_kind"
-            )
-        ]
-        let foldState = PerTabEditorState.restoreFoldState(from: ranges)
-        #expect(foldState.foldedRanges[0].kind == .braces)
     }
 
     // MARK: - SessionState integration
@@ -268,38 +171,6 @@ struct TabEditorStateTests {
         #expect(restoredTab?.scrollOffset == 200.0)
     }
 
-    @Test("TabManager preserves fold state across tab switches")
-    func tabManagerPreservesFoldState() {
-        let tabManager = TabManager()
-
-        let url1 = URL(fileURLWithPath: "/tmp/file1.swift")
-        let url2 = URL(fileURLWithPath: "/tmp/file2.swift")
-
-        let tab1 = EditorTab(url: url1, content: "content", savedContent: "content")
-        let tab2 = EditorTab(url: url2, content: "content", savedContent: "content")
-
-        tabManager.tabs = [tab1, tab2]
-        tabManager.activeTabID = tab1.id
-
-        // Fold a range in tab1
-        var foldState = FoldState()
-        foldState.fold(FoldableRange(
-            startLine: 1, endLine: 5,
-            startCharIndex: 0, endCharIndex: 50,
-            kind: .braces
-        ))
-        tabManager.updateFoldState(foldState)
-
-        // Switch to tab2
-        tabManager.activeTabID = tab2.id
-
-        // Switch back to tab1 — fold state should be preserved
-        tabManager.activeTabID = tab1.id
-        let restoredTab = tabManager.activeTab
-        #expect(restoredTab?.foldState.foldedRanges.count == 1)
-        #expect(restoredTab?.foldState.isLineHidden(3) == true)
-    }
-
     // MARK: - PerTabEditorState from EditorTab
 
     @Test("PerTabEditorState captures state from EditorTab")
@@ -311,18 +182,11 @@ struct TabEditorStateTests {
         )
         tab.cursorPosition = 42
         tab.scrollOffset = 300.0
-        tab.foldState.fold(FoldableRange(
-            startLine: 1, endLine: 3,
-            startCharIndex: 0, endCharIndex: 20,
-            kind: .braces
-        ))
-
         let state = PerTabEditorState.capture(from: tab)
 
         #expect(state.cursorPosition == 42)
         #expect(state.scrollOffset == 300.0)
-        #expect(state.foldedRanges?.count == 1)
-        #expect(state.foldedRanges?[0].startLine == 1)
+        #expect(state.foldedRanges == nil)
     }
 
     @Test("PerTabEditorState capture omits fold ranges when none folded")
@@ -365,11 +229,7 @@ struct TabEditorStateTests {
 
         #expect(tab.cursorPosition == 25)
         #expect(tab.scrollOffset == 150.0)
-        #expect(tab.foldState.foldedRanges.count == 1)
-        #expect(tab.foldState.isLineHidden(2))
-        #expect(tab.foldState.isLineHidden(3))
-        #expect(!tab.foldState.isLineHidden(1))
-        #expect(!tab.foldState.isLineHidden(4))
+        #expect(tab.content == "line1\nline2\nline3\nline4\nline5")
     }
 
     @Test("PerTabEditorState clamps cursor position to content length")
@@ -391,31 +251,31 @@ struct TabEditorStateTests {
         #expect(tab.cursorPosition == tab.content.utf16.count)
     }
 
-    @Test("PerTabEditorState apply without fold ranges preserves existing fold state")
-    func applyWithoutFolds() {
+    @Test("PerTabEditorState ignores legacy fold ranges without changing content")
+    func applyIgnoresLegacyFoldRanges() {
         var tab = EditorTab(
             url: URL(fileURLWithPath: "/tmp/test.swift"),
             content: "long enough content for cursor",
             savedContent: "long enough content for cursor"
         )
-        tab.foldState.fold(FoldableRange(
-            startLine: 1, endLine: 5,
-            startCharIndex: 0, endCharIndex: 50,
-            kind: .braces
-        ))
-
+        let original = tab.content
         let state = PerTabEditorState(
             cursorPosition: 10,
             scrollOffset: 100.0,
-            foldedRanges: nil
+            foldedRanges: [
+                PerTabEditorState.SerializableFoldRange(
+                    startLine: 1, endLine: 5,
+                    startCharIndex: 0, endCharIndex: 50,
+                    kind: "braces"
+                ),
+            ]
         )
 
         state.apply(to: &tab)
 
         #expect(tab.cursorPosition == 10)
         #expect(tab.scrollOffset == 100.0)
-        // No foldedRanges in state — should clear the fold state (session restore starts fresh)
-        #expect(tab.foldState.foldedRanges.isEmpty)
+        #expect(tab.content == original)
     }
 
     // MARK: - SessionState existingEditorStates filtering

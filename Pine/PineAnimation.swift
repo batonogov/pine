@@ -31,7 +31,7 @@ enum PineMotionIntent: Equatable, Sendable {
 /// The single ambient answer to "is Reduce Motion on right now".
 ///
 /// SwiftUI views should prefer `@Environment(\.accessibilityReduceMotion)`,
-/// which is reactive and overridable per view — see `GlobalTabSwitcherOverlay`.
+/// which is reactive and overridable per view.
 /// This type exists for the code that has no environment to read: helper
 /// methods, notification observers, and the ambient `PineAnimation` accessors
 /// that keep the existing call sites correct without an edit each.

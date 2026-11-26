@@ -80,7 +80,6 @@ struct StateChangeReentrancyTests {
             language: "txt",
             fileName: "x.txt",
             fileURL: url,
-            foldState: .constant(FoldState()),
             onStateChange: { _, _ in syncCallCount += 1 }
         )
         let coordinator = CodeEditorView.Coordinator(parent: view)
@@ -109,7 +108,6 @@ struct StateChangeReentrancyTests {
             language: "txt",
             fileName: "x.txt",
             fileURL: url,
-            foldState: .constant(FoldState()),
             onStateChange: { _, _ in syncCallCount += 1 }
         )
         let coordinator = CodeEditorView.Coordinator(parent: view)
@@ -146,7 +144,6 @@ struct StateChangeReentrancyTests {
             language: "txt",
             fileName: "x.txt",
             fileURL: url,
-            foldState: .constant(FoldState()),
             onStateChange: { cursor, _ in deliveredCursor = cursor }
         )
         let coordinator = CodeEditorView.Coordinator(parent: view)
@@ -184,7 +181,6 @@ struct StateChangeReentrancyTests {
             language: "txt",
             fileName: "x.txt",
             fileURL: url,
-            foldState: .constant(FoldState()),
             onStateChange: { cursor, _ in
                 callCount += 1
                 lastCursor = cursor

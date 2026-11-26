@@ -13,9 +13,9 @@
 //  in MenuIcons.swift.
 //
 //  Declaration order mirrors the macOS menu bar left-to-right:
-//  App (about/CLI) → File (open/save/close/reveal) → Edit (find/fold/diff)
-//  → View (font/minimap/diagnostics) → Window (tabs/arrangement/panels)
-//  → Git → Terminal.
+//  App (about/CLI) → File (open/save/close/reveal) → Edit (find/diff)
+//  → View (font/editor display) → Window (tabs/arrangement/panels)
+//  → Terminal.
 //
 
 import AppKit
@@ -52,8 +52,6 @@ struct PineAppMenuCommands: Commands {
     /// `recentProjects`: a closure keeps Commands off the AppDelegate.
     let projectRegistry: () -> ProjectRegistry?
     @FocusedValue(\.projectManager) private var focusedProject: ProjectManager?
-    @AppStorage("minimapVisible", store: PineStorageContext.defaults) private var minimapVisible = true
-    @AppStorage(BlameConstants.storageKey, store: PineStorageContext.defaults) private var blameVisible = true
     @AppStorage("wordWrapEnabled", store: PineStorageContext.defaults) private var wordWrapEnabled = true
     private var keybindings: UserKeybindingRegistry {
         ExtensibilityManager.shared.keybindings
@@ -439,33 +437,7 @@ struct PineAppMenuCommands: Commands {
         }
 
         // MARK: - Window menu
-        // The local event monitor presents the visual MRU switcher for
-        // physical Control-Tab gestures. Native menu equivalents preserve the
-        // immediate-switch fallback for Accessibility/XCUITest events, which
-        // bypass local NSEvent monitors on macOS 26.
         CommandGroup(after: .windowArrangement) {
-            Button {
-                focusedProject?.paneManager.switchToNextTabGlobally()
-            } label: {
-                Text(Strings.tabSwitchNext)
-            }
-            .keyboardShortcut("\t", modifiers: .control)
-            .disabled(
-                (focusedProject?.paneManager
-                    .validGlobalTabSwitchOrder().count ?? 0) < 2
-            )
-
-            Button {
-                focusedProject?.paneManager.switchToPreviousTabGlobally()
-            } label: {
-                Text(Strings.tabSwitchPrevious)
-            }
-            .keyboardShortcut("\t", modifiers: [.control, .shift])
-            .disabled(
-                (focusedProject?.paneManager
-                    .validGlobalTabSwitchOrder().count ?? 0) < 2
-            )
-
             // Tab and window arrangement belongs in the Window menu (#1564);
             // these four moved in from the View menu.
             Button {
@@ -483,22 +455,6 @@ struct PineAppMenuCommands: Commands {
             }
             .keyboardShortcut(.rightArrow, modifiers: [.command, .control])
             .disabled(focusedProject?.paneManager.canMoveActiveTab(.trailing) != true)
-
-            Button {
-                focusedProject?.paneManager.moveActiveTab(.previousPane)
-            } label: {
-                Label(Strings.tabMoveToPreviousPane, systemImage: "rectangle.leadinghalf.inset.filled")
-            }
-            .keyboardShortcut(.leftArrow, modifiers: [.command, .control, .shift])
-            .disabled(focusedProject?.paneManager.canMoveActiveTab(.previousPane) != true)
-
-            Button {
-                focusedProject?.paneManager.moveActiveTab(.nextPane)
-            } label: {
-                Label(Strings.tabMoveToNextPane, systemImage: "rectangle.trailinghalf.inset.filled")
-            }
-            .keyboardShortcut(.rightArrow, modifiers: [.command, .control, .shift])
-            .disabled(focusedProject?.paneManager.canMoveActiveTab(.nextPane) != true)
 
             Divider()
 
@@ -550,24 +506,6 @@ struct PineAppMenuCommands: Commands {
             }
             .keyboardShortcut("j", modifiers: [.command, .shift])
             .disabled(focusedEditorTabManager?.activeTab?.fileURL == nil)
-
-            Divider()
-
-            // Splitting was reachable only by dragging a tab onto a drop
-            // zone (#1537).
-            Button {
-                focusedProject?.paneManager.splitActivePane(axis: .horizontal)
-            } label: {
-                Label(Strings.menuSplitRight, systemImage: MenuIcons.splitRight)
-            }
-            .disabled(focusedProject == nil)
-
-            Button {
-                focusedProject?.paneManager.splitActivePane(axis: .vertical)
-            } label: {
-                Label(Strings.menuSplitDown, systemImage: MenuIcons.splitDown)
-            }
-            .disabled(focusedProject == nil)
 
             Divider()
 
@@ -662,7 +600,7 @@ struct PineAppMenuCommands: Commands {
         }
 
         // MARK: - Edit menu
-        // Toggle Comment, inline diff navigation/accept/revert, code folding
+        // Toggle Comment, inline diff navigation/accept/revert
         CommandGroup(after: .pasteboard) {
             Button {
                 NotificationCenter.default.post(name: .toggleComment, object: nil)
@@ -747,63 +685,10 @@ struct PineAppMenuCommands: Commands {
             }
             .disabled(focusedProject?.activeTabManager.activeTab == nil)
 
-            Divider()
-
-            Button {
-                NotificationCenter.default.post(
-                    name: .foldCode, object: nil,
-                    userInfo: ["action": "fold"]
-                )
-            } label: {
-                Label(Strings.menuFoldCode, systemImage: MenuIcons.foldCode)
-            }
-            .effectiveKeyboardShortcut(
-                keybindings.effectiveChord(for: .foldCode)
-            )
-            .disabled(focusedProject?.activeTabManager.activeTab == nil)
-
-            Button {
-                NotificationCenter.default.post(
-                    name: .foldCode, object: nil,
-                    userInfo: ["action": "unfold"]
-                )
-            } label: {
-                Label(Strings.menuUnfoldCode, systemImage: MenuIcons.unfoldCode)
-            }
-            .effectiveKeyboardShortcut(
-                keybindings.effectiveChord(for: .unfoldCode)
-            )
-            .disabled(focusedProject?.activeTabManager.activeTab == nil)
-
-            Button {
-                NotificationCenter.default.post(
-                    name: .foldCode, object: nil,
-                    userInfo: ["action": "foldAll"]
-                )
-            } label: {
-                Label(Strings.menuFoldAll, systemImage: MenuIcons.foldAll)
-            }
-            .effectiveKeyboardShortcut(
-                keybindings.effectiveChord(for: .foldAll)
-            )
-            .disabled(focusedProject?.activeTabManager.activeTab == nil)
-
-            Button {
-                NotificationCenter.default.post(
-                    name: .foldCode, object: nil,
-                    userInfo: ["action": "unfoldAll"]
-                )
-            } label: {
-                Label(Strings.menuUnfoldAll, systemImage: MenuIcons.unfoldAll)
-            }
-            .effectiveKeyboardShortcut(
-                keybindings.effectiveChord(for: .unfoldAll)
-            )
-            .disabled(focusedProject?.activeTabManager.activeTab == nil)
         }
 
         // MARK: - View menu
-        // Font size, terminal toggle, preview, minimap, blame, word wrap,
+        // Font size, terminal toggle, preview, word wrap,
         // agent launch
         CommandGroup(after: .toolbar) {
             Divider()
@@ -861,20 +746,6 @@ struct PineAppMenuCommands: Commands {
             )
 
             Divider()
-
-            Toggle(isOn: $minimapVisible) {
-                Label(Strings.menuToggleMinimap, systemImage: MenuIcons.toggleMinimap)
-            }
-            .effectiveKeyboardShortcut(
-                keybindings.effectiveChord(for: .toggleMinimap)
-            )
-
-            Toggle(isOn: $blameVisible) {
-                Label(Strings.menuToggleBlame, systemImage: MenuIcons.toggleBlame)
-            }
-            .effectiveKeyboardShortcut(
-                keybindings.effectiveChord(for: .toggleBlame)
-            )
 
             Toggle(isOn: $wordWrapEnabled) {
                 Label(Strings.menuToggleWordWrap, systemImage: MenuIcons.toggleWordWrap)
@@ -949,20 +820,6 @@ struct PineAppMenuCommands: Commands {
         // Keep the custom menus composed as one child so adding a menu does
         // not make the whole app target fail to compile on macOS 26.
         PineCommandCollection {
-            // MARK: - Git menu
-            CommandMenu(Strings.menuGit) {
-            Button {
-                guard let focusedProject else { return }
-                NotificationCenter.default.post(name: .showBranchSwitcher, object: focusedProject)
-            } label: {
-                Label(Strings.menuSwitchBranch, systemImage: MenuIcons.switchBranch)
-            }
-            .effectiveKeyboardShortcut(
-                keybindings.effectiveChord(for: .showBranchSwitcher)
-            )
-            .disabled(focusedProject?.workspace.gitProvider.isGitRepository != true)
-        }
-
         // MARK: - Terminal menu
         // New Tab (Cmd+T), terminal-local find, Quick Terminal (global
         // drop-down, shows current shortcut).

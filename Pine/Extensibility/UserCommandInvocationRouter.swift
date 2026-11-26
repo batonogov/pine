@@ -135,19 +135,6 @@ enum UserCommandInvocationRouter {
                 userInfo: ["action": command.inlineDiffAction]
             )
 
-        case .foldCode, .unfoldCode, .foldAll, .unfoldAll:
-            notificationCenter.post(
-                name: .foldCode,
-                object: projectManager,
-                userInfo: ["action": command.foldAction]
-            )
-
-        case .showBranchSwitcher:
-            notificationCenter.post(
-                name: .showBranchSwitcher,
-                object: projectManager
-            )
-
         case .increaseFontSize:
             FontSizeSettings.shared.increase()
 
@@ -156,14 +143,6 @@ enum UserCommandInvocationRouter {
 
         case .resetFontSize:
             FontSizeSettings.shared.reset()
-
-        case .toggleMinimap:
-            MinimapSettings.toggle()
-
-        case .toggleBlame:
-            let key = BlameConstants.storageKey
-            let defaults = PineStorageContext.defaults
-            defaults.set(!defaults.bool(forKey: key), forKey: key)
 
         case .togglePreview:
             projectManager?.activeTabManager.togglePreviewMode()
@@ -287,18 +266,4 @@ nonisolated private extension UserCommand {
         }
     }
 
-    var foldAction: String {
-        switch self {
-        case .foldCode:
-            "fold"
-        case .unfoldCode:
-            "unfold"
-        case .foldAll:
-            "foldAll"
-        case .unfoldAll:
-            "unfoldAll"
-        default:
-            preconditionFailure("Command does not represent a fold action")
-        }
-    }
 }

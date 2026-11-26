@@ -28,10 +28,6 @@ nonisolated enum MenuIcons {
     static let revertChange = "arrow.uturn.backward.circle"
     static let acceptAllChanges = "checkmark.circle.fill"
     static let revertAllChanges = "arrow.uturn.backward.circle.fill"
-    static let foldCode = "chevron.down.square"
-    static let unfoldCode = "chevron.right.square"
-    static let foldAll = "rectangle.compress.vertical"
-    static let unfoldAll = "rectangle.expand.vertical"
 
     // MARK: - View menu
     static let increaseFontSize = "plus.magnifyingglass"
@@ -39,14 +35,11 @@ nonisolated enum MenuIcons {
     static let resetFontSize = "textformat.size"
     static let toggleTerminal = "terminal"
     static let togglePreview = "doc.richtext"
-    static let toggleMinimap = "sidebar.right"
-    static let toggleBlame = "person.text.rectangle"
     static let toggleWordWrap = "text.word.spacing"
     static let revealFileInFinder = "doc.viewfinder"
     static let revealProjectInFinder = "arrow.right.circle"
 
     // MARK: - Git menu
-    static let switchBranch = "arrow.triangle.branch"
 
     // MARK: - Terminal menu
     static let newTerminalTab = "plus"
@@ -86,10 +79,8 @@ nonisolated enum MenuIcons {
     static let clearMenu = "eraser"
     static let closeTab = "xmark"
     static let closeWindow = "xmark.rectangle"
-    /// File ▸ Sidebar submenu and Window ▸ Split commands (#1537).
+    /// File ▸ Sidebar submenu (#1537).
     static let sidebarOperations = "sidebar.left"
-    static let splitRight = "rectangle.split.2x1"
-    static let splitDown = "rectangle.split.1x2"
     static let pinTab = "pin"
     static let unpinTab = "pin.slash"
 

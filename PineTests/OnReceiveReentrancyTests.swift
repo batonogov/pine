@@ -183,7 +183,6 @@ struct OnReceiveReentrancyTests {
         let observer = GitAndNotificationObserver(
             lineDiffs: .constant([]),
             onRefreshLineDiffs: { },
-            onRefreshBlame: { },
             onOpenNewProject: { },
             onCloseProject: { },
             onHandleFileDeletion: { _ in callBox.value += 1 },

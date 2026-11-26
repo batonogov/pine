@@ -13,34 +13,10 @@ import SwiftUI
 /// Recursively renders the PaneNode tree as nested split views.
 struct PaneTreeView: View {
     let node: PaneNode
-    var isRoot = true
     @Environment(PaneManager.self) private var paneManager
-    @State private var containerSize: CGSize = .zero
 
     var body: some View {
-        if isRoot {
-            rootDropTarget
-        } else {
-            nodeContent
-        }
-    }
-
-    private var rootDropTarget: some View {
         nodeContent
-            .overlay {
-                GeometryReader { geometry in
-                    Color.clear
-                        .preference(key: RootContainerSizeKey.self, value: geometry.size)
-                }
-            }
-            .onPreferenceChange(RootContainerSizeKey.self) { containerSize = $0 }
-            .overlay {
-                RootDropOverlay(dropZone: paneManager.rootDropZone)
-            }
-            .onDrop(of: [.paneTabDrag], delegate: RootPaneSplitDropDelegate(
-                paneManager: paneManager,
-                containerSize: containerSize
-            ))
     }
 
     @ViewBuilder
@@ -82,7 +58,7 @@ struct PaneSplitView: View {
 
             if axis == .horizontal {
                 HStack(spacing: 0) {
-                    PaneTreeView(node: first, isRoot: false)
+                    PaneTreeView(node: first)
                         .frame(width: clampedFirstSize)
 
                     PaneDividerView(
@@ -99,12 +75,12 @@ struct PaneSplitView: View {
                         onAdjustRatio: applyRatio
                     )
 
-                    PaneTreeView(node: second, isRoot: false)
+                    PaneTreeView(node: second)
                         .frame(maxWidth: .infinity)
                 }
             } else {
                 VStack(spacing: 0) {
-                    PaneTreeView(node: first, isRoot: false)
+                    PaneTreeView(node: first)
                         .frame(height: clampedFirstSize)
 
                     PaneDividerView(
@@ -121,7 +97,7 @@ struct PaneSplitView: View {
                         onAdjustRatio: applyRatio
                     )
 
-                    PaneTreeView(node: second, isRoot: false)
+                    PaneTreeView(node: second)
                         .frame(maxHeight: .infinity)
                 }
             }

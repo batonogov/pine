@@ -22,9 +22,9 @@ class TestLoadBaselines(unittest.TestCase):
         data = {
             "threshold_percent": 15,
             "tests": {
-                "FoldRangeCalculatorPerformanceTests/testManyBlocks": {
-                    "baseline_seconds": 0.005,
-                    "description": "500 flat brace blocks",
+                "StructuralProviderPerformanceTests/testLargeRegexSymbolSnapshot": {
+                    "baseline_seconds": 0.850,
+                    "description": "Regex symbol fallback",
                 }
             },
         }
@@ -36,10 +36,10 @@ class TestLoadBaselines(unittest.TestCase):
         try:
             baselines = load_baselines(path)
             self.assertEqual(baselines["threshold_percent"], 15)
-            key = "FoldRangeCalculatorPerformanceTests/testManyBlocks"
+            key = "StructuralProviderPerformanceTests/testLargeRegexSymbolSnapshot"
             self.assertIn(key, baselines["tests"])
             self.assertAlmostEqual(
-                baselines["tests"][key]["baseline_seconds"], 0.005
+                baselines["tests"][key]["baseline_seconds"], 0.850
             )
         finally:
             os.unlink(path)

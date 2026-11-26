@@ -43,8 +43,6 @@ extension Notification.Name {
     // MARK: - Editor navigation
     /// userInfo: ["direction": "next" | "previous"]
     static let navigateChange = Notification.Name("navigateChange")
-    /// userInfo: ["action": "fold" | "unfold" | "foldAll" | "unfoldAll"]
-    static let foldCode = Notification.Name("foldCode")
     static let toggleComment = Notification.Name("toggleComment")
     /// Word Wrap toggle (issue #416)
     static let toggleWordWrap = Notification.Name("toggleWordWrap")
@@ -108,7 +106,6 @@ extension Notification.Name {
     )
 
     // MARK: - Git
-    static let showBranchSwitcher = Notification.Name("showBranchSwitcher")
     static let refreshLineDiffs = Notification.Name("refreshLineDiffs")
 
 }

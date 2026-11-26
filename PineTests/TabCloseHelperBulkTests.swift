@@ -2,7 +2,7 @@
 //  TabCloseHelperBulkTests.swift
 //  PineTests
 //
-//  Regression coverage for bulk-close outcomes and pane removal (#1169).
+//  Regression coverage for bulk-close outcomes in the fixed editor.
 //
 
 import AppKit
@@ -25,10 +25,9 @@ struct TabCloseHelperBulkTests {
         savedContent: String = "original"
     ) -> PaneFixture? {
         let paneManager = PaneManager()
-        let firstPaneID = paneManager.activePaneID
-        guard let paneID = paneManager.splitPane(firstPaneID, axis: .horizontal),
-              let tabManager = paneManager.tabManager(for: paneID) else {
-            Issue.record("Failed to create the pane fixture")
+        let paneID = paneManager.activePaneID
+        guard let tabManager = paneManager.tabManager(for: paneID) else {
+            Issue.record("Failed to create the editor fixture")
             return nil
         }
 
@@ -44,7 +43,7 @@ struct TabCloseHelperBulkTests {
         }
     }
 
-    @Test("Don't Save completes close-all and permits empty-pane removal")
+    @Test("Don't Save completes close-all and keeps the fixed editor destination reusable")
     func confirmedDiscardRemovesPane() async {
         guard let fixture = makeDirtyPane() else { return }
         var saveAttempted = false
@@ -63,11 +62,11 @@ struct TabCloseHelperBulkTests {
         #expect(didClose)
         #expect(!saveAttempted)
         #expect(fixture.tabManager.tabs.isEmpty)
-        #expect(fixture.paneManager.tabManager(for: fixture.paneID) == nil)
+        #expect(fixture.paneManager.tabManager(for: fixture.paneID) === fixture.tabManager)
         #expect(fixture.paneManager.root.leafCount == 1)
     }
 
-    @Test("Save All persists changes, completes close-all, and permits pane removal")
+    @Test("Save All persists changes, completes close-all, and keeps the fixed editor destination reusable")
     func saveSuccessRemovesPane() async throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("pine-bulk-close-\(UUID().uuidString)", isDirectory: true)
@@ -99,7 +98,7 @@ struct TabCloseHelperBulkTests {
 
         #expect(didClose)
         #expect(try String(contentsOf: url, encoding: .utf8) == "modified")
-        #expect(fixture.paneManager.tabManager(for: fixture.paneID) == nil)
+        #expect(fixture.paneManager.tabManager(for: fixture.paneID) === fixture.tabManager)
         #expect(fixture.paneManager.root.leafCount == 1)
     }
 
@@ -116,7 +115,7 @@ struct TabCloseHelperBulkTests {
 
         #expect(!didClose)
         #expect(fixture.paneManager.tabManager(for: fixture.paneID) === fixture.tabManager)
-        #expect(fixture.paneManager.root.leafCount == 2)
+        #expect(fixture.paneManager.root.leafCount == 1)
         #expect(fixture.tabManager.tabs.count == 1)
         #expect(fixture.tabManager.tabs.first?.isDirty == true)
     }
@@ -200,7 +199,7 @@ struct TabCloseHelperBulkTests {
         #expect(!didClose)
         #expect(saveAttempts == 2)
         #expect(fixture.paneManager.tabManager(for: fixture.paneID) === fixture.tabManager)
-        #expect(fixture.paneManager.root.leafCount == 2)
+        #expect(fixture.paneManager.root.leafCount == 1)
         #expect(fixture.tabManager.tabs.count == 2)
         #expect(fixture.tabManager.tabs[0].isDirty == false)
         #expect(fixture.tabManager.tabs[1].isDirty == true)

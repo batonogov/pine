@@ -64,8 +64,6 @@ struct LocalizationCentralizationGuardTests {
         "diagnostic.lineColumn",
         "diagnostic.line",
         // "3 of 4" position ratio.
-        "globalTabSwitcher.announcement",
-        "pane.positionLabel",
         "quit.summary.message %lld",
         // Label-shaped reload summary: neither count agrees a noun, so
         // every (tasks, keybindings) pair is grammatical through the single

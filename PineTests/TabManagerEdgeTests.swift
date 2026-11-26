@@ -470,18 +470,6 @@ struct TabManagerEdgeTests {
 
     // MARK: - Update operations
 
-    @Test func updateFoldState() throws {
-        let dir = try makeTempDir()
-        defer { cleanup(dir) }
-        let manager = makeTabManager()
-        let url = try tempFile(in: dir)
-        manager.openTab(url: url)
-
-        let foldState = FoldState()
-        manager.updateFoldState(foldState)
-        #expect(manager.activeTab?.foldState != nil)
-    }
-
     @Test func updateEditorState() throws {
         let dir = try makeTempDir()
         defer { cleanup(dir) }

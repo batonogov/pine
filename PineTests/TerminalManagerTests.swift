@@ -144,40 +144,6 @@ struct TerminalManagerTests {
         }
     }
 
-    @Test("allTerminalTabs collects from all panes")
-    func allTerminalTabsMultiplePanes() {
-        let pm = PaneManager()
-        let manager = TerminalManager()
-        manager.paneManager = pm
-
-        let editorPaneID = pm.activePaneID
-        // Open a tab so the editor leaf survives the auto-prune that runs
-        // when a terminal pane is created next to an empty editor.
-        pm.tabManager(for: editorPaneID)?.openTab(
-            url: URL(fileURLWithPath: "/tmp/all-term-tabs.swift")
-        )
-        manager.createTerminalTab(relativeTo: editorPaneID, workingDirectory: nil)
-
-        // Split the editor pane first, then create a second terminal pane
-        // explicitly. Cmd+T intentionally repairs a nil/stale destination and
-        // reuses the surviving terminal rather than manufacturing a split.
-        if let newEditorID = pm.splitPane(editorPaneID, axis: .horizontal) {
-            pm.tabManager(for: newEditorID)?.openTab(
-                url: URL(fileURLWithPath: "/tmp/all-term-tabs-2.swift")
-            )
-            _ = pm.createTerminalPane(
-                relativeTo: newEditorID,
-                axis: .vertical,
-                workingDirectory: nil
-            )
-        }
-
-        #expect(pm.terminalPaneIDs.count == 2)
-        #expect(manager.allTerminalTabs.count == 2)
-    }
-
-    // MARK: - Search state tests (moved to TerminalTab which still has search)
-
     @Test("search with empty query clears matches")
     @MainActor
     func searchWithEmptyQueryClearsMatches() async {

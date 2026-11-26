@@ -50,6 +50,6 @@ final class PaneFocusNSView: NSView {
     }
 
     /// Accept first mouse so clicks activate the pane even when the window
-    /// is in the background (consistent with Xcode split pane behavior).
+    /// is in the background (consistent with native editor/terminal focus behavior).
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 }

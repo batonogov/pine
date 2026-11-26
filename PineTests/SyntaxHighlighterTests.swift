@@ -561,7 +561,6 @@ struct SyntaxHighlighterTests {
             text: .constant(text),
             language: "langa",
             fileName: "test.langa",
-            foldState: .constant(FoldState())
         )
         let coordinator = CodeEditorView.Coordinator(parent: editorView)
         coordinator.scrollView = scrollView

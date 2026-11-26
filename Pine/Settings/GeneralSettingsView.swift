@@ -4,8 +4,8 @@
 //
 //  Issue #337: "General / Editor" pane of the consolidated Settings scene.
 //  Surfaces the editor formatting defaults (EditorSettings), font size
-//  (FontSizeSettings), and the default visibility of the minimap and word
-//  wrap. Every control binds directly to the same source of truth used by
+//  (FontSizeSettings), and the default word-wrap visibility. Every control
+//  binds directly to the same source of truth used by
 //  the editor, so changes apply immediately.
 //
 
@@ -14,15 +14,14 @@ import SwiftUI
 /// General / Editor preferences pane.
 ///
 /// All toggles use immediate-apply semantics: there is no Apply button.
-/// `EditorSettings` persists via `UserDefaults` `didSet`; font size, minimap,
-/// and word wrap are bound to the same `@AppStorage` keys the menus and
+/// `EditorSettings` persists via `UserDefaults` `didSet`; font size and word
+/// wrap are bound to the same `@AppStorage` keys the menus and
 /// editors observe, so a change here is instantly reflected everywhere.
 @MainActor
 struct GeneralSettingsView: View {
     @Bindable var editor: EditorSettings
     @Bindable var fontSizeSettings: FontSizeSettings
     @AppStorage(TabManager.autoSaveKey, store: PineStorageContext.defaults) private var autoSaveEnabled = false
-    @AppStorage("minimapVisible", store: PineStorageContext.defaults) private var defaultMinimapVisible = true
     @AppStorage("wordWrapEnabled", store: PineStorageContext.defaults) private var defaultWordWrap = true
 
     init(
@@ -35,11 +34,6 @@ struct GeneralSettingsView: View {
         _autoSaveEnabled = AppStorage(
             wrappedValue: false,
             TabManager.autoSaveKey,
-            store: defaults
-        )
-        _defaultMinimapVisible = AppStorage(
-            wrappedValue: true,
-            "minimapVisible",
             store: defaults
         )
         _defaultWordWrap = AppStorage(
@@ -86,10 +80,6 @@ struct GeneralSettingsView: View {
                     Toggle(
                         Strings.settingsGeneralWordWrap,
                         isOn: $defaultWordWrap
-                    )
-                    Toggle(
-                        Strings.settingsGeneralMinimap,
-                        isOn: $defaultMinimapVisible
                     )
 
                     Divider()

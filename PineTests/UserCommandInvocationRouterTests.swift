@@ -60,48 +60,6 @@ struct UserCommandInvocationRouterTests {
         #expect(probe.values == ["global"])
     }
 
-    @Test("Structured fold command preserves its action payload")
-    func foldDispatchPayload() throws {
-        let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent(
-                "pine-command-router-\(UUID().uuidString)",
-                isDirectory: true
-            )
-        try FileManager.default.createDirectory(
-            at: directory,
-            withIntermediateDirectories: false
-        )
-        defer { try? FileManager.default.removeItem(at: directory) }
-        let file = directory.appendingPathComponent("main.swift")
-        try Data("func main() {}".utf8).write(to: file)
-
-        let projectManager = ProjectManager()
-        projectManager.activeTabManager.openTab(url: file)
-        let projectIdentifier = ObjectIdentifier(projectManager)
-        let center = NotificationCenter()
-        let probe = NotificationProbe()
-        let token = center.addObserver(
-            forName: .foldCode,
-            object: nil,
-            queue: nil
-        ) { notification in
-            let target = (notification.object as AnyObject?).map(
-                ObjectIdentifier.init
-            )
-            let action = notification.userInfo?["action"] as? String ?? ""
-            probe.record("\(action):\(target == projectIdentifier)")
-        }
-        defer { center.removeObserver(token) }
-
-        UserCommandInvocationRouter.dispatch(
-            .unfoldAll,
-            projectManager: projectManager,
-            notificationCenter: center
-        )
-
-        #expect(probe.values == ["unfoldAll:true"])
-    }
-
     @Test("Unavailable command does not dispatch")
     func unavailableCommandIsIgnored() {
         let center = NotificationCenter()

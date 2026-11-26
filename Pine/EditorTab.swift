@@ -188,9 +188,6 @@ struct EditorTab: Identifiable, Hashable {
     /// duplicate FSEvents prompts without authorizing a later save.
     var pendingExternalFileState: BackingFileState?
 
-    /// Состояние свёрнутых регионов кода.
-    var foldState: FoldState = FoldState()
-
     /// Markdown preview mode (source/preview/split). Only meaningful for markdown files.
     var previewMode: MarkdownPreviewMode = .source
 
@@ -294,7 +291,6 @@ struct EditorTab: Identifiable, Hashable {
         copy.lastModDate = source.lastModDate
         copy.backingFileRevision = source.backingFileRevision
         copy.pendingExternalFileState = source.pendingExternalFileState
-        copy.foldState = source.foldState
         copy.previewMode = source.previewMode
         copy.syntaxHighlightingDisabled = source.syntaxHighlightingDisabled
         copy.isTruncated = source.isTruncated

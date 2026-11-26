@@ -35,19 +35,3 @@ nonisolated enum EditorConstants {
     /// Large enough to find nearby brackets, small enough to avoid scanning the entire file.
     static let bracketSearchRadius = 5000
 }
-
-// MARK: - Minimap Constants
-
-/// Constants used by the minimap view (MinimapView).
-nonisolated enum MinimapConstants {
-    /// Alpha component for syntax-colored segments in the minimap.
-    static let syntaxSegmentAlpha: CGFloat = 0.55
-    /// Width of git diff marker strips on the right edge.
-    static let diffMarkerWidth: CGFloat = 4
-    /// Height of each line representation in the minimap.
-    static let lineHeight: CGFloat = 2
-    /// Width of a single character in minimap coordinates.
-    static let charWidth: CGFloat = 0.8
-    /// Horizontal padding before the first character.
-    static let leadingPadding: CGFloat = 4
-}

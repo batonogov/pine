@@ -4,14 +4,13 @@
 //
 //  Extracted from CodeEditorView.swift on 2026-04-09 (issue #755).
 //
-//  This file hosts CodeEditorView.Coordinator — the NSTextViewDelegate,
-//  NSTextStorageDelegate, and NSLayoutManagerDelegate that drives the
+//  This file hosts CodeEditorView.Coordinator — the NSTextViewDelegate
+//  and NSTextStorageDelegate that drives the
 //  editor's runtime behavior:
 //    • Content/font synchronization
 //    • Debounced syntax highlighting (edit + scroll paths)
 //    • Bracket matching highlight
 //    • Send-to-terminal
-//    • Code folding and layout-manager fold callbacks
 //    • External-reload handling
 //
 //  The class is nested in CodeEditorView via an extension so callers still
@@ -23,25 +22,10 @@ import SwiftUI
 import AppKit
 
 extension CodeEditorView {
-    class Coordinator: NSObject, NSTextViewDelegate, NSTextStorageDelegate, NSLayoutManagerDelegate {
+    class Coordinator: NSObject, NSTextViewDelegate, NSTextStorageDelegate {
         var parent: CodeEditorView
         var scrollView: NSScrollView?
         var lineNumberView: LineNumberView?
-        var minimapView: MinimapView?
-
-        /// Cached foldable ranges for the current text.
-        var foldableRanges: [FoldableRange] = []
-
-        /// Fold state currently used by AppKit's glyph/layout delegates.
-        ///
-        /// `PaneLeafView` builds the binding getter from an `EditorTab` value
-        /// captured during the current SwiftUI render. After the binding
-        /// setter writes a new state to `TabManager`, that captured getter
-        /// remains one render behind until `updateNSView` replaces `parent`.
-        /// Reading `parent.foldState` while invalidating layout therefore
-        /// makes the text rendering lag the gutter by one click. Keep the
-        /// state applied to AppKit synchronously in the coordinator instead.
-        private(set) var renderedFoldState: FoldState
 
         /// Snapshot adapter around Pine's bounded bracket matcher (#1008).
         private let bracketProvider = BoundedBracketProvider()
@@ -49,11 +33,6 @@ extension CodeEditorView {
 
         /// Cached line starts for O(log n) line number lookups.
         var lineStartsCache: LineStartsCache?
-
-        /// Debounced fold recalculation work item.
-        private var foldWorkItem: DispatchWorkItem?
-        private var foldCalculationTask: Task<Void, Never>?
-        private let foldGeneration = StructuralGeneration()
 
         /// Последние язык/имя файла — для обнаружения смены грамматики
         /// при одинаковом содержимом файлов
@@ -128,12 +107,9 @@ extension CodeEditorView {
         private var scrollHighlightWorkItem: DispatchWorkItem?
         /// Задержка дебаунсинга скролла (~3 кадра при 120fps ProMotion)
         private let scrollHighlightDelay: TimeInterval = UITimings.Debounce.scroll
-        /// Задержка дебаунсинга пересчёта фолдинга (тяжелее подсветки)
-        private let foldRecalcDelay: TimeInterval = UITimings.Debounce.foldRecalc
 
         init(parent: CodeEditorView) {
             self.parent = parent
-            self.renderedFoldState = parent.foldState
             // Initialize language/fileName to match the initial view,
             // preventing a false languageChanged detection on the first
             // updateNSView call (issue #556).
@@ -154,13 +130,9 @@ extension CodeEditorView {
             )
         }
 
-        /// Adopts the latest SwiftUI value before any update path can force
-        /// TextKit layout. On a tab switch, `updateContentIfNeeded` restores
-        /// scroll position synchronously, so its layout delegate must already
-        /// use the destination tab's fold state rather than the previous one.
+        /// Adopts the latest SwiftUI value before any update path runs.
         func prepareForViewUpdate(_ parent: CodeEditorView) {
             self.parent = parent
-            synchronizeFoldState(parent.foldState)
         }
 
         /// Handles `.tabReloadedFromDisk` notification — if the URL matches
@@ -180,7 +152,7 @@ extension CodeEditorView {
 
         /// Forcibly replaces NSTextView contents with externally-loaded text.
         /// Preserves cursor and scroll offset (clamped to new bounds).
-        /// Re-runs syntax highlighting and fold recalculation.
+        /// Re-runs syntax highlighting.
         func applyExternalReload(text newText: String) {
             guard let sv = scrollView,
                   let textView = sv.documentView as? NSTextView else { return }
@@ -216,7 +188,7 @@ extension CodeEditorView {
             textView.setSelectedRange(NSRange(location: clampedLoc, length: clampedLen))
             textView.scroll(oldVisibleRect.origin)
 
-            // Re-run syntax highlighting and fold calculation
+            // Re-run syntax highlighting
             if !parent.syntaxHighlightingDisabled, let storage = textView.textStorage {
                 if storage.length > CodeEditorView.viewportHighlightThreshold {
                     scheduleViewportHighlightingPublic(textView: textView)
@@ -236,7 +208,6 @@ extension CodeEditorView {
             }
 
             lineStartsCache = LineStartsCache(text: newText)
-            scheduleFoldRecalculation()
             reportStateChange()
         }
 
@@ -277,8 +248,6 @@ extension CodeEditorView {
                 highlightWorkItem = nil
                 scrollHighlightWorkItem?.cancel()
                 scrollHighlightWorkItem = nil
-                foldWorkItem?.cancel()
-                foldWorkItem = nil
                 highlightTask?.cancel()
                 highlightTask = nil
                 // Bump the generation so any async highlight that already
@@ -390,7 +359,7 @@ extension CodeEditorView {
 
             // Restore cursor position and scroll offset on tab switch.
             // When text changed externally (not from user typing), restore
-            // the saved per-tab cursor/scroll state and recalculate foldable ranges.
+            // the saved per-tab cursor/scroll state.
             if textChanged && !fromTextView {
                 // Rebuild line starts cache for the new content
                 lineStartsCache = LineStartsCache(text: text)
@@ -412,8 +381,6 @@ extension CodeEditorView {
                 } else if safePosition > 0 {
                     textView.scrollRangeToVisible(NSRange(location: safePosition, length: 0))
                 }
-                minimapView?.needsDisplay = true
-                recalculateFoldableRanges()
             }
         }
 
@@ -498,7 +465,6 @@ extension CodeEditorView {
                 highlightedCharRange = nil
                 reportStateChange()
                 lineStartsCache = LineStartsCache(text: textView.string)
-                scheduleFoldRecalculation()
                 return
             }
 
@@ -538,9 +504,6 @@ extension CodeEditorView {
             } else {
                 lineStartsCache = LineStartsCache(text: textView.string)
             }
-
-            // Recalculate foldable ranges (debounced — expensive operation)
-            scheduleFoldRecalculation()
 
             // Consume the edited range captured by NSTextStorageDelegate.
             // NSTextStorage.editedRange is already reset to NSNotFound by the
@@ -982,98 +945,6 @@ extension CodeEditorView {
             }
         }
 
-        // MARK: - Code folding
-
-        /// Recalculates foldable ranges from an immutable text snapshot.
-        /// Syntax-context extraction and the full bracket scan stay off the
-        /// main actor; only current-generation results update AppKit views.
-        func recalculateFoldableRanges() {
-            guard let sv = scrollView,
-                  let textView = sv.documentView as? NSTextView else { return }
-            foldCalculationTask?.cancel()
-
-            let text = textView.string
-            let language = parent.language
-            let fileName = parent.fileName
-            let revision = DocumentRevision(foldGeneration.increment())
-            let snapshot = DocumentSnapshot(
-                uri: parent.fileURL?.absoluteString ?? "",
-                text: text,
-                revision: revision
-            )
-            let highlighter = SyntaxHighlighter.shared
-            let fallbackProvider = LocalFoldProvider(
-                language: language
-            ) { snapshotText in
-                highlighter.commentAndStringRanges(
-                    in: snapshotText,
-                    language: language,
-                    fileName: fileName
-                )
-            }
-            let needsLineStarts = lineStartsCache == nil
-
-            foldCalculationTask = Task { @MainActor [weak self] in
-                async let fallback = fallbackProvider.foldRanges(
-                    for: snapshot
-                )
-                let computedLineStarts: LineStartsCache?
-                if needsLineStarts {
-                    computedLineStarts = await Task.detached(
-                        priority: .userInitiated
-                    ) {
-                        LineStartsCache(text: text)
-                    }.value
-                } else {
-                    computedLineStarts = nil
-                }
-                let fallbackRanges = await fallback ?? []
-
-                guard let self,
-                      !Task.isCancelled,
-                      foldGeneration.current == revision.value,
-                      self.isCurrentFoldSnapshot(snapshot) else {
-                    return
-                }
-                if let computedLineStarts {
-                    self.lineStartsCache = computedLineStarts
-                }
-                self.foldableRanges = fallbackRanges
-                self.lineNumberView?.foldableRanges = fallbackRanges
-                self.lineNumberView?.lineStartsCache =
-                    self.lineStartsCache
-            }
-        }
-
-        private func isCurrentFoldSnapshot(
-            _ snapshot: DocumentSnapshot
-        ) -> Bool {
-            guard let textView =
-                scrollView?.documentView as? NSTextView else {
-                return false
-            }
-            return textView.string == snapshot.text
-                && (parent.fileURL?.absoluteString ?? "")
-                    == snapshot.uri
-        }
-
-        /// Schedules a debounced fold recalculation.
-        private func scheduleFoldRecalculation() {
-            foldWorkItem?.cancel()
-            let workItem = DispatchWorkItem { [weak self] in
-                self?.recalculateFoldableRanges()
-            }
-            foldWorkItem = workItem
-            DispatchQueue.main.asyncAfter(deadline: .now() + foldRecalcDelay, execute: workItem)
-        }
-
-        /// Handles fold toggle from gutter click.
-        func handleFoldToggle(_ foldable: FoldableRange) {
-            var state = renderedFoldState
-            state.toggle(foldable)
-            commitFoldState(state)
-        }
-
         /// Toggles inline diff expansion for a hunk when user clicks a gutter diff marker.
         func handleDiffMarkerClick(_ hunk: DiffHunk) {
             guard let sv = scrollView,
@@ -1082,40 +953,6 @@ extension CodeEditorView {
             let newID: UUID? = (gutterView.expandedHunkID == hunk.id) ? nil : hunk.id
             gutterView.expandedHunkID = newID
             lineNumberView?.expandedHunkID = newID
-        }
-
-        /// Handles fold code notifications from menu/keyboard shortcuts.
-        ///
-        /// The fold mutation is deferred to the next runloop to break the
-        /// reentrancy that causes the macOS 26 exclusivity abort. The menu
-        /// command (Cmd+Opt+arrows / Cmd+Opt+Shift+arrows) posts `.foldCode`
-        /// synchronously inside the `ButtonAction` callstack, which holds
-        /// SwiftUI's exclusive transaction access. Mutating `parent.foldState`
-        /// — a `@Binding` to a value-type `FoldState` — synchronously here
-        /// forces a SwiftUI body re-evaluation that collides with that access
-        /// and triggers `_swift_reportExclusivityConflict` → `abort()`.
-        ///
-        /// This is the same class of bug as #1051 (which closed the SwiftUI
-        /// `.onReceive` path) and #1047 (which closed the AppKit
-        /// `reportStateChange` path), on the one AppKit-observer path that
-        /// #1051 did not audit: the keyboard-driven `.foldCode` observer.
-        /// AppKit layout invalidation is deferred alongside the mutation so
-        /// the glyph and line-fragment delegates observe the committed state.
-        ///
-        /// The defer lives in ``scheduleFoldAction`` (not inline here) so the
-        /// deferral contract is unit-testable — see
-        /// `FoldObserverReentrancyTests`. Do not inline it back: the
-        /// `isKeyWindow` guard above cannot be satisfied by a background
-        /// test runner, so inlining would silently drop CI coverage of the
-        /// deferral and let the crash regress unnoticed.
-        @objc func handleFoldCode(_ notification: Notification) {
-            guard shouldHandleCommand(notification),
-                  let sv = scrollView,
-                  let textView = sv.documentView as? GutterTextView,
-                  textView.window?.isKeyWindow == true,
-                  let action = notification.userInfo?["action"] as? String else { return }
-
-            scheduleFoldAction(action)
         }
 
         /// Accepts unscoped menu notifications only in the key-window path,
@@ -1131,207 +968,6 @@ extension CodeEditorView {
                 return false
             }
             return targetProject === commandTarget
-        }
-
-        /// Defers `performFoldAction` to the next runloop. Extracted and
-        /// internal so the reentrancy deferral contract is unit-testable
-        /// directly (without the key-window guard in ``handleFoldCode``, which
-        /// a background test runner cannot satisfy and which would otherwise
-        /// hide the deferral path from CI).
-        func scheduleFoldAction(_ action: String) {
-            DispatchQueue.main.async { [weak self] in
-                self?.performFoldAction(action)
-            }
-        }
-
-        /// Applies a fold action to persistent and rendered fold state.
-        /// Extracted and internal so the reentrancy deferral contract in
-        /// ``handleFoldCode`` is unit-testable (the deferral lives in the
-        /// caller, the fold logic here is the deferred body), and so the fold
-        /// logic itself can be exercised without a key window.
-        func performFoldAction(_ action: String) {
-            switch action {
-            case "fold":
-                foldAtCursor()
-            case "unfold":
-                unfoldAtCursor()
-            case "foldAll":
-                var state = renderedFoldState
-                state.foldAll(foldableRanges)
-                commitFoldState(state)
-            case "unfoldAll":
-                var state = renderedFoldState
-                state.unfoldAll()
-                commitFoldState(state)
-            default:
-                break
-            }
-        }
-
-        /// Folds the innermost foldable range containing the cursor.
-        private func foldAtCursor() {
-            guard let sv = scrollView,
-                  let textView = sv.documentView as? NSTextView,
-                  let cache = lineStartsCache else { return }
-            let cursorLocation = textView.selectedRange().location
-
-            // Find cursor's line number using cached binary search
-            let cursorLine = cache.lineNumber(at: cursorLocation)
-
-            // Find innermost unfoldable range at cursor line
-            let candidates = foldableRanges.filter {
-                cursorLine >= $0.startLine && cursorLine <= $0.endLine
-                    && !renderedFoldState.isFolded($0)
-            }
-            // Pick the innermost (smallest span)
-            if let best = candidates.min(by: { ($0.endLine - $0.startLine) < ($1.endLine - $1.startLine) }) {
-                var state = renderedFoldState
-                state.fold(best)
-                commitFoldState(state)
-            }
-        }
-
-        /// Unfolds the fold at the cursor position.
-        private func unfoldAtCursor() {
-            guard let sv = scrollView,
-                  let textView = sv.documentView as? NSTextView,
-                  let cache = lineStartsCache else { return }
-            let cursorLocation = textView.selectedRange().location
-
-            // Find cursor's line number using cached binary search
-            let cursorLine = cache.lineNumber(at: cursorLocation)
-
-            // Find folded range whose startLine matches cursor line
-            if let folded = renderedFoldState.foldedRanges.first(
-                where: { $0.startLine == cursorLine }
-            ) {
-                var state = renderedFoldState
-                state.unfold(folded)
-                commitFoldState(state)
-            }
-        }
-
-        /// Synchronizes fold state supplied by a later SwiftUI render.
-        ///
-        /// Gutter/menu actions already update `renderedFoldState`
-        /// synchronously. The equality check avoids invalidating the complete
-        /// document again when that same state comes back through
-        /// `updateNSView`.
-        func synchronizeFoldState(_ state: FoldState) {
-            guard state != renderedFoldState else {
-                lineNumberView?.foldState = state
-                return
-            }
-            renderedFoldState = state
-            invalidateFoldLayout()
-        }
-
-        /// Commits a user action to both persistent SwiftUI state and the
-        /// synchronous AppKit rendering state.
-        private func commitFoldState(_ state: FoldState) {
-            // Set this before writing the binding. Its setter can trigger a
-            // synchronous updateNSView, which must already observe the state
-            // that the layout delegate will render.
-            renderedFoldState = state
-            parent.foldState = state
-            invalidateFoldLayout()
-        }
-
-        /// Invalidates glyphs/layout using `renderedFoldState` and redraws.
-        private func invalidateFoldLayout() {
-            guard let sv = scrollView,
-                  let textView = sv.documentView as? NSTextView,
-                  let layoutManager = textView.layoutManager else { return }
-
-            let fullRange = NSRange(location: 0, length: (textView.string as NSString).length)
-            lineNumberView?.foldState = renderedFoldState
-            // Invalidate glyphs so shouldGenerateGlyphs re-evaluates hidden lines,
-            // then invalidate layout so shouldSetLineFragmentRect collapses heights.
-            layoutManager.invalidateGlyphs(forCharacterRange: fullRange, changeInLength: 0, actualCharacterRange: nil)
-            layoutManager.invalidateLayout(forCharacterRange: fullRange, actualCharacterRange: nil)
-            textView.needsDisplay = true
-            lineNumberView?.needsDisplay = true
-            minimapView?.needsDisplay = true
-        }
-
-        // MARK: - NSLayoutManagerDelegate (code folding)
-
-        // swiftlint:disable:next function_parameter_count
-        func layoutManager(
-            _ layoutManager: NSLayoutManager,
-            shouldGenerateGlyphs glyphs: UnsafePointer<CGGlyph>,
-            properties props: UnsafePointer<NSLayoutManager.GlyphProperty>,
-            characterIndexes charIndexes: UnsafePointer<Int>,
-            font aFont: NSFont,
-            forGlyphRange glyphRange: NSRange
-        ) -> Int {
-            guard !renderedFoldState.foldedRanges.isEmpty,
-                  let cache = lineStartsCache else { return 0 }
-
-            let count = glyphRange.length
-            let modifiedProps = UnsafeMutablePointer<NSLayoutManager.GlyphProperty>.allocate(capacity: count)
-            defer { modifiedProps.deallocate() }
-
-            // Single pass: cache hidden state per charIndex to avoid redundant lookups
-            // (adjacent glyphs often share the same charIndex or line).
-            var hasHidden = false
-            var prevCharIndex = -1
-            var prevHidden = false
-
-            for i in 0..<count {
-                let charIndex = charIndexes[i]
-                let isHidden: Bool
-                if charIndex == prevCharIndex {
-                    isHidden = prevHidden
-                } else {
-                    let line = cache.lineNumber(at: charIndex)
-                    isHidden = renderedFoldState.isLineHidden(line)
-                    prevCharIndex = charIndex
-                    prevHidden = isHidden
-                }
-                if isHidden {
-                    modifiedProps[i] = .null
-                    hasHidden = true
-                } else {
-                    modifiedProps[i] = props[i]
-                }
-            }
-
-            guard hasHidden else { return 0 }
-
-            layoutManager.setGlyphs(
-                glyphs, properties: modifiedProps,
-                characterIndexes: charIndexes, font: aFont,
-                forGlyphRange: glyphRange
-            )
-            return count
-        }
-
-        // swiftlint:disable:next function_parameter_count
-        func layoutManager(
-            _ layoutManager: NSLayoutManager,
-            shouldSetLineFragmentRect lineFragmentRect: UnsafeMutablePointer<NSRect>,
-            lineFragmentUsedRect: UnsafeMutablePointer<NSRect>,
-            baselineOffset: UnsafeMutablePointer<CGFloat>,
-            in textContainer: NSTextContainer,
-            forGlyphRange glyphRange: NSRange
-        ) -> Bool {
-            guard !renderedFoldState.foldedRanges.isEmpty else { return false }
-            let charRange = layoutManager.characterRange(forGlyphRange: glyphRange, actualGlyphRange: nil)
-
-            // Use cached line starts for O(log n) lookup
-            guard let cache = lineStartsCache else { return false }
-            let line = cache.lineNumber(at: charRange.location)
-
-            // If this line is hidden (inside a folded region), collapse it to zero height
-            if renderedFoldState.isLineHidden(line) {
-                lineFragmentRect.pointee.size.height = 0
-                lineFragmentUsedRect.pointee.size.height = 0
-                baselineOffset.pointee = 0
-                return true
-            }
-
-            return false
         }
 
         private func reportStateChange() {

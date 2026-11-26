@@ -176,8 +176,6 @@ struct TerminalNativeTabItem: View {
     let onClose: () -> Void
     var onMoveLeading: (() -> Void)?
     var onMoveTrailing: (() -> Void)?
-    var onMoveToPreviousPane: (() -> Void)?
-    var onMoveToNextPane: (() -> Void)?
     var agentResumeActions: [TerminalAgentResumeAction] = []
 
     @State private var isHovering = false
@@ -247,16 +245,6 @@ struct TerminalNativeTabItem: View {
             }
             .disabled(onMoveTrailing == nil)
 
-            Button(Strings.tabMoveToPreviousPane) {
-                onMoveToPreviousPane?()
-            }
-            .disabled(onMoveToPreviousPane == nil)
-
-            Button(Strings.tabMoveToNextPane) {
-                onMoveToNextPane?()
-            }
-            .disabled(onMoveToNextPane == nil)
-
             if !agentResumeActions.isEmpty {
                 Divider()
                 Menu(Strings.agentResumeTask) {
@@ -292,18 +280,6 @@ struct TerminalNativeTabItem: View {
                         }
                         if let onMoveTrailing {
                             Button(Strings.tabMoveTrailing, action: onMoveTrailing)
-                        }
-                        if let onMoveToPreviousPane {
-                            Button(
-                                Strings.tabMoveToPreviousPane,
-                                action: onMoveToPreviousPane
-                            )
-                        }
-                        if let onMoveToNextPane {
-                            Button(
-                                Strings.tabMoveToNextPane,
-                                action: onMoveToNextPane
-                            )
                         }
                     }
                 if canClose {
