@@ -23,19 +23,7 @@ final class AgentTaskResultUITests: PineUITestCase {
         XCTAssertTrue(app.staticTexts["Not accepted"].exists)
     }
 
-    func testPrimaryActionIsKeyboardReachable() throws {
-        // Tab only includes buttons in the focus loop when Full Keyboard
-        // Access is enabled; runners ship with it off, where the walk
-        // below would be a permanent no-op. CI's Navigation shard enables
-        // it (ci.yml); on other hosts skip rather than fail.
-        let keyboardAccess = UserDefaults(suiteName: "com.apple.universalaccess")?
-            .integer(forKey: "AppleKeyboardUIMode") ?? 0
-        guard keyboardAccess > 0 else {
-            throw XCTSkip(
-                "Full Keyboard Access is disabled; Tab cannot enter the button focus loop"
-            )
-        }
-
+    func testPrimaryActionIsKeyboardReachable() {
         launchResult()
         let primary = element("agentTaskResultPrimaryAction")
         XCTAssertTrue(primary.waitForExistence(timeout: 5))
@@ -48,23 +36,22 @@ final class AgentTaskResultUITests: PineUITestCase {
         // AgentAttentionKeyboardUITests uses with its bell click.
         element("agentTaskResultOutcome").click()
 
-        // Walk the focus loop and try to activate with Space. The fixture
-        // window's only control is the primary action, so Space evidence
-        // is proof the loop reaches it. The `hasFocus` snapshot predicate
-        // cannot be relied on in this hosting window: a predicate the
-        // runtime cannot evaluate never matches, which reads as a
-        // permanent "not focused" (see SidebarCollapseFlakeProbeUITests).
+        // The primary action is the card's default button, so Return
+        // activates it once the window is key — no Full Keyboard Access or
+        // Tab focus loop required. A first press can land before key
+        // status settles, so retry a few times. The launch evidence can
+        // only appear through the primary action, so its appearance is
+        // proof the key path works.
         let evidence = element("agentTaskResultLaunchEvidence")
         var activated = false
-        for _ in 0..<16 {
-            app.typeKey(.tab, modifierFlags: [])
-            app.typeKey(" ", modifierFlags: [])
+        for _ in 0..<4 {
+            app.typeKey(.return, modifierFlags: [])
             if evidence.waitForExistence(timeout: 1) {
                 activated = true
                 break
             }
         }
-        XCTAssertTrue(activated, "Tab+Space should reach and activate the primary action")
+        XCTAssertTrue(activated, "Return should reach and activate the primary action")
     }
 
     func testNeedsDecisionProvidesFreeFormReplyAndNoReadyAction() {

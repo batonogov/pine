@@ -446,6 +446,7 @@ struct AgentTaskResultView: View {
         if action.verb == .viewChanges {
             Button(copy(.viewChanges)) { onViewChanges?() }
                 .disabled(onViewChanges == nil)
+                .keyboardShortcut(.defaultAction)
                 .accessibilityIdentifier(AccessibilityID.agentTaskResultPrimaryAction)
         } else if !model.actionSupportsExecution {
             if action.ownership != nil {
@@ -463,6 +464,7 @@ struct AgentTaskResultView: View {
                 if action.phase == .ready {
                     Button(verbText(action.verb)) { onLaunch?() }
                         .disabled(!model.canLaunchAction || onLaunch == nil)
+                        .keyboardShortcut(.defaultAction)
                         .accessibilityIdentifier(AccessibilityID.agentTaskResultPrimaryAction)
                 }
                 Button(copy(.stop)) { onStop?() }
@@ -472,6 +474,7 @@ struct AgentTaskResultView: View {
         } else {
             Button(verbText(action.verb)) { onLaunch?() }
                 .disabled(!model.canLaunchAction || action.phase == .stale || onLaunch == nil)
+                .keyboardShortcut(.defaultAction)
                 .accessibilityIdentifier(AccessibilityID.agentTaskResultPrimaryAction)
         }
     }

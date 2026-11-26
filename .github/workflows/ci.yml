@@ -741,16 +741,6 @@ jobs:
             sleep 5
           done
 
-      # AgentTaskResultUITests walks the focus loop with Tab. macOS only
-      # includes buttons in that loop when keyboard navigation (Full
-      # Keyboard Access) is enabled, and runners ship with it off, so the
-      # Navigation shard enables it before the shard's xcodebuild run.
-      - name: Enable Full Keyboard Access (Navigation shard)
-        if: matrix.shard-name == 'Navigation'
-        run: |
-          defaults write com.apple.universalaccess AppleKeyboardUIMode -int 3
-          killall cfprefsd 2>/dev/null || true
-
       # matrix.test-classes expands to multiple -only-testing: flags via YAML folded scalar (>-)
       - name: UI Tests
         run: |
