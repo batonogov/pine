@@ -41,11 +41,12 @@ final class AgentTaskResultUITests: PineUITestCase {
         XCTAssertTrue(primary.waitForExistence(timeout: 5))
         XCTAssertTrue(primary.isEnabled)
 
-        // On CI the app is not frontmost when the walk starts: the launch
-        // activation happens before the fixture window exists, so key
-        // events route nowhere. Re-activate now: the fixture is the app's
-        // only window, and it keeps key status across re-activation.
-        app.activate()
+        // On CI the launched app is not frontmost when the walk starts, so
+        // key events route nowhere. A mouse click inside the window
+        // activates the app and makes its window key; the outcome section
+        // is neutral (no control action under the click), the same recipe
+        // AgentAttentionKeyboardUITests uses with its bell click.
+        element("agentTaskResultOutcome").click()
 
         // Walk the focus loop and try to activate with Space. The fixture
         // window's only control is the primary action, so Space evidence
