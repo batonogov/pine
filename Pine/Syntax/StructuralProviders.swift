@@ -4,10 +4,10 @@
 //
 //  Issue #1008 — structural intelligence (ADR 0001, #1182).
 //
-//  Defines the normalised, provider-agnostic models and protocols consumed by
-//  bracket matching. These seams let one structural provider own a feature for
-//  a single immutable document revision, with deterministic fallback to the
-//  local calculator.
+//  Defines the normalised, provider-agnostic models and protocols consumed
+//  by bracket matching. These seams let one structural provider own a
+//  feature for a single immutable document revision, with deterministic
+//  fallback to the local calculator.
 //
 //  All types are pure data/protocol definitions with no new dependency.
 //  `nonisolated` opts out of the project-wide MainActor default isolation so
@@ -90,7 +90,7 @@ nonisolated struct BracketSnapshot: Sendable, Equatable {
 
 /// Provider seam for bracket navigation/highlighting. The production provider
 /// remains Pine's bounded local matcher; this seam keeps its coordinates tied
-/// to the same immutable snapshot model as folds.
+/// to the same immutable snapshot model.
 nonisolated protocol BracketProviding: Sendable {
     func canProvide(for snapshot: DocumentSnapshot) -> Bool
     func highlight(for snapshot: BracketSnapshot) -> BracketHighlightResult?

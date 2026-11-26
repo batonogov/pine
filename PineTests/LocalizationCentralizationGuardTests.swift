@@ -63,6 +63,7 @@ struct LocalizationCentralizationGuardTests {
         // Line/column ordinals.
         "diagnostic.lineColumn",
         "diagnostic.line",
+        // "3 of 4" position ratio.
         "quit.summary.message %lld",
         // Label-shaped reload summary: neither count agrees a noun, so
         // every (tasks, keybindings) pair is grammatical through the single

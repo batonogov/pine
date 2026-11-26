@@ -51,8 +51,8 @@ struct PineAppMenuCommandsTests {
             .newFile, .openFile, .openRecentProject, .showAgentInbox,
             .clearRecentProjects, .openFolder,
             .closeTab, .closeWindow, .toggleWordWrap, .toggleComment,
-            .navigateChange, .findInTerminal, .sendToTerminal,
-            .sendTextToTerminal,
+            .navigateChange, .findInTerminal,
+            .sendToTerminal, .sendTextToTerminal,
             .revealInSidebar, .inlineDiffAction, .tabReloadedFromDisk,
             .refreshLineDiffs, .fileRenamed, .fileDeleted
         ]

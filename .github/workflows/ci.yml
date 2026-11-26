@@ -653,12 +653,11 @@ jobs:
               -only-testing:PineUITests/TerminalTests
               -only-testing:PineUITests/TerminalMenuTests
               -only-testing:PineUITests/SessionRestoreTests
-          # Shard 2 — Welcome & Session (33 tests)
+          # Shard 2 — Welcome & Session (32 tests)
           - shard-name: "Welcome & Session"
             test-classes: >-
               -only-testing:PineUITests/WelcomeWindowTests
               -only-testing:PineUITests/NativeFileWindowMenuUITests
-              -only-testing:PineUITests/AgentMenuBarCommandsUITests
           # Shard 3 — Navigation (31 tests; accessibility matrix skips here)
           - shard-name: "Navigation"
             test-classes: >-
@@ -667,19 +666,19 @@ jobs:
               -only-testing:PineUITests/EditorTabNavigationTests
               -only-testing:PineUITests/DiffNavigationUITests
               -only-testing:PineUITests/AccessibilityLocalizationSmokeTests
-              -only-testing:PineUITests/AgentAttentionKeyboardUITests
-              -only-testing:PineUITests/SidebarFolderClickTests
               -only-testing:PineUITests/OpenCodeRealModelJourneyUITests
-          # Shard 4 — Editor Chrome (30 tests)
+              -only-testing:PineUITests/CheckForUpdatesTests
+              -only-testing:PineUITests/InlineRenameAlignmentTests
+          # Shard 4 — Editor Chrome (32 tests)
           - shard-name: "Editor Chrome"
             test-classes: >-
               -only-testing:PineUITests/EditorWindowTests
               -only-testing:PineUITests/ScreenshotTests
               -only-testing:PineUITests/ToggleCommentTests
-              -only-testing:PineUITests/CheckForUpdatesTests
-              -only-testing:PineUITests/LineNumberGutterUITests
               -only-testing:PineUITests/OpenCodeTaskUITests
-          # Shard 5 — Files & Save (32 tests)
+              -only-testing:PineUITests/SidebarFolderClickTests
+              -only-testing:PineUITests/LineNumberGutterUITests
+          # Shard 5 — Files & Save (30 tests, release smoke skips outside release CI)
           - shard-name: "Files & Save"
             test-classes: >-
               -only-testing:PineUITests/EditorSaveFlowTests
@@ -687,27 +686,28 @@ jobs:
               -only-testing:PineUITests/SidebarRenameTests
               -only-testing:PineUITests/SidebarFileOperationsTests
               -only-testing:PineUITests/UserTaskExecutionUITests
-              -only-testing:PineUITests/UnsavedChangesUITests
-          # Shard 6 — Panes & Files (31 tests)
+              -only-testing:PineUITests/ReleaseArtifactSmokeTests
+          # Shard 6 — Panes & Files (32 tests)
           - shard-name: "Panes & Files"
             test-classes: >-
+              -only-testing:PineUITests/SidebarCollapseFlakeProbeUITests
+              -only-testing:PineUITests/HCLFormatOnSaveTests
               -only-testing:PineUITests/CloseProjectMenuTests
               -only-testing:PineUITests/DuplicateTests
               -only-testing:PineUITests/AdjacentTerminalLifecycleTests
               -only-testing:PineUITests/FontSizeTests
               -only-testing:PineUITests/AgentActivityFilterUITests
-              -only-testing:PineUITests/SidebarCollapseFlakeProbeUITests
-              -only-testing:PineUITests/MultiWindowTests
-          # Shard 7 — Security & Layout (30 tests, release smoke skips outside release CI)
+              -only-testing:PineUITests/AgentAttentionKeyboardUITests
+              -only-testing:PineUITests/UnsavedChangesUITests
+              -only-testing:PineUITests/AgentMenuBarCommandsUITests
+          # Shard 7 — Security & Layout (30 tests)
           - shard-name: "Security & Layout"
             test-classes: >-
               -only-testing:PineUITests/AgentInboxToolbarButtonTests
               -only-testing:PineUITests/GitignoreFilterTests
               -only-testing:PineUITests/SymlinkSecurityUITests
-              -only-testing:PineUITests/InlineRenameAlignmentTests
+              -only-testing:PineUITests/MultiWindowTests
               -only-testing:PineUITests/SettingsUITests
-              -only-testing:PineUITests/HCLFormatOnSaveTests
-              -only-testing:PineUITests/ReleaseArtifactSmokeTests
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
 

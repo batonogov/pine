@@ -172,13 +172,6 @@ struct UserConfigurationReloadTests {
               {"command": "showProblems", "key": "cmd+shift+x"},
               {"command": "nextDiagnostic", "key": "cmd+option+down"},
               {"command": "previousDiagnostic", "key": "cmd+option+up"},
-              {"command": "foldCode", "key": "cmd+option+left"},
-              {"command": "unfoldCode", "key": "cmd+option+right"},
-              {"command": "foldAll", "key": "cmd+option+shift+left"},
-              {"command": "unfoldAll", "key": "cmd+option+shift+right"},
-              {"command": "showBranchSwitcher", "key": "cmd+shift+b"},
-              {"command": "toggleMinimap", "key": "cmd+shift+m"},
-              {"command": "toggleBlame", "key": "cmd+control+b"},
               {"command": "commandPalette", "key": "cmd+p"}
             ]
             """,

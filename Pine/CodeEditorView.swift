@@ -11,7 +11,7 @@
 //      highlight, inline diff, auto-indent, comment toggling).
 //    • EditorContainerViews.swift — EditorContainerView, GoToRequest.
 //    • CodeEditorView+Coordinator.swift — the Coordinator class driving
-//      highlighting, and every NS*Delegate callback.
+//      highlighting and every NS*Delegate callback.
 //
 //  Split performed on 2026-04-09 as part of issue #755 — strictly mechanical,
 //  no behavior change, no public API change.

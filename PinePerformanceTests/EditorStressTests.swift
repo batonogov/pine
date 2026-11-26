@@ -305,6 +305,16 @@ final class EditorStressTests: XCTestCase {
         }
     }
 
+    func testThroughputHighlight() {
+        let code = generateSwiftFile(lines: 5000)
+        let textStorage = NSTextStorage(string: code)
+        let font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
+
+        measure {
+            highlighter.highlight(textStorage: textStorage, language: "stresstest", font: font)
+        }
+    }
+
     // MARK: - FileSystemWatcher Stress
 
     func testFileWatcherRapidStartStop() {
