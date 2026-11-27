@@ -1611,6 +1611,152 @@ enum Strings {
         )
         return String(format: format, locale: locale, Int64(count))
     }
+    // MARK: - Task feedback and comparison (#1758)
+
+    enum AgentFeedbackCopy: String, CaseIterable {
+        case composerTitle, noResult, noRoute, aboutRevision, sendsTo
+        case recipientUnreachable, freshnessSuperseded, freshnessHistorical
+        case useLatest, location, locationInText, locationMissing
+        case locationMissingDetail, textPlaceholder, visualUnsupported
+        case attachmentWillSend, attachmentKept, reasonUnsupportedKind
+        case reasonExceedsLimit, reasonInvalid, removeAttachment
+        case previewTitle, previewLocation, previewAttachmentsNone
+        case previewAttachmentsCount, textOnlyNotice, send, sendTextOnly, sending
+        case failureDuplicate, failureNotReady, failureLimit, failureNotDurable
+        case failureUnavailable, stateQueued, stateDelivered, stateFailed
+        case stateCancelled, stateDeliveryUnknown, deliveredAttachmentsOmitted
+        case failureTransport
+        case failureProvider, failedDetail, unknownDetail, retry, compare
+        case resolutionUnresolved, resolutionAddressed, resolutionAccepted
+        case historyTitle, historyPrivacy
+        case comparisonTitle, comparisonReadOnly, comparisonNoTask
+        case comparisonNoFeedback, comparisonNoNewer, comparisonCandidateGone
+        case comparisonPickFeedback, comparisonFeedbackTitle
+        case comparisonFeedbackNotRetained, beforeTitle, afterTitle
+        case sideUncheckedPreview, sideUnavailable, gapCaptureNeverTaken, gapOther
+        case outputCaption, identityTitle, sideIdentity, changesTitle, changesNone
+        case attributionVerified, attributionAgentReported, inspectChange
+
+        var fallback: String {
+            switch self {
+            case .composerTitle: "Give feedback"
+            case .noResult: "There is no result to give feedback on yet."
+            case .noRoute: "Pine can’t send feedback to this agent yet."
+            case .aboutRevision: "About revision %@"
+            case .sendsTo: "Sends to %@"
+            case .recipientUnreachable:
+                "%@ has no live session for this task. Restore the session to send feedback."
+            case .freshnessSuperseded:
+                "A newer result arrived while you were writing. This feedback stays about the "
+                    + "older result you were viewing and is not moved to the newer one."
+            case .freshnessHistorical:
+                "You are commenting on an earlier result. This feedback stays about that result, "
+                    + "not the newer ones."
+            case .useLatest: "Point at the newest result instead"
+            case .location: "Location"
+            case .locationInText: "Described in the text"
+            case .locationMissing: "%@ (no longer exists)"
+            case .locationMissingDetail:
+                "This file no longer exists, so the agent can’t open it. The feedback keeps that "
+                    + "reference and says so in what it sends."
+            case .textPlaceholder: "What should change?"
+            case .visualUnsupported:
+                "Images and selections aren’t supported for this result yet. Feedback is sent as text."
+            case .attachmentWillSend: "%@ · will be sent"
+            case .attachmentKept: "%1$@ · kept in this draft, not sent: %2$@"
+            case .reasonUnsupportedKind: "this agent doesn’t accept it"
+            case .reasonExceedsLimit: "it is larger than this agent accepts"
+            case .reasonInvalid: "it is not a usable attachment"
+            case .removeAttachment: "Remove"
+            case .previewTitle: "Review before sending"
+            case .previewLocation: "Location: %@"
+            case .previewAttachmentsNone: "Attachments: none"
+            case .previewAttachmentsCount: "Attachments: %@"
+            case .textOnlyNotice:
+                "Text only sends your words and the result you commented on. The attachments "
+                    + "listed above stay in this draft."
+            case .send: "Send feedback"
+            case .sendTextOnly: "Send text only"
+            case .sending: "Sending…"
+            case .failureDuplicate: "This feedback was already sent. Change it before sending again."
+            case .failureNotReady:
+                "Feedback can be sent only when the task holds a current Ready result and the "
+                    + "agent is idle."
+            case .failureLimit: "This task has reached its feedback limit."
+            case .failureNotDurable:
+                "Pine could not save this feedback, so nothing was sent. Try again."
+            case .failureUnavailable: "This task can’t take feedback right now."
+            case .stateQueued: "Queued; not yet confirmed"
+            case .stateDelivered: "Delivered"
+            case .stateFailed: "Not delivered"
+            case .stateCancelled: "Cancelled before sending"
+            case .stateDeliveryUnknown: "Delivery unconfirmed"
+            case .failureTransport: "The agent session is unavailable."
+            case .failureProvider: "The agent refused the feedback."
+            case .failedDetail:
+                "Nothing reached the agent. Retry works only in this session; after relaunch "
+                    + "the text is not kept, and the task waits as a pending revision until "
+                    + "the next result settles."
+            case .deliveredAttachmentsOmitted:
+                "Delivered · %@ attachment(s) not sent"
+            case .unknownDetail:
+                "Pine can’t confirm whether the agent received this. It won’t resend "
+                    + "automatically. Check the agent’s conversation before sending it again."
+            case .retry: "Retry"
+            case .compare: "Compare"
+            case .resolutionUnresolved: "Unresolved"
+            case .resolutionAddressed: "Agent says addressed; not verified, not accepted"
+            case .resolutionAccepted: "Accepted by you"
+            case .historyTitle: "Feedback sent for this task"
+            case .historyPrivacy:
+                "Pine keeps which result you commented on, not the text you typed."
+            case .comparisonTitle: "Compare results"
+            case .comparisonReadOnly:
+                "Read-only history. Comparing never runs a command and never restores older code."
+            case .comparisonNoTask: "This task is no longer available."
+            case .comparisonNoFeedback:
+                "Send feedback first. The comparison then shows the result you commented on next "
+                    + "to the current one."
+            case .comparisonNoNewer:
+                "There is no newer result yet. The comparison appears once the task produces a "
+                    + "new result."
+            case .comparisonCandidateGone:
+                "The result you commented on is no longer in this task’s retained history."
+            case .comparisonPickFeedback: "Feedback to compare"
+            case .comparisonFeedbackTitle: "Your feedback"
+            case .comparisonFeedbackNotRetained: "The text of this feedback isn’t kept with the task."
+            case .beforeTitle: "Before · the result you commented on"
+            case .afterTitle: "After · current result"
+            case .sideUncheckedPreview: "Unchecked preview; not Ready"
+            case .sideUnavailable: "No retained evidence"
+            case .gapCaptureNeverTaken:
+                "No output was kept for this revision. Pine doesn’t re-run old code to recreate it."
+            case .gapOther: "No retained output is available for this revision."
+            case .outputCaption: "Output from your last run of this revision · exit code %@"
+            case .identityTitle: "Revision identity"
+            case .sideIdentity: "HEAD %@ · tracked %@ · untracked %@ · ignored %@"
+            case .changesTitle: "Changed since your feedback"
+            case .changesNone: "Pine recorded no per-file changes between these two results."
+            case .attributionVerified: "Verified change"
+            case .attributionAgentReported: "Agent-reported change"
+            case .inspectChange: "Inspect"
+            }
+        }
+    }
+
+    static func agentFeedback(
+        _ value: AgentFeedbackCopy,
+        arguments: [String] = [],
+        locale: Locale = .current
+    ) -> String {
+        let format = localizedString(
+            forKey: "agentFeedback.\(value.rawValue)",
+            fallback: value.fallback,
+            locale: locale
+        )
+        return String(format: format, locale: locale, arguments: arguments)
+    }
+
     // MARK: - Task result (#1725)
 
     enum AgentResultCopy: String, CaseIterable {

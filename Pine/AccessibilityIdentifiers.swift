@@ -311,6 +311,46 @@ nonisolated enum AccessibilityID {
         "verifiedDiffOperation_\(index)"
     }
 
+    // MARK: - Task feedback and comparison (#1758)
+    static let agentFeedbackComposer = "agentFeedbackComposer"
+    static let agentFeedbackBoundRevision = "agentFeedbackBoundRevision"
+    static let agentFeedbackRecipient = "agentFeedbackRecipient"
+    static let agentFeedbackFreshness = "agentFeedbackFreshness"
+    static let agentFeedbackUseLatest = "agentFeedbackUseLatest"
+    static let agentFeedbackLocation = "agentFeedbackLocation"
+    static let agentFeedbackAttachments = "agentFeedbackAttachments"
+    static func agentFeedbackRemoveAttachment(_ id: UUID) -> String {
+        "agentFeedbackRemoveAttachment_\(id.uuidString)"
+    }
+    static let agentFeedbackText = "agentFeedbackText"
+    static let agentFeedbackPreview = "agentFeedbackPreview"
+    static let agentFeedbackSend = "agentFeedbackSend"
+    static let agentFeedbackSendTextOnly = "agentFeedbackSendTextOnly"
+    static let agentFeedbackCancel = "agentFeedbackCancel"
+    static let agentFeedbackFailure = "agentFeedbackFailure"
+    static let agentFeedbackHistory = "agentFeedbackHistory"
+    static func agentFeedbackHistoryRow(_ id: UUID) -> String {
+        "agentFeedbackHistoryRow_\(id.uuidString)"
+    }
+    static func agentFeedbackRetry(_ id: UUID) -> String {
+        "agentFeedbackRetry_\(id.uuidString)"
+    }
+    static func agentFeedbackCompare(_ id: UUID) -> String {
+        "agentFeedbackCompare_\(id.uuidString)"
+    }
+    static let agentFeedbackSendEvidence = "agentFeedbackSendEvidence"
+    static let agentRevisionComparison = "agentRevisionComparison"
+    static let agentRevisionComparisonPicker = "agentRevisionComparisonPicker"
+    static let agentRevisionComparisonFeedback = "agentRevisionComparisonFeedback"
+    static let agentRevisionComparisonBefore = "agentRevisionComparisonBefore"
+    static let agentRevisionComparisonAfter = "agentRevisionComparisonAfter"
+    static let agentRevisionComparisonGap = "agentRevisionComparisonGap"
+    static let agentRevisionComparisonChanges = "agentRevisionComparisonChanges"
+    static let agentRevisionComparisonUnavailable = "agentRevisionComparisonUnavailable"
+    static func agentRevisionComparisonInspect(_ path: String) -> String {
+        "agentRevisionComparisonInspect_\(path)"
+    }
+
     // MARK: - Task result (#1725)
     static let agentTaskResult = "agentTaskResult"
     static let agentTaskResultOutcome = "agentTaskResultOutcome"

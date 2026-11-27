@@ -123,6 +123,11 @@ final class AgentTaskRegistry {
     @ObservationIgnored
     private var resultPreparationExecutions: [UUID: ResultPreparationExecution] = [:]
     @ObservationIgnored
+    private var feedbackDispatchesInFlight = Set<UUID>()
+    /// This session's submissions with their words. Runtime-only, never encoded.
+    @ObservationIgnored
+    private var liveFeedbackSubmissions: [UUID: AgentFeedbackSubmission] = [:]
+    @ObservationIgnored
     private var pendingClaimKeyByToken: [UUID: AgentTaskTerminalKey] = [:]
     @ObservationIgnored
     private var terminationDecisionClaimRemaining: [UUID: Duration] = [:]
@@ -3037,6 +3042,168 @@ final class AgentTaskRegistry {
         return result
     }
 
+    // MARK: - Revision-bound feedback (#1758)
+
+    /// The task's durable, redacted feedback-submission records, oldest first.
+    func feedbackSubmissions(for taskID: UUID) -> [AgentFeedbackSubmissionRecord] {
+        task(for: taskID)?.feedbackSubmissions ?? []
+    }
+
+    /// This session's submissions with their words, oldest first, for surfaces
+    /// that show what was said. Runtime-only like the result drivers: the
+    /// durable record never carries the text, so this is empty after relaunch.
+    func liveFeedbackSubmissions(for taskID: UUID) -> [AgentFeedbackSubmission] {
+        feedbackSubmissions(for: taskID).compactMap { liveFeedbackSubmissions[$0.id] }
+    }
+
+    /// Records one feedback submission and its new-attempt transition durably
+    /// BEFORE anything is dispatched. No launch claim is made: the owning
+    /// session reuses its already-live authenticated channel, exactly like
+    /// `recordResultDecisionReply`. `prepareContinuation` below is the
+    /// terminal-route shape of the same transition; its route and liveness
+    /// guards cannot serve an owned-process task with a live session.
+    ///
+    /// Residual when the flush fails (`.notDurable`): the revision
+    /// transition has already been applied and stays — only the feedback
+    /// record itself is removed, so nothing may later claim a dispatch
+    /// while the task waits as a pending revision. Recovery is the same
+    /// draft sent again: `AgentTaskContinuation.submitRevision` answers
+    /// `.alreadyRecorded` for the identical pending reference, so the retry
+    /// records no second revision.
+    func recordFeedbackSubmission(
+        _ submission: AgentFeedbackSubmission
+    ) async -> Result<AgentFeedbackSubmissionRecord, AgentFeedbackDeliveryAdmission> {
+        guard !isTerminating,
+              let index = taskIndex(for: submission.reference.taskID),
+              tasks[index].lifecycle != .dismissed else {
+            return .failure(.unavailable)
+        }
+        if let duplicate = tasks[index].feedbackSubmissions
+            .duplicateBlockingSubmission(submission.fingerprint) {
+            return .failure(.duplicate(duplicate.id))
+        }
+        guard tasks[index].feedbackSubmissions.count < limits.maxFeedbackRecordsPerTask else {
+            return .failure(.limitReached)
+        }
+        let record = AgentFeedbackSubmissionRecord(submission)
+        guard record.isValid else { return .failure(.invalidRecord) }
+        // Admission uses the latest settled result's recorded identity: the
+        // verification flag is current unless observed drift made it stale.
+        let latestRunID = tasks[index].runs.last?.id
+        let candidate = tasks[index].reviewedSnapshot.flatMap {
+            $0.runID == latestRunID ? $0 : nil
+        }
+        if case .rejected(let reason) = AgentTaskContinuation.submitRevision(
+            &tasks[index],
+            feedbackReference: record.fingerprint,
+            codeState: candidate?.codeState,
+            environment: candidate?.environment,
+            origin: .explicitUser,
+            at: Date()
+        ) {
+            return .failure(.continuationRejected(reason))
+        }
+        let project = tasks[index].project
+        let taskID = tasks[index].id
+        tasks[index].feedbackSubmissions.append(record)
+        markDirty(project)
+        guard await flushPersistence(project: project) == .saved else {
+            // Nothing was dispatched, so no record may later claim a dispatch.
+            if let current = taskIndex(for: taskID),
+               let recordIndex = tasks[current].feedbackSubmissions.firstIndex(where: {
+                   $0.id == record.id
+               }) {
+                tasks[current].feedbackSubmissions.remove(at: recordIndex)
+            }
+            return .failure(.notDurable)
+        }
+        liveFeedbackSubmissions[record.id] = submission
+        return .success(record)
+    }
+
+    /// The one dispatch of a queued submission through the owning session.
+    /// Re-entrant and repeated calls are fenced; only an explicit retry of a
+    /// definite failure re-queues a record. `nil` means nothing was dispatched.
+    @discardableResult
+    func dispatchFeedbackSubmission(
+        _ submission: AgentFeedbackSubmission,
+        dispatch: AgentFeedbackDispatch
+    ) async -> AgentFeedbackDeliveryState? {
+        let taskID = submission.reference.taskID
+        guard let record = feedbackSubmissions(for: taskID).first(where: { $0.id == submission.id }),
+              record.state == .queued, record.fingerprint == submission.fingerprint,
+              feedbackDispatchesInFlight.insert(submission.id).inserted else {
+            return nil
+        }
+        defer { feedbackDispatchesInFlight.remove(submission.id) }
+        let state: AgentFeedbackDeliveryState
+        do {
+            if let receipt = try await dispatch(submission.dispatchRequest),
+               receipt.submissionID == submission.id {
+                state = .delivered(AgentFeedbackDeliveryOutcome(
+                    receipt: receipt,
+                    sentAttachmentIDs: submission.reference.attachments.map(\.id)
+                ))
+            } else {
+                // No acknowledgment, or one for another submission: never a delivery.
+                state = .deliveryUnknown
+            }
+        } catch let failure as AgentFeedbackDeliveryFailure {
+            state = .failed(failure)
+        } catch {
+            // By the dispatch contract a throw means no effect happened.
+            state = .failed(.transportUnavailable)
+        }
+        setFeedbackSubmissionState(state, taskID: taskID, submissionID: submission.id)
+        return state
+    }
+
+    /// An explicit user retry after a definite failure. The idempotency key
+    /// and the recorded transition are unchanged; nothing is re-recorded.
+    /// Delivery-unknown and cancelled records never reach this path.
+    @discardableResult
+    func retryFeedbackSubmission(
+        _ submission: AgentFeedbackSubmission,
+        dispatch: AgentFeedbackDispatch
+    ) async -> AgentFeedbackDeliveryState? {
+        let taskID = submission.reference.taskID
+        guard let record = feedbackSubmissions(for: taskID).first(where: { $0.id == submission.id }),
+              case .failed = record.state else {
+            return nil
+        }
+        setFeedbackSubmissionState(.queued, taskID: taskID, submissionID: submission.id)
+        return await dispatchFeedbackSubmission(submission, dispatch: dispatch)
+    }
+
+    /// Cancels a submission whose dispatch has not started. An in-flight
+    /// dispatch cannot be confirmed stopped, so it is left alone.
+    @discardableResult
+    func cancelFeedbackSubmission(taskID: UUID, submissionID: UUID) -> Bool {
+        guard let record = feedbackSubmissions(for: taskID).first(where: { $0.id == submissionID }),
+              record.state == .queued,
+              !feedbackDispatchesInFlight.contains(submissionID) else {
+            return false
+        }
+        setFeedbackSubmissionState(.cancelled, taskID: taskID, submissionID: submissionID)
+        return true
+    }
+
+    private func setFeedbackSubmissionState(
+        _ state: AgentFeedbackDeliveryState,
+        taskID: UUID,
+        submissionID: UUID
+    ) {
+        guard let index = taskIndex(for: taskID),
+              let recordIndex = tasks[index].feedbackSubmissions.firstIndex(where: {
+                  $0.id == submissionID
+              }),
+              tasks[index].feedbackSubmissions[recordIndex].state != state else {
+            return
+        }
+        tasks[index].feedbackSubmissions[recordIndex].state = state
+        markDirty(tasks[index].project)
+    }
+
     /// Explicit continuation of a Ready or accepted result as a NEW logical
     /// attempt of the SAME durable task (#1756).
     ///
@@ -3742,6 +3909,14 @@ final class AgentTaskRegistry {
             var task = loadedTask
             if normalizeLoadedTask(&task) {
                 stagedInterruptedTaskIDs.insert(task.id)
+                needsNormalizedSave = true
+            }
+            // A feedback dispatch in flight at quit can never be confirmed
+            // after relaunch: it is delivery-unknown, and restoration never
+            // re-dispatches it (#1758).
+            for index in task.feedbackSubmissions.indices
+            where task.feedbackSubmissions[index].state == .queued {
+                task.feedbackSubmissions[index].state = .deliveryUnknown
                 needsNormalizedSave = true
             }
             stagedTasks.append(task)

@@ -183,7 +183,7 @@ nonisolated struct AgentFeedbackDeliveryOutcome: Codable, Hashable, Sendable {
 /// Why a dispatched submission failed. A definite failure means the
 /// provider did not take the feedback, so an explicit retry is safe under
 /// the same idempotency key.
-nonisolated enum AgentFeedbackDeliveryFailure: String, Codable, Sendable {
+nonisolated enum AgentFeedbackDeliveryFailure: String, Codable, Sendable, Error {
     case transportUnavailable
     case providerRejected
     /// The owning adapter or #1756 continuation contract could not accept
@@ -392,7 +392,8 @@ extension AgentFeedbackSubmission {
             submissionID: id,
             taskID: reference.taskID,
             reference: reference,
-            submittedAt: submittedAt
+            submittedAt: submittedAt,
+            anchorResolution: anchorResolutionAtSubmission
         )
     }
 
@@ -431,14 +432,57 @@ nonisolated struct AgentFeedbackDispatchRequest: Hashable, Sendable {
     let taskID: UUID
     let reference: AgentFeedbackReference
     let submittedAt: Date
+    /// How the anchor resolved when the user submitted, so the agent is told
+    /// when a location no longer exists instead of being pointed at it.
+    let anchorResolution: AgentFeedbackAnchorResolution
+
+    init(
+        submissionID: UUID,
+        taskID: UUID,
+        reference: AgentFeedbackReference,
+        submittedAt: Date,
+        anchorResolution: AgentFeedbackAnchorResolution = .resolved
+    ) {
+        self.submissionID = submissionID
+        self.taskID = taskID
+        self.reference = reference
+        self.submittedAt = submittedAt
+        self.anchorResolution = anchorResolution
+    }
+
+    /// The literal instruction the owning adapter submits: the user's words,
+    /// preceded by an explicit location line for a positional anchor.
+    var instruction: String {
+        let location: String?
+        switch reference.anchor {
+        case let .lineRange(path, start, end):
+            location = anchorResolution == .targetMissing
+                ? "About file \(path), which no longer exists:"
+                : "In file \(path), lines \(start)–\(end):"
+        case let .outputLines(command, start, end):
+            location = "In the output of \(command), lines \(start)–\(end):"
+        case let .documentSelection(path, start, length):
+            location = "In document \(path), characters \(start)–\(start + length):"
+        case let .semanticElement(source, identifier):
+            location = "On element \(identifier) (\(source)):"
+        case .capturedRegion, .plainText, .unsupported:
+            location = nil
+        }
+        guard let location else { return reference.userText }
+        return location + "\n" + reference.userText
+    }
 }
 
 /// Seam for #1756's continuation contract: the single dispatch path.
 /// #1758 owns the request and validates the receipt; #1756 owns the
-/// routing. The closure is called exactly once per queued submission; a
-/// `nil` result means no acknowledgment arrived (delivery-unknown), never
-/// a delivery.
-typealias AgentFeedbackDispatch = @Sendable (AgentFeedbackDispatchRequest) async -> AgentFeedbackDeliveryReceipt?
+/// routing. The closure is called exactly once per queued submission: a
+/// receipt acknowledges delivery, `nil` means no acknowledgment arrived
+/// (delivery-unknown, never retried blindly), and a thrown
+/// ``AgentFeedbackDeliveryFailure`` is a definite failure before any effect
+/// (an explicit retry is safe under the same idempotency key).
+typealias AgentFeedbackDispatch = @MainActor (
+    AgentFeedbackDispatchRequest
+) async throws -> AgentFeedbackDeliveryReceipt?
 
 nonisolated enum AgentFeedbackSubmissionFence: Error, Equatable, Sendable {
     /// The reference fails its bounds.
@@ -523,4 +567,87 @@ nonisolated enum AgentFeedbackStateMachine {
         }
         return .success(())
     }
+}
+
+// MARK: - Durable record
+
+/// The durable, redacted form of one feedback submission (#1758).
+///
+/// Identities, fingerprints and states only — the content-free policy of
+/// ``AgentTaskFeedbackRecord``: never the user's text, an attachment label,
+/// a path, or bytes. The exact result revision the feedback was about
+/// therefore survives newer candidates and relaunch; the words do not.
+nonisolated struct AgentFeedbackSubmissionRecord: Codable, Hashable, Sendable {
+    static let currentScheme: UInt8 = 1
+
+    let scheme: UInt8
+    /// The idempotency key of the submission and of its single dispatch.
+    let id: UUID
+    /// The exact result revision the feedback was about. Never re-targeted.
+    let candidate: AgentTaskResultSnapshot
+    /// Content fingerprint of the submitted reference.
+    let fingerprint: String
+    /// Every attachment the draft carried: the sent ones plus the disclosed
+    /// omissions.
+    let attachmentIDs: [UUID]
+    let submittedAt: Date
+    let anchorResolutionAtSubmission: AgentFeedbackAnchorResolution
+    let disclosedOmissions: [AgentFeedbackAttachmentRejection]
+    var state: AgentFeedbackDeliveryState
+    var resolution: AgentFeedbackResolution
+
+    init(_ submission: AgentFeedbackSubmission) {
+        scheme = Self.currentScheme
+        id = submission.id
+        candidate = submission.reference.candidate
+        fingerprint = submission.fingerprint
+        attachmentIDs = Set(
+            submission.reference.attachments.map(\.id)
+                + submission.disclosedOmissions.map(\.attachmentID)
+        ).sorted { $0.uuidString < $1.uuidString }
+        submittedAt = submission.submittedAt
+        anchorResolutionAtSubmission = submission.anchorResolutionAtSubmission
+        disclosedOmissions = submission.disclosedOmissions
+        state = submission.state
+        resolution = submission.resolution
+    }
+
+    var isValid: Bool {
+        guard scheme == Self.currentScheme,
+              AgentTaskMetadataStore.validLowerHex(fingerprint, length: 64),
+              submittedAt.timeIntervalSinceReferenceDate.isFinite,
+              candidate.recordedAt.timeIntervalSinceReferenceDate.isFinite,
+              attachmentIDs.count <= AgentFeedbackReference.maximumAttachments,
+              Set(disclosedOmissions.map(\.attachmentID))
+                .isSubset(of: Set(attachmentIDs)) else {
+            return false
+        }
+        // A delivered state can only acknowledge this record's own dispatch.
+        if case .delivered(let outcome) = state {
+            return outcome.receipt.submissionID == id
+        }
+        return true
+    }
+}
+
+nonisolated extension Array where Element == AgentFeedbackSubmissionRecord {
+    /// The same feedback already queued, delivered, or unconfirmed — the
+    /// rule ``AgentFeedbackStateMachine`` applies to live submissions.
+    func duplicateBlockingSubmission(_ fingerprint: String) -> AgentFeedbackSubmissionRecord? {
+        first { $0.fingerprint == fingerprint && $0.state.isDuplicateBlocking }
+    }
+}
+
+/// Why the registry refused to record a feedback submission.
+nonisolated enum AgentFeedbackDeliveryAdmission: Error, Equatable, Sendable {
+    /// The task is missing, terminating, or dismissed.
+    case unavailable
+    case duplicate(UUID)
+    case limitReached
+    case invalidRecord
+    /// The task holds no current Ready result and no pending revision, the
+    /// agent still has an active turn, or the revision history is full.
+    case continuationRejected(AgentTaskContinuationRejection)
+    /// The durable record did not reach disk. Nothing was dispatched.
+    case notDurable
 }

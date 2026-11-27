@@ -1094,6 +1094,9 @@ nonisolated struct AgentTask: Codable, Equatable, Sendable, Identifiable {
     var checkGrant: AgentTaskCheckGrant?
     var checkExecution: AgentTaskCheckExecution?
     var checkProblem: AgentTaskCheckExecution.Status?
+    // Revision-bound feedback submissions (#1758): redacted identity records
+    // only. Additive: metadata persisted before this field decodes to empty.
+    var feedbackSubmissions: [AgentFeedbackSubmissionRecord]
 
     var reservedAndObservedRunIDs: [UUID] {
         let observed = runs.map(\.id)
@@ -1141,6 +1144,7 @@ nonisolated struct AgentTask: Codable, Equatable, Sendable, Identifiable {
         case checkGrant
         case checkExecution
         case checkProblem
+        case feedbackSubmissions
     }
 
     init(
@@ -1186,6 +1190,7 @@ nonisolated struct AgentTask: Codable, Equatable, Sendable, Identifiable {
         checkGrant = nil
         checkExecution = nil
         checkProblem = nil
+        feedbackSubmissions = []
     }
 
     init(from decoder: Decoder) throws {
@@ -1290,6 +1295,10 @@ nonisolated struct AgentTask: Codable, Equatable, Sendable, Identifiable {
         checkGrant = try values.decodeIfPresent(AgentTaskCheckGrant.self, forKey: .checkGrant)
         checkExecution = try values.decodeIfPresent(AgentTaskCheckExecution.self, forKey: .checkExecution)
         checkProblem = try values.decodeIfPresent(AgentTaskCheckExecution.Status.self, forKey: .checkProblem)
+        feedbackSubmissions = try values.decodeIfPresent(
+            [AgentFeedbackSubmissionRecord].self,
+            forKey: .feedbackSubmissions
+        ) ?? []
     }
 
     func encode(to encoder: Encoder) throws {
@@ -1338,6 +1347,11 @@ nonisolated struct AgentTask: Codable, Equatable, Sendable, Identifiable {
         try values.encodeIfPresent(checkGrant, forKey: .checkGrant)
         try values.encodeIfPresent(checkExecution, forKey: .checkExecution)
         try values.encodeIfPresent(checkProblem, forKey: .checkProblem)
+        // Encoded only when present, so a task without feedback keeps the
+        // documented field set byte-for-byte.
+        if !feedbackSubmissions.isEmpty {
+            try values.encode(feedbackSubmissions, forKey: .feedbackSubmissions)
+        }
     }
 }
 

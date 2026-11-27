@@ -2199,6 +2199,7 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
               task.nativeDispatch.map({ $0.isValid(for: task) }) ?? (task.route.surface != .ownedProcess),
               validateFeedback(task.feedback),
               validateRevisions(task),
+              validateFeedbackSubmissions(task.feedbackSubmissions),
               validateReviewCycle(task.reviewCycle, for: task),
               task.decisionReferences.count <= AgentTaskDecisionReference.maximumCount,
               task.decisionReferences.allSatisfy(\.isValid),
@@ -2342,6 +2343,23 @@ actor AgentTaskMetadataStore: AgentTaskPersisting {
             previousGeneration = record.candidateGeneration
         }
         return task.candidateGeneration == previousGeneration
+    }
+
+    /// Redacted feedback-submission records (#1758): the record's own shape
+    /// and count bounds, plus a validated candidate snapshot. The same
+    /// content-free policy as the feedback records above: a record carrying
+    /// text, a path, or a foreign acknowledgement rejects the whole file.
+    private func validateFeedbackSubmissions(
+        _ records: [AgentFeedbackSubmissionRecord]
+    ) -> Bool {
+        guard records.count <= limits.maxFeedbackRecordsPerTask,
+              Set(records.map(\.id)).count == records.count else {
+            return false
+        }
+        for record in records where !record.isValid || !validateSnapshot(record.candidate) {
+            return false
+        }
+        return true
     }
 
     /// Durable review-cycle journal (#1755): structural invariants via the

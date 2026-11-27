@@ -80,6 +80,65 @@ final class AgentTaskResultUITests: PineUITestCase {
         XCTAssertTrue(app.buttons["Запустить пример"].exists)
     }
 
+    // MARK: - Revision-bound feedback and comparison (#1758)
+
+    func testFeedbackBindsToViewedRevisionAndOffersTextOnly() {
+        launchResultFeedback()
+
+        // The draft names the revision it is about; nothing re-targets it.
+        let bound = element("agentFeedbackBoundRevision")
+        XCTAssertTrue(bound.waitForExistence(timeout: 5))
+        XCTAssertTrue(bound.label.hasPrefix("About revision"), bound.label)
+        XCTAssertTrue(app.staticTexts[
+            "Images and selections aren’t supported for this result yet. Feedback is sent as text."
+        ].exists)
+        // The image is kept in the draft, so the explicit text-only path is
+        // the default button and a whole-draft send is not offered at all.
+        XCTAssertTrue(element("agentFeedbackSendTextOnly").isEnabled)
+        XCTAssertFalse(element("agentFeedbackSend").exists)
+
+        // On CI the launched app is not frontmost when the walk starts, so
+        // key events route nowhere. A click inside the window makes it key;
+        // the title is neutral (no control action under the click).
+        app.staticTexts["Give feedback"].click()
+        let evidence = element("agentFeedbackSendEvidence")
+        var activated = false
+        for _ in 0..<4 {
+            app.typeKey(.return, modifierFlags: [])
+            if evidence.waitForExistence(timeout: 1) {
+                activated = true
+                break
+            }
+        }
+        XCTAssertTrue(activated, "Return should reach the text-only default button")
+        XCTAssertEqual(evidence.value as? String, "text-only")
+    }
+
+    func testComparisonDisclosesUnavailableHistory() {
+        launchResultFeedback()
+
+        let gap = element("agentRevisionComparisonGap")
+        XCTAssertTrue(gap.waitForExistence(timeout: 5))
+        XCTAssertTrue(
+            gap.label.hasPrefix("No output was kept for this revision"), gap.label
+        )
+        XCTAssertTrue(element("agentRevisionComparisonBefore").exists)
+        XCTAssertTrue(element("agentRevisionComparisonAfter").exists)
+        XCTAssertTrue(app.staticTexts[
+            "Read-only history. Comparing never runs a command and never restores older code."
+        ].exists)
+        // Read-only history: nothing in the comparison can run or restore.
+        for title in ["Restore", "Roll back", "Run example", "Send feedback"] {
+            XCTAssertFalse(app.buttons[title].exists, title)
+        }
+    }
+
+    private func launchResultFeedback() {
+        app.launchArguments.append("--ui-test-agent-result-feedback")
+        launchClean()
+        XCTAssertTrue(element("agentFeedbackComposer").waitForExistence(timeout: 10))
+    }
+
     private func launchResult(needsDecision: Bool = false) {
         app.launchArguments.append(
             needsDecision ? "--ui-test-agent-result-decision" : "--ui-test-agent-result"
