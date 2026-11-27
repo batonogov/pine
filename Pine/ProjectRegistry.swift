@@ -4038,6 +4038,25 @@ final class ProjectRegistry {
         saveRecentProjects()
     }
 
+    /// Prunes a recent entry whose directory no longer exists, along with its
+    /// agent-task identity record. Called from the failed open-attempt path
+    /// (#1869), where the admission validator has already statted the root —
+    /// never from launch. An existing directory is never pruned here, so a
+    /// frozen or raced admission cannot drop a healthy entry.
+    func pruneRecentProjectIfMissing(_ url: URL) {
+        var isDir: ObjCBool = false
+        guard !fileManager.fileExists(
+            atPath: url.path,
+            isDirectory: &isDir
+        ) || !isDir.boolValue else { return }
+        // Path comparison, not URL equality: callers may pass a URL with a
+        // trailing separator, and a loaded entry never carries one.
+        let path = url.standardizedFileURL.path
+        recentProjects.removeAll { $0.standardizedFileURL.path == path }
+        removeRecentAgentTaskRecord(for: url)
+        saveRecentProjects()
+    }
+
     /// Removes every recent project from all app surfaces (File menu,
     /// Welcome, and Dock menu) through the registry's single shared source.
     func clearRecentProjects() {
@@ -4083,30 +4102,24 @@ final class ProjectRegistry {
     }
 
     private func loadRecentProjects() {
+        // Launch must not probe the filesystem (#1869): recent roots live in
+        // the user's folders — often ~/Documents — and stat-ing them before
+        // any user action raises the system Documents-access prompt, which an
+        // ad-hoc local build cannot permanently answer. Entries were saved
+        // canonical, so loading them verbatim needs no disk access; a missing
+        // directory stays listed and is validated — and pruned — at open
+        // time, where the failed attempt already owns the honest handling.
         guard let paths = defaults.stringArray(forKey: Self.recentProjectsKey) else {
             return
         }
-        var seen: Set<URL> = []
+        var seen: Set<String> = []
         recentProjects = paths.compactMap { path in
-            let canonical = canonicalProjectURL(
-                URL(fileURLWithPath: path)
-            )
-            var isDir: ObjCBool = false
-            guard fileManager.fileExists(
-                atPath: canonical.path,
-                isDirectory: &isDir
-            ),
-            isDir.boolValue,
-            seen.insert(canonical).inserted else {
-                return nil
-            }
-            return canonical
+            let url = URL(fileURLWithPath: path).standardizedFileURL
+            guard seen.insert(url.path).inserted else { return nil }
+            return url
         }
         recentProjects = Array(recentProjects.prefix(Self.maxRecentProjects))
         loadRecentAgentTaskProjectIdentities()
-        if paths != recentProjects.map(\.path) {
-            saveRecentProjects()
-        }
     }
 
     private func saveRecentProjects() {

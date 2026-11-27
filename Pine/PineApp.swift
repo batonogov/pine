@@ -2141,6 +2141,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
               let canonical = project.rootURL?.standardizedFileURL,
               canonical == requestedURL,
               targetRegistry.openProjects[canonical] === project else {
+            // The admission validator already statted this root, so a vanished
+            // directory is the one failure a dead recent row may clean up
+            // (#1869); the seam keeps every existing directory.
+            targetRegistry.pruneRecentProjectIfMissing(requestedURL)
             return false
         }
         if let existingWindow {
