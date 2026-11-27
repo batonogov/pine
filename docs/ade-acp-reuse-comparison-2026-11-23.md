@@ -299,6 +299,28 @@ fetched 2026-11-24 ([S17]).
   Aptove v0.2.3 remains the recorded probe candidate, not an adopted
   dependency (section 4).
 
+### 7.3 Close-out runs (2026-11-26)
+
+Local observations on the same host as section 7, recorded while closing out
+the #1846 follow-ups. No pin moved: every re-pin requires a fresh dated
+observation, and none of the observed versions is re-pinned here.
+
+- **OpenCode**: the installed `opencode` is `v2.4.1` against pin `v2.4.0`
+  (#1866 re-probe). The re-pin evaluation is owned by #1811; this record
+  only notes the drift.
+- **Kimi 2.7.3 observation (pin stays 2.6.2).** Observed 2026-11-26 on the
+  local machine, not re-pinned: Homebrew `kimi` 2.7.3 printed `2.7.3` and
+  answered a v1 `initialize` as `Kimi Code CLI` 2.7.3 with the same
+  capability matrix (`session/new` was not sent). The pin stays 2.6.2
+  because Pine's executable identity model refuses the installed 2.7.3
+  entry before any version probe: Homebrew links `kimi` to the bundled
+  `dist/main.mjs` shebang entry (a 25,382,638-byte Node script, resolved
+  through `bin/kimi`), above the 1 MiB entry cap of
+  `KimiACPExecutableIdentity` (`capture` fails with `unsupportedBinary`).
+  Re-pinning is blocked on a maintainer decision about that cap plus a
+  fresh dated observation at the then-pinned version; until both land, the
+  Kimi ACP record keeps its 2.6.2 pin and **Detected** status.
+
 ## Source appendix
 
 Fetched **2026-11-23** unless noted:
