@@ -667,7 +667,6 @@ jobs:
               -only-testing:PineUITests/EditorTabNavigationTests
               -only-testing:PineUITests/AccessibilityLocalizationSmokeTests
               -only-testing:PineUITests/OpenCodeRealModelJourneyUITests
-              -only-testing:PineUITests/CheckForUpdatesTests
               -only-testing:PineUITests/InlineRenameAlignmentTests
           # Shard 4 — Editor Chrome (32 tests)
           - shard-name: "Editor Chrome"
@@ -709,6 +708,7 @@ jobs:
               -only-testing:PineUITests/SymlinkSecurityUITests
               -only-testing:PineUITests/MultiWindowTests
               -only-testing:PineUITests/SettingsUITests
+              -only-testing:PineUITests/CheckForUpdatesTests
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
 
