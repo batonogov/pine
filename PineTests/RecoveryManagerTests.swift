@@ -96,13 +96,12 @@ struct RecoveryManagerTests {
     /// It used to be refused. That combination was the trap: this build can
     /// read the buffer — `schemaVersion: 2` from a beta with nothing but
     /// added fields decodes into today's `RecoveryEntry` with real content, a
-    /// real path and a real timestamp — but refused to show it, while the
-    /// launch sweep deleted it after
-    /// `unsupportedSchemaRetentionMultiplier` × the retention window. Work
-    /// the user was never allowed to decide about was destroyed on a schedule
-    /// nobody told them about, in exactly the downgrade scenario that
-    /// constant exists for. Reading it and hiding it are now the same
-    /// decision: if it decodes, it is offered.
+    /// real path and a real timestamp — but used to refuse to show it, while
+    /// the launch sweep deleted it on a schedule. Work the user was never
+    /// allowed to decide about was destroyed on a schedule nobody told them
+    /// about, in exactly the downgrade scenario that stamp exists for.
+    /// Reading it and hiding it are the same decision: if it decodes, it is
+    /// offered — and since #1760 nothing deletes it on a schedule at all.
     @Test func futureSchemaIsOfferedWithoutOverwrite() throws {
         let dir = try makeTempDir()
         defer { cleanup(dir) }
@@ -758,56 +757,6 @@ struct RecoveryManagerTests {
         let entries = manager.pendingRecoveryEntries()
         #expect(entries.count == 1)
         #expect(entries[0].0 == tab.id)
-    }
-
-    // MARK: - Stale cleanup
-
-    @Test func cleanupStaleEntriesRemovesOldFiles() throws {
-        let dir = try makeTempDir()
-        defer { cleanup(dir) }
-        let manager = RecoveryManager(recoveryDirectory: dir)
-
-        // Create a recovery file manually with an old timestamp. The
-        // modification date is set to match: one write sets both in
-        // production, and since #1503 the sweep uses the modification date as
-        // a fast path so it does not have to decode a megabyte of unsaved
-        // buffer on the main thread at launch just to read one date.
-        let writtenAt = Date().addingTimeInterval(-8 * 24 * 3600) // 8 days ago
-        let oldEntry = RecoveryEntry(
-            originalPath: "/tmp/old.swift",
-            content: "old content",
-            timestamp: writtenAt,
-            encoding: .utf8
-        )
-        let oldID = UUID()
-        let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .iso8601
-        let data = try encoder.encode(oldEntry)
-        let filePath = dir.appendingPathComponent("\(oldID.uuidString).json")
-        try data.write(to: filePath, options: .atomic)
-        try FileManager.default.setAttributes(
-            [.modificationDate: writtenAt],
-            ofItemAtPath: filePath.path
-        )
-
-        #expect(manager.pendingRecoveryEntries().count == 1)
-
-        manager.cleanupStaleEntries(olderThan: 7)
-
-        #expect(manager.pendingRecoveryEntries().isEmpty)
-    }
-
-    @Test func cleanupStaleEntriesKeepsRecentFiles() throws {
-        let dir = try makeTempDir()
-        defer { cleanup(dir) }
-        let manager = RecoveryManager(recoveryDirectory: dir)
-
-        let tab = makeDirtyTab()
-        manager.snapshotDirtyTabs([tab])
-
-        manager.cleanupStaleEntries(olderThan: 7)
-
-        #expect(manager.pendingRecoveryEntries().count == 1)
     }
 
     // MARK: - Edge cases

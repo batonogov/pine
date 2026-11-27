@@ -3064,19 +3064,92 @@ enum Strings {
     /// about the attempt that just failed (#1541).
     static let recoveryPartialFailureMessage: LocalizedStringKey =
         "recovery.partialFailureMessage"
-    static let recoveryRecoverAll: LocalizedStringKey = "recovery.recoverAll"
     static let recoveryDiscard: LocalizedStringKey = "recovery.discard"
     static let recoveryLater: LocalizedStringKey = "recovery.later"
+    /// Reopens one row's snapshot as an unsaved tab (#1760).
+    static let recoveryRestore: LocalizedStringKey = "recovery.restore"
+    /// Asks where to write a copy of one row; the snapshot itself stays in
+    /// the list (#1760).
+    static let recoverySaveCopy: LocalizedStringKey = "recovery.saveCopy"
     static let recoveryDiscardHint: LocalizedStringKey = "recovery.discardHint"
 
-    /// How long snapshots nobody decided about are kept.
+    /// What "Later" means now that nothing collects a snapshot by age
+    /// (#1760): the list comes back through File ▸ Recover Unsaved Work…
+    /// whenever the user asks.
+    static let recoveryKeepNotice: LocalizedStringKey = "recovery.keepNotice"
+
+    /// Title of the second-confirmation alert a Discard click has to pass
+    /// before the row's snapshot is deleted (#1760).
     ///
-    /// Returns a `LocalizedStringKey` rather than a resolved `String` because
-    /// it is rendered inside the recovery sheet: only the key form follows the
-    /// SwiftUI environment locale, which is what lets the sheet be measured in
-    /// every supported locale.
-    static func recoveryRetentionNotice(days: Int) -> LocalizedStringKey {
-        "recovery.retentionNotice \(days)"
+    /// Returns a `LocalizedStringKey` rather than a resolved `String` so the
+    /// alert follows the same catalog key as the rest of the sheet.
+    static func recoveryDiscardConfirmTitle(
+        _ fileName: String
+    ) -> LocalizedStringKey {
+        "recovery.discardConfirmTitle \(fileName)"
+    }
+
+    static let recoveryDiscardConfirmMessage: LocalizedStringKey =
+        "recovery.discardConfirmMessage"
+
+    /// Why `Save a Copy…` refused to write `fileName`, as a runtime string
+    /// for the sheet's notice line. The catalog lookup is resolved eagerly:
+    /// these carry the refusal reason the footnote displays.
+    static func recoverySaveCopyOriginalRefused(
+        _ fileName: String
+    ) -> String {
+        String(
+            localized: "recovery.saveCopyOriginalRefused \(fileName)"
+        )
+    }
+
+    static func recoverySaveCopyEncodingFailure(
+        _ fileName: String
+    ) -> String {
+        String(
+            localized: "recovery.saveCopyEncodingFailure \(fileName)"
+        )
+    }
+
+    static func recoverySaveCopyWriteFailure(
+        _ fileName: String,
+        _ reason: String
+    ) -> String {
+        String(
+            localized:
+                "recovery.saveCopyWriteFailure \(fileName) \(reason)"
+        )
+    }
+
+    /// Notice shown when the save panel itself could not be presented (the
+    /// window's dialog coordinator refused it) — the copy did not happen.
+    static func recoverySaveCopyPanelUnavailable(
+        _ fileName: String
+    ) -> String {
+        String(
+            localized: "recovery.saveCopyPanelUnavailable \(fileName)"
+        )
+    }
+
+    /// Notice shown when a confirmed Discard's unlink was refused by the
+    /// filesystem. The row stays in the list, and this is what keeps the
+    /// second press from looking like the sheet ignoring the user (#1760).
+    static func recoveryDiscardRefused(
+        _ fileName: String
+    ) -> String {
+        String(
+            localized: "recovery.discardRefused \(fileName)"
+        )
+    }
+
+    /// File ▸ Recover Unsaved Work… (#1760).
+    static let menuRecoverUnsavedWork: LocalizedStringKey =
+        "menu.recoverUnsavedWork"
+
+    /// Title for the Save a Copy… panel. A plain `String` because
+    /// `NSSavePanel.title` takes one, not a `LocalizedStringKey`.
+    static var recoverySaveCopyPanelTitle: String {
+        String(localized: "recovery.saveCopy")
     }
 
     static var recoveryUntitled: String {

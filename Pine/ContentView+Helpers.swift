@@ -5,6 +5,7 @@
 //  Created by Федор Батоногов on 09.03.2026.
 //
 
+import AppKit
 import SwiftUI
 
 // MARK: - Session restoration & crash recovery
@@ -147,7 +148,18 @@ extension ContentView {
         projectManager.addTerminalTab()
     }
 
-    func recoverTabs() {
+    /// Restores `rows` into the focused editor pane and keeps the sheet
+    /// open on everything left undecided: `keeping` is the rest of the list,
+    /// and anything the restorer refuses is appended to it (#1760).
+    ///
+    /// Restoring the whole list and restoring one row are the same
+    /// machinery — the difference is only which rows go in and what stays.
+    /// The snapshots of rows that fail to restore stay on disk, whatever
+    /// happens to the ones that succeeded.
+    private func restoreRecoveryRows(
+        _ rows: [(UUID, RecoveryEntry)],
+        keeping remainder: [(UUID, RecoveryEntry)]
+    ) {
         // Recover into the focused editor pane (issue #971): the user is
         // looking at the active pane, so recovered tabs should appear there,
         // not in the possibly-orphaned primary TabManager.
@@ -155,7 +167,7 @@ extension ContentView {
             return
         }
         let target = activeTabManager
-        let entries = recoveryEntries
+        let entries = rows
         let context = DialogPresenter.forProject(projectManager)
 
         // Dismiss the SwiftUI recovery sheet before presenting a native
@@ -173,7 +185,7 @@ extension ContentView {
         // close/reopen, `didAnswerRecoveryOffer` is deliberately still false
         // (a restore that never finishes must not silence the offer for good),
         // and both snapshots are still on disk under IDs no open tab owns. A
-        // second Recover All then migrates them again — writing a snapshot
+        // second restore then migrates them again — writing a snapshot
         // under a runtime ID no window owns, which comes back on the next
         // launch as a phantom "recovered file" — and leaves the parked restore
         // to resume against a detached `TabManager`.
@@ -204,49 +216,197 @@ extension ContentView {
             // open buffers back as "recovered" (#1503). Anything the restorer
             // hands back stays on disk for the next launch either way.
             projectManager.markRecoveryOfferAnswered()
-            recoveryEntries = retained
+            recoveryEntries = remainder + retained
             // These are the entries the restorer refused, so the sheet that
             // comes back must say so rather than repeat "Pine found unsaved
             // changes from a previous session" (#1541).
             recoveryRestoreFailed = !retained.isEmpty
-            showRecoveryDialog = !retained.isEmpty
+            showRecoveryDialog = !(remainder + retained).isEmpty
         }
     }
 
-    /// Applies the user's answer to the crash-recovery offer.
+    /// Applies the user's answer to the recovery list (#1760).
     ///
     /// The single place in the app that can delete a displayed snapshot, and
     /// it holds no opinion about which answers delete: it asks the chosen
     /// option what it is allowed to unlink and passes that through.
-    /// ``RecoveryDialogChoice/snapshotsToDelete(from:)`` answers with the
-    /// empty list for everything but Discard, and it is the same value that
-    /// decides the button's role and denies it a keyboard equivalent, so the
-    /// three cannot drift apart. Written as an `if` here it would be one
-    /// plausible "the guard above already handled the other case" edit away
-    /// from #1503 — in a file the coverage gate excludes and no unit test
-    /// loads.
+    /// ``RecoveryDialogChoice/snapshotsToDelete(row:from:)`` answers with the
+    /// empty list for everything but Discard — and, for Discard, with the
+    /// one row the user confirmed twice in the sheet — and it is the same
+    /// value that decides the button's role and denies it a keyboard
+    /// equivalent, so the roles cannot drift apart. Written as an `if` here
+    /// it would be one plausible "the guard above already handled the other
+    /// case" edit away from #1503 — in a file the coverage gate excludes and
+    /// no unit test loads.
     ///
-    /// Escape and ⌘-. resolve to ``RecoveryDialogChoice/later``, which unlinks
-    /// nothing: the clean-quit sweep only removes snapshots belonging to open
-    /// tabs (``RecoveryManager/deleteSnapshotsOfOpenTabs(_:)``), and these
-    /// belong to none, so they stay on disk and the offer returns on the next
-    /// launch (#1503).
+    /// The Discard branch is reached only after the sheet's second
+    /// confirmation: ``RecoveryDialogView`` intercepts the first click and
+    /// reports an answer carrying the row only when the user repeats the
+    /// choice in the alert (#1760).
     ///
-    /// Exhaustive and without a `default`, so a fourth choice is a compile
+    /// Escape, Return and ⌘-. all resolve to ``RecoveryDialogChoice/later``,
+    /// which unlinks nothing: nothing collects a snapshot by age any more,
+    /// so "Later" is safe without a deadline, and File ▸ Recover Unsaved
+    /// Work… brings the list back (#1760).
+    ///
+    /// Exhaustive and without a `default`, so a fifth choice is a compile
     /// error here rather than a silent "close the sheet and delete nothing".
-    func resolveRecoveryOffer(_ choice: RecoveryDialogChoice) {
-        switch choice {
-        case .recoverAll:
-            recoverTabs()
-        case .discard, .later:
-            projectManager.recoveryManager?.deleteSnapshots(
-                withRecoveryIDs: choice.snapshotsToDelete(from: recoveryEntries)
+    func resolveRecoveryOffer(_ answer: RecoveryDialogAnswer) {
+        switch answer.choice {
+        case .restore:
+            guard let row = answer.recoveryID,
+                  let entry = recoveryEntries.first(where: { $0.0 == row })
+            else { return }
+            // A stale Save-a-Copy refusal must not survive into the list a
+            // successful restore brings back.
+            recoveryNotice = nil
+            let remainder = recoveryEntries.filter { $0.0 != row }
+            restoreRecoveryRows([entry], keeping: remainder)
+        case .saveCopy:
+            guard let row = answer.recoveryID,
+                  let entry = recoveryEntries
+                      .first(where: { $0.0 == row })?.1 else { return }
+            presentSaveCopyPanel(for: entry)
+        case .discard:
+            let confirmed = RecoveryDialogChoice.discard.snapshotsToDelete(
+                row: answer.recoveryID,
+                from: recoveryEntries
             )
+            let undeleted = projectManager.recoveryManager?.deleteSnapshots(
+                withRecoveryIDs: confirmed
+            ) ?? []
+            // A Discard the filesystem refused must not be reported as
+            // done: only rows whose snapshot is really gone leave the
+            // list, so the sheet never claims work was destroyed while the
+            // file survives on disk. The refused row stays, and the notice
+            // names it so the next Discard does not look ignored.
+            let refusedName = recoveryEntries
+                .first(where: { $0.0 == answer.recoveryID })
+                .map { RecoveryEntryRow.fileName(from: $0.1) }
+            let deleted = Set(confirmed).subtracting(undeleted)
+            recoveryEntries.removeAll { deleted.contains($0.0) }
+            if undeleted.isEmpty {
+                recoveryNotice = nil
+            } else {
+                recoveryNotice = Strings.recoveryDiscardRefused(
+                    refusedName ?? ""
+                )
+            }
+            guard recoveryEntries.isEmpty else { return }
+            projectManager.markRecoveryOfferAnswered()
+            showRecoveryDialog = false
+            recoveryEntries = []
+            recoveryRestoreFailed = false
+        case .later:
             projectManager.markRecoveryOfferAnswered()
             showRecoveryDialog = false
             recoveryEntries = []
             recoveryRestoreFailed = false
         }
+    }
+
+    /// File ▸ Recover Unsaved Work… (#1760): the recovery list, at any time.
+    ///
+    /// Asks the project, not the answered flag — "Later" silenced the
+    /// launch offer, not the menu, and since nothing collects a snapshot by
+    /// age this is the only way back to work the user put off.
+    func showRecoveryListFromMenu() async {
+        guard !showRecoveryDialog else { return }
+        let entries = await projectManager.recoveryEntriesForMenu()
+        guard !entries.isEmpty else { return }
+        recoveryEntries = entries
+        recoveryRestoreFailed = false
+        recoveryNotice = nil
+        showRecoveryDialog = true
+    }
+
+    /// This project first, then the recent ones (#1760): the candidates an
+    /// untitled snapshot's hashed directory is matched against, so the list
+    /// can name the project an untitled buffer was open in.
+    var recoveryProjectCandidates: [URL] {
+        var candidates: [URL] = []
+        if let root = workspace.rootURL { candidates.append(root) }
+        candidates.append(contentsOf: registry.recentProjects)
+        return candidates
+    }
+
+    /// Writes a copy of one snapshot where the user asks (#1760).
+    ///
+    /// Never deletes anything: the snapshot stays in the list after the
+    /// copy, and ``RecoveryManager/writeCopy(of:to:replacing:)`` refuses the
+    /// original file rather than letting a reflex overwrite the buffer the
+    /// snapshot was taken from. A refusal is shown on the sheet's notice
+    /// line instead of disappearing into a log — including the refusal of
+    /// the panel itself.
+    ///
+    /// The sheet goes down before the panel runs and comes back afterwards:
+    /// the window's dialog coordinator refuses a second sheet on one window
+    /// and aborts the queued request after its watchdog, so running
+    /// `NSSavePanel` under the recovery sheet would never show the panel at
+    /// all. ``restoreRecoveryRows`` dismisses for the same reason, and the
+    /// same in-flight fence keeps the scene's `.task` from rebuilding the
+    /// sheet underneath the panel.
+    private func presentSaveCopyPanel(for entry: RecoveryEntry) {
+        let panel = NSSavePanel()
+        panel.title = Strings.recoverySaveCopyPanelTitle
+        panel.nameFieldStringValue = RecoveryManager.saveCopyFileName(
+            for: entry
+        )
+        panel.directoryURL = RecoveryManager.saveCopyDirectory(for: entry)
+        panel.canCreateDirectories = true
+        let fileName = RecoveryEntryRow.fileName(from: entry)
+        let context = DialogPresenter.forProject(projectManager)
+
+        showRecoveryDialog = false
+        projectManager.beginRecoveryRestore()
+        Task { @MainActor in
+            defer { projectManager.endRecoveryRestore() }
+            let response = await panel.runSheet(on: context)
+            if response == .OK, let destination = panel.url {
+                do {
+                    // The save panel has already asked about replacing an
+                    // existing file at `destination`, so its answer governs
+                    // here.
+                    try await runOnBackground {
+                        try RecoveryManager.writeCopy(
+                            of: entry,
+                            to: destination,
+                            replacing: true
+                        )
+                    }
+                    recoveryNotice = nil
+                } catch {
+                    recoveryNotice = RecoveryDialogView.saveCopyFailure(
+                        error,
+                        fileName: fileName
+                    )
+                }
+            } else if response == .abort {
+                // The panel never appeared — the coordinator refused it.
+                // Silence here would read as "nothing was written" being
+                // fine; the notice line says the copy did not happen.
+                recoveryNotice = Strings.recoverySaveCopyPanelUnavailable(
+                    fileName
+                )
+            }
+            // `.cancel` is the user's own "not now": reopen without
+            // scolding. Either way the list comes back refreshed from disk,
+            // so the row the copy was for is still there — Save a Copy…
+            // never removes it.
+            projectManager.endRecoveryRestore()
+            await reopenRecoveryListAfterPanel()
+        }
+    }
+
+    /// Reopens the recovery list after a modal interlude, with the entries
+    /// refreshed from disk: the sheet is the only place Save a Copy… and
+    /// the row actions exist, so closing it for a panel must not strand the
+    /// user. Does nothing when the disk has nothing left to decide about.
+    private func reopenRecoveryListAfterPanel() async {
+        let entries = await projectManager.recoveryEntriesForMenu()
+        recoveryEntries = entries
+        recoveryRestoreFailed = false
+        showRecoveryDialog = !entries.isEmpty
     }
 
     #if DEBUG

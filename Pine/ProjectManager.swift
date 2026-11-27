@@ -1668,7 +1668,7 @@ final class ProjectManager {
     /// dies with the window while this project manager outlives it (#1503).
     @ObservationIgnored
     private var didAnswerRecoveryOffer = false
-    /// Whether a Recover All is running right now.
+    /// Whether a recovery restore is running right now.
     ///
     /// Restoring is not instantaneous: a snapshot past the large-file
     /// threshold parks the whole restore on a native sheet until the user
@@ -1738,7 +1738,7 @@ final class ProjectManager {
     /// Empty once ``markRecoveryOfferAnswered()`` has been called, even though
     /// the snapshots are still on disk: "Later" means the offer waits for the
     /// next launch, not that it reappears the moment the scene re-runs its
-    /// `.task` (#1503). Empty as well while a Recover All is still running —
+    /// `.task` (#1503). Empty as well while a restore is still running —
     /// see ``isRestoringRecoveryOffer``.
     ///
     /// Snapshots belonging to tabs that are open right now are filtered out,
@@ -1748,7 +1748,7 @@ final class ProjectManager {
     /// `pendingRecoveryEntries()` — which only knows "there is a JSON file
     /// named after a UUID" — hands back the buffers the user is looking at.
     /// Offering those is worse than noise: Discard would delete the crash
-    /// protection of live unsaved work, and Recover All would clone the tab
+    /// protection of live unsaved work, and restoring would clone the tab
     /// and then have `migrateRecoverySnapshot` unlink the original's live
     /// snapshot. A snapshot whose ID is an open tab's ID is by definition not
     /// a crash leftover, so it is not an offer.
@@ -1768,7 +1768,7 @@ final class ProjectManager {
     /// suppression flags and the live-tab filter are main-actor state and stay
     /// here. Both flags are re-read *after* the suspension as well as before
     /// it: the window they are protecting is exactly the one the `await` opens,
-    /// and a Recover All or an answered offer that lands during the read must
+    /// and a restore or an answered offer that lands during the read must
     /// not be overwritten by a listing taken before it.
     func pendingRecoveryOffer() async -> [(UUID, RecoveryEntry)] {
         guard !didAnswerRecoveryOffer, !isRestoringRecoveryOffer,
@@ -1784,11 +1784,37 @@ final class ProjectManager {
         return entries.filter { !live.contains($0.0) }
     }
 
+    /// What File ▸ Recover Unsaved Work… presents (#1760): every snapshot
+    /// that belongs to no open tab, *whatever the launch offer's state is*.
+    ///
+    /// Unlike ``pendingRecoveryOffer()``, this deliberately does not consult
+    /// ``markRecoveryOfferAnswered()``. Answering "Later" must silence the
+    /// scene's `.task`, not the menu: since nothing collects a snapshot by
+    /// age, the menu is the only way back to work the user put off, and an
+    /// answered flag must not make it lie about what is still on disk. The
+    /// live-tab filter is the same as the offer's, for the same reason —
+    /// Discard must never delete the crash protection of a buffer the user
+    /// is looking at. Empty while a restore is in flight
+    /// (``isRestoringRecoveryOffer``), so the menu cannot build a second
+    /// sheet over a parked large-file prompt.
+    ///
+    /// `async` for the same reason as the offer: the listing is unbounded
+    /// file I/O and stays off the main actor.
+    func recoveryEntriesForMenu() async -> [(UUID, RecoveryEntry)] {
+        guard !isRestoringRecoveryOffer, let recoveryManager else {
+            return []
+        }
+        let entries = await recoveryManager.pendingRecoveryEntriesOffMainActor()
+        guard !isRestoringRecoveryOffer else { return [] }
+        let live = Set(allTabs.map(\.id))
+        return entries.filter { !live.contains($0.0) }
+    }
+
     /// Injected suspension inside ``pendingRecoveryOffer()``, between the
     /// listing and the re-read of the suppression flags. No-op in production.
     ///
     /// The re-read exists because the listing suspends and the flags can
-    /// change while it runs — a Recover All starting, or the user answering
+    /// change while it runs — a restore starting, or the user answering
     /// the sheet. Testing that without a seam means racing the scheduler with
     /// `Task.yield()` and hoping the listing has not already finished, which
     /// is exactly how the test covering it failed one run in three (#1518).
@@ -1802,7 +1828,7 @@ final class ProjectManager {
         didAnswerRecoveryOffer = true
     }
 
-    /// Marks a Recover All as being in flight. Paired with
+    /// Marks a recovery restore as being in flight. Paired with
     /// ``endRecoveryRestore()`` from a `defer`, so an early return or a thrown
     /// error cannot leave the offer suppressed. See
     /// ``isRestoringRecoveryOffer``.
@@ -1810,7 +1836,7 @@ final class ProjectManager {
         isRestoringRecoveryOffer = true
     }
 
-    /// Marks the in-flight Recover All as finished, whatever it finished with.
+    /// Marks the in-flight recovery restore as finished, whatever it finished with.
     func endRecoveryRestore() {
         isRestoringRecoveryOffer = false
     }

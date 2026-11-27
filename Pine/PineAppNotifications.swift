@@ -29,6 +29,9 @@ extension Notification.Name {
     /// the projects beside it (File → Close Project).
     static let closeProject = Notification.Name("closeProject")
     static let showCommandPalette = Notification.Name("showCommandPalette")
+    /// Reopens the recovery list of undecided snapshots in the focused
+    /// project (File → Recover Unsaved Work…, #1760).
+    static let showRecoveryList = Notification.Name("showRecoveryList")
     /// userInfo: ["oldURL": URL, "newURL": URL]
     static let fileRenamed = Notification.Name("fileRenamed")
     /// userInfo: ["url": URL]

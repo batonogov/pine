@@ -40,24 +40,25 @@ nonisolated struct RecoveryEntry: Codable, Sendable {
 
     /// Whether a bare schema stamp names a shape this build can read.
     ///
-    /// Split off the instance property so the stale-entry sweep can answer the
-    /// question without a full `init(from:)`. A snapshot written by a newer
-    /// build may have renamed a field or added a required one, in which case
-    /// decoding a whole ``RecoveryEntry`` throws before the version is ever
-    /// read — and the longer retention horizon that exists precisely for that
-    /// file would never be applied to it (#1503).
+    /// Only a signal now. A stamp from a newer build does not hide or delete
+    /// anything: ``RecoveryManager/readEntries(in:)`` logs against it and
+    /// still offers every snapshot that decodes (#1503), and nothing removes
+    /// a snapshot by age any more (#1760).
     static func isSupportedSchema(_ schemaVersion: Int?) -> Bool {
         guard let schemaVersion else { return true }
         return (0...currentSchemaVersion).contains(schemaVersion)
     }
 
-    /// Just the schema stamp, decoded from any JSON object that carries one.
+    /// How large the buffer is, in bytes under its own encoding. Shown in the
+    /// recovery list.
     ///
-    /// Every other field is ignored, so this keeps working across a rename, a
-    /// type change, or a newly required field — the schema changes this
-    /// version stamp exists to survive.
-    struct SchemaProbe: Decodable {
-        let schemaVersion: Int?
+    /// UTF-8 — nearly every buffer — takes the O(1) count of the native
+    /// string. Anything else is re-encoded, which is linear in the buffer,
+    /// and returns the size the file would have on disk.
+    var byteCount: Int {
+        guard encoding != .utf8 else { return content.utf8.count }
+        return content.data(using: encoding, allowLossyConversion: true)?
+            .count ?? content.utf8.count
     }
 
     init(

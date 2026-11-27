@@ -282,8 +282,8 @@ struct DestructiveShortcutPolicyTests {
     //
     //   - a branch that builds its own list of IDs instead of asking the
     //     choice (the exact shape of #1503, reintroduced at the call site);
-    //   - the two branches swapped, so Recover All deletes and Discard
-    //     restores — the condensed match pins `case .recoverAll:` to the call
+    //   - the two branches swapped, so Discard restores and Restore
+    //     deletes — the condensed match pins the Later tail to the resolver
     //     that follows it;
     //   - any of the three statements that *end* the safe branch going
     //     missing. Only the deleting call used to be pinned, which left the
@@ -296,7 +296,7 @@ struct DestructiveShortcutPolicyTests {
     //     disk, own no live tab, and the scene `.task` re-runs on restoration
     //     and on close/reopen. Both are pinned as one condensed sequence, so
     //     they cannot be reordered or separated either;
-    //   - the same three-statement tail after the `await` in `recoverTabs`,
+    //   - the same three-statement tail after the `await` in `restoreRecoveryRows`,
     //     where the consequence is milder (migrated snapshots carry live tab
     //     IDs and are filtered out of the offer) but the shape is identical;
     //   - `checkForRecovery` going back to `pendingRecoveryEntries()`.
@@ -331,55 +331,90 @@ struct DestructiveShortcutPolicyTests {
     /// The resolver's shape: what applying a choice must and must not say.
     private static let resolverRules: [SourceRule] = [
         SourceRule(
-            needle: "withRecoveryIDs: choice.snapshotsToDelete(from: recoveryEntries)",
+            needle: """
+                RecoveryDialogChoice.discard.snapshotsToDelete( \
+                row: answer.recoveryID, from: recoveryEntries \
+                )
+                """,
             mustBePresent: true,
             reason: """
                 The deletion decision has to stay on `RecoveryDialogChoice`, \
                 where it is enumerated by test and shares a value with the \
-                button role and the empty shortcut list (#1503)
+                button role and the empty shortcut list (#1503), and since \
+                #1760 it is scoped to the one row the sheet confirmed twice \
+                (#1760)
                 """
         ),
         SourceRule(
-            needle: "switch choice {",
+            needle: "switch answer.choice {",
             mustBePresent: true,
             reason: """
-                The resolver must switch over the choice, so a fourth case is \
+                The resolver must switch over the choice, so a new case is \
                 a compile error rather than a silent fall-through
                 """
         ),
         SourceRule(
-            needle: "case .recoverAll: recoverTabs() case .discard, .later:",
+            needle: """
+                let undeleted = \
+                projectManager.recoveryManager?.deleteSnapshots( \
+                withRecoveryIDs: confirmed \
+                )
+                """,
             mustBePresent: true,
             reason: """
-                Recover All must run the restorer and nothing else, and the \
-                other two must share the deleting branch. Matched as one \
-                condensed sequence so the branches cannot be swapped or \
-                have anything slipped between them — `case .recoverAll: \
-                showRecoveryDialog = false` is a Recover All that silently \
-                does nothing, and it satisfies every separate substring
+                The deletion result has to be captured: an EACCES or EIO on \
+                the unlink leaves the snapshot on disk, and a discard whose \
+                filesystem work did not happen must not be reported as done \
+                (#1760)
                 """
         ),
         SourceRule(
             needle: """
+                case .later: \
                 projectManager.markRecoveryOfferAnswered() \
-                showRecoveryDialog = false recoveryEntries = []
+                showRecoveryDialog = false recoveryEntries = [] \
+                recoveryRestoreFailed = false
                 """,
             mustBePresent: true,
             reason: """
-                The safe branch must answer the offer, close the sheet and \
-                clear the list — all three, in that order. Only the deleting \
-                call above was pinned, which left the rest of this branch \
-                free to be edited away one statement at a time. Dropping \
-                `showRecoveryDialog = false` leaves the sheet with no way \
-                out at all: a SwiftUI sheet has no system dismissal here, \
-                and Escape resolves to `.later`, which is this branch — so \
-                the only exits become the irreversible Discard and Force \
-                Quit. Dropping `markRecoveryOfferAnswered()` makes "Later" \
-                mean "again in ten seconds": the snapshots are deliberately \
-                still on disk, they belong to no open tab so the live filter \
-                keeps them, and the scene `.task` re-runs on restoration and \
-                on close/reopen. Matched condensed so the three cannot be \
-                separated or reordered (#1503)
+                Later must answer the offer, close the sheet, clear the list \
+                and drop the failure flag — all four, in that order. Only \
+                the deleting call above was pinned, which left the rest of \
+                this branch free to be edited away one statement at a time. \
+                Dropping `showRecoveryDialog = false` leaves the sheet with \
+                no way out at all: a SwiftUI sheet has no system dismissal \
+                here, and every reflex key resolves to `.later`, which is \
+                this branch — so the only exits become the irreversible \
+                Discard and Force Quit. Dropping `markRecoveryOfferAnswered()` \
+                makes "Later" mean "again in ten seconds": the snapshots are \
+                deliberately still on disk, they belong to no open tab so the \
+                live filter keeps them, and the scene `.task` re-runs on \
+                restoration and on close/reopen. Matched condensed so the \
+                four cannot be separated or reordered (#1503)
+                """
+        ),
+        SourceRule(
+            needle: "recoveryEntries.removeAll { deleted.contains($0.0) }",
+            mustBePresent: true,
+            reason: """
+                A confirmed Discard removes only rows whose snapshot is \
+                really gone: the confirmed row leaves the list, a refused \
+                unlink keeps its row on screen, and the rest of the list is \
+                untouched — clearing by the answer alone would present one \
+                confirmation and delete or dismiss every row's snapshot \
+                (#1760)
+                """
+        ),
+        SourceRule(
+            needle: "restoreRecoveryRows([entry], keeping: remainder)",
+            mustBePresent: true,
+            reason: """
+                Restore must run the restorer and nothing else. Matched as \
+                one condensed sequence so the branch cannot be swapped or \
+                have anything slipped between its guard and the restore — \
+                `case .restore: showRecoveryDialog = false` is a Restore \
+                that silently does nothing, and it satisfies every separate \
+                substring (#1760)
                 """
         ),
         SourceRule(
@@ -412,7 +447,8 @@ struct DestructiveShortcutPolicyTests {
         ),
     ]
 
-    /// What starting a Recover All must and must not say.
+    /// What starting a restore — the whole list or one row — must and
+    /// must not say.
     private static let restoreRules: [SourceRule] = [
         SourceRule(
             needle: "projectManager.beginRecoveryRestore() Task { @MainActor in defer { projectManager.endRecoveryRestore() }",
@@ -432,25 +468,24 @@ struct DestructiveShortcutPolicyTests {
         SourceRule(
             needle: """
                 projectManager.markRecoveryOfferAnswered() \
-                recoveryEntries = retained \
+                recoveryEntries = remainder + retained \
                 recoveryRestoreFailed = !retained.isEmpty \
-                showRecoveryDialog = !retained.isEmpty
+                showRecoveryDialog = !(remainder + retained).isEmpty
                 """,
             mustBePresent: true,
             reason: """
-                The same tail as the safe branch of the resolver, and free \
-                for the same reason: nothing else pinned it. It has to run \
-                *after* the `await`, because a restore that never finishes \
-                must not silence the offer, and it has to run in full — \
-                `showRecoveryDialog = !retained.isEmpty` is what puts \
-                anything the restorer handed back in front of the user again \
-                instead of dropping it silently (#1503), and \
-                `recoveryRestoreFailed = !retained.isEmpty` is what makes the \
-                returning sheet say a restore failed rather than repeat the \
-                launch-time question about files it just refused (#1541). \
-                Milder than the resolver's copy (a migrated snapshot carries \
-                a live tab's ID and the offer filters it out) but the same \
-                shape
+                The restore's tail, free for the same reason as the \
+                resolver's: nothing else pinned it. It has to run *after* \
+                the `await`, because a restore that never finishes must not \
+                silence the offer, and it has to run in full — \
+                `showRecoveryDialog = !(remainder + retained).isEmpty` is \
+                what puts anything the restorer handed back — and, since \
+                #1760, everything left undecided when the user restored one \
+                row — in front of the user again instead of dropping it \
+                silently (#1503), and `recoveryRestoreFailed = \
+                !retained.isEmpty` is what makes the returning sheet say a \
+                restore failed rather than repeat the launch-time question \
+                about files it just refused (#1541)
                 """
         ),
         SourceRule(
@@ -560,17 +595,17 @@ struct DestructiveShortcutPolicyTests {
         )
     }
 
-    @Test("A Recover All marks itself in flight for as long as it runs")
-    func recoverTabsMarksTheRestoreInFlight() throws {
+    @Test("A restore marks itself in flight for as long as it runs")
+    func restoreRecoveryRowsMarksTheRestoreInFlight() throws {
         let body = try Self.functionBody(
-            startingAt: "func recoverTabs(",
+            startingAt: "private func restoreRecoveryRows(",
             in: try Self.source(named: "Pine/ContentView+Helpers.swift")
         )
 
         #expect(
             Self.violations(of: Self.restoreRules, in: body).isEmpty,
             """
-            `recoverTabs` no longer fences its in-flight window: \
+            `restoreRecoveryRows` no longer fences its in-flight window: \
             \(Self.violations(of: Self.restoreRules, in: body))
             """
         )
@@ -605,7 +640,7 @@ struct DestructiveShortcutPolicyTests {
                 in: Self.swappedBranchesResolverFixture
             ).isEmpty,
             """
-            A resolver with Recover All and Discard transposed passed the \
+            A resolver with Restore and Discard transposed passed the \
             scan: every required substring is present, only the pairing is \
             wrong, and that is what the condensed sequence exists to pin
             """
@@ -615,7 +650,7 @@ struct DestructiveShortcutPolicyTests {
                 of: Self.resolverRules,
                 in: Self.silentRecoverAllResolverFixture
             ).isEmpty,
-            "A Recover All that closes the sheet and restores nothing passed"
+            "A Restore that closes the sheet and restores nothing passed"
         )
         #expect(
             !Self.violations(
@@ -676,7 +711,7 @@ struct DestructiveShortcutPolicyTests {
                 in: Self.unansweredRestoreFixture
             ).isEmpty,
             """
-            A Recover All that finishes without answering the offer passed \
+            A restore that finishes without answering the offer passed \
             the scan: the restored buffers' snapshots now carry live tab IDs \
             and are filtered out, but anything the restorer handed back is \
             offered again on the next scene task
@@ -688,7 +723,7 @@ struct DestructiveShortcutPolicyTests {
                 in: Self.droppedRetainedRestoreFixture
             ).isEmpty,
             """
-            A Recover All that swallows the entries the restorer could not \
+            A restore that swallows the entries the restorer could not \
             restore passed the scan: the user cancelled a large-file prompt \
             and is never told the buffer is still waiting
             """
@@ -699,7 +734,7 @@ struct DestructiveShortcutPolicyTests {
                 in: Self.silentRestoreFailureFixture
             ).isEmpty,
             """
-            A Recover All that brings the sheet back without recording that \
+            A restore that brings the sheet back without recording that \
             the restore failed passed the scan: the second appearance is \
             then indistinguishable from the first and repeats the \
             launch-time question about files Pine just refused (#1541)
@@ -883,35 +918,74 @@ struct DestructiveShortcutPolicyTests {
     /// The resolver as this branch ships it, so the rules are known to pass
     /// something other than the file they were written against.
     private static let compliantResolverFixture = """
-        func resolveRecoveryOffer(_ choice: RecoveryDialogChoice) {
-            switch choice {
-            case .recoverAll:
-                recoverTabs()
-            case .discard, .later:
-                projectManager.recoveryManager?.deleteSnapshots(
-                    withRecoveryIDs: choice.snapshotsToDelete(from: recoveryEntries)
+        func resolveRecoveryOffer(_ answer: RecoveryDialogAnswer) {
+            switch answer.choice {
+            case .restore:
+                guard let row = answer.recoveryID,
+                      let entry = recoveryEntries.first(where: { $0.0 == row })
+                else { return }
+                let remainder = recoveryEntries.filter { $0.0 != row }
+                restoreRecoveryRows([entry], keeping: remainder)
+            case .saveCopy:
+                presentSaveCopyPanel(forRow: answer.recoveryID)
+            case .discard:
+                let confirmed = RecoveryDialogChoice.discard.snapshotsToDelete(
+                    row: answer.recoveryID, from: recoveryEntries
                 )
+                let undeleted = projectManager.recoveryManager?.deleteSnapshots(
+                    withRecoveryIDs: confirmed
+                ) ?? []
+                let deleted = Set(confirmed).subtracting(undeleted)
+                recoveryEntries.removeAll { deleted.contains($0.0) }
+                guard recoveryEntries.isEmpty else { return }
                 projectManager.markRecoveryOfferAnswered()
                 showRecoveryDialog = false
                 recoveryEntries = []
+                recoveryRestoreFailed = false
+            case .later:
+                projectManager.markRecoveryOfferAnswered()
+                showRecoveryDialog = false
+                recoveryEntries = []
+                recoveryRestoreFailed = false
             }
         }
         """
 
     /// #1503 rewritten one layer down: the choice is still switched on, but
-    /// the branch Escape lands in deletes everything the sheet was showing.
+    /// the branch a reflex lands in deletes everything the sheet was showing.
     private static let laterDeletesResolverFixture = """
-        func resolveRecoveryOffer(_ choice: RecoveryDialogChoice) {
-            switch choice {
-            case .recoverAll:
-                recoverTabs()
-            case .discard, .later:
+        func resolveRecoveryOffer(_ answer: RecoveryDialogAnswer) {
+            switch answer.choice {
+            case .restore:
+                guard let row = answer.recoveryID,
+                      let entry = recoveryEntries.first(where: { $0.0 == row })
+                else { return }
+                let remainder = recoveryEntries.filter { $0.0 != row }
+                restoreRecoveryRows([entry], keeping: remainder)
+            case .saveCopy:
+                presentSaveCopyPanel(forRow: answer.recoveryID)
+            case .discard:
+                let confirmed = RecoveryDialogChoice.discard.snapshotsToDelete(
+                    row: answer.recoveryID, from: recoveryEntries
+                )
+                let undeleted = projectManager.recoveryManager?.deleteSnapshots(
+                    withRecoveryIDs: confirmed
+                ) ?? []
+                let deleted = Set(confirmed).subtracting(undeleted)
+                recoveryEntries.removeAll { deleted.contains($0.0) }
+                guard recoveryEntries.isEmpty else { return }
+                projectManager.markRecoveryOfferAnswered()
+                showRecoveryDialog = false
+                recoveryEntries = []
+                recoveryRestoreFailed = false
+            case .later:
                 projectManager.recoveryManager?.deleteSnapshots(
                     withRecoveryIDs: recoveryEntries.map(\\.0)
                 )
                 projectManager.markRecoveryOfferAnswered()
                 showRecoveryDialog = false
                 recoveryEntries = []
+                recoveryRestoreFailed = false
             }
         }
         """
@@ -919,35 +993,67 @@ struct DestructiveShortcutPolicyTests {
     /// Every required substring present, both branches intact — and wired to
     /// each other the wrong way round.
     private static let swappedBranchesResolverFixture = """
-        func resolveRecoveryOffer(_ choice: RecoveryDialogChoice) {
-            switch choice {
-            case .discard, .later:
-                recoverTabs()
-            case .recoverAll:
-                projectManager.recoveryManager?.deleteSnapshots(
-                    withRecoveryIDs: choice.snapshotsToDelete(from: recoveryEntries)
+        func resolveRecoveryOffer(_ answer: RecoveryDialogAnswer) {
+            switch answer.choice {
+            case .discard:
+                guard let row = answer.recoveryID,
+                      let entry = recoveryEntries.first(where: { $0.0 == row })
+                else { return }
+                let remainder = recoveryEntries.filter { $0.0 != row }
+                restoreRecoveryRows([entry], keeping: remainder)
+            case .later:
+                presentSaveCopyPanel(forRow: answer.recoveryID)
+            case .restore:
+                let confirmed = RecoveryDialogChoice.discard.snapshotsToDelete(
+                    row: answer.recoveryID, from: recoveryEntries
                 )
+                let undeleted = projectManager.recoveryManager?.deleteSnapshots(
+                    withRecoveryIDs: confirmed
+                ) ?? []
+                let deleted = Set(confirmed).subtracting(undeleted)
+                recoveryEntries.removeAll { deleted.contains($0.0) }
+                guard recoveryEntries.isEmpty else { return }
                 projectManager.markRecoveryOfferAnswered()
                 showRecoveryDialog = false
                 recoveryEntries = []
+                recoveryRestoreFailed = false
+            case .saveCopy:
+                projectManager.markRecoveryOfferAnswered()
+                showRecoveryDialog = false
+                recoveryEntries = []
+                recoveryRestoreFailed = false
             }
         }
         """
 
-    /// Recover All that closes the sheet and restores nothing: the user's
+    /// A restore that closes the sheet and restores nothing: the user's
     /// work stays on disk and they are told it was recovered.
     private static let silentRecoverAllResolverFixture = """
-        func resolveRecoveryOffer(_ choice: RecoveryDialogChoice) {
-            switch choice {
-            case .recoverAll:
+        func resolveRecoveryOffer(_ answer: RecoveryDialogAnswer) {
+            switch answer.choice {
+            case .restore:
                 showRecoveryDialog = false
-            case .discard, .later:
-                projectManager.recoveryManager?.deleteSnapshots(
-                    withRecoveryIDs: choice.snapshotsToDelete(from: recoveryEntries)
+            case .saveCopy:
+                showRecoveryDialog = false
+            case .discard:
+                let confirmed = RecoveryDialogChoice.discard.snapshotsToDelete(
+                    row: answer.recoveryID, from: recoveryEntries
                 )
+                let undeleted = projectManager.recoveryManager?.deleteSnapshots(
+                    withRecoveryIDs: confirmed
+                ) ?? []
+                let deleted = Set(confirmed).subtracting(undeleted)
+                recoveryEntries.removeAll { deleted.contains($0.0) }
+                guard recoveryEntries.isEmpty else { return }
                 projectManager.markRecoveryOfferAnswered()
                 showRecoveryDialog = false
                 recoveryEntries = []
+                recoveryRestoreFailed = false
+            case .later:
+                projectManager.markRecoveryOfferAnswered()
+                showRecoveryDialog = false
+                recoveryEntries = []
+                recoveryRestoreFailed = false
             }
         }
         """
@@ -956,7 +1062,10 @@ struct DestructiveShortcutPolicyTests {
     /// them, comment block included — which is also what proves `condense`
     /// does not let a comment split a pinned sequence.
     private static let compliantRestoreFixture = """
-        func recoverTabs() {
+        private func restoreRecoveryRows(
+            _ rows: [(UUID, RecoveryEntry)],
+            keeping remainder: [(UUID, RecoveryEntry)]
+        ) {
             projectManager.beginRecoveryRestore()
             Task { @MainActor in
                 defer { projectManager.endRecoveryRestore() }
@@ -968,16 +1077,19 @@ struct DestructiveShortcutPolicyTests {
                 // Answered once the restore has actually finished, not
                 // before the `await`.
                 projectManager.markRecoveryOfferAnswered()
-                recoveryEntries = retained
+                recoveryEntries = remainder + retained
                 recoveryRestoreFailed = !retained.isEmpty
-                showRecoveryDialog = !retained.isEmpty
+                showRecoveryDialog = !(remainder + retained).isEmpty
             }
         }
         """
 
     /// A restore that finishes without recording that the offer was answered.
     private static let unansweredRestoreFixture = """
-        func recoverTabs() {
+        private func restoreRecoveryRows(
+            _ rows: [(UUID, RecoveryEntry)],
+            keeping remainder: [(UUID, RecoveryEntry)]
+        ) {
             projectManager.beginRecoveryRestore()
             Task { @MainActor in
                 defer { projectManager.endRecoveryRestore() }
@@ -986,15 +1098,18 @@ struct DestructiveShortcutPolicyTests {
                     in: target,
                     context: context
                 )
-                recoveryEntries = retained
-                showRecoveryDialog = !retained.isEmpty
+                recoveryEntries = remainder + retained
+                showRecoveryDialog = !(remainder + retained).isEmpty
             }
         }
         """
 
     /// A restore that throws away whatever the restorer could not restore.
     private static let droppedRetainedRestoreFixture = """
-        func recoverTabs() {
+        private func restoreRecoveryRows(
+            _ rows: [(UUID, RecoveryEntry)],
+            keeping remainder: [(UUID, RecoveryEntry)]
+        ) {
             projectManager.beginRecoveryRestore()
             Task { @MainActor in
                 defer { projectManager.endRecoveryRestore() }
@@ -1015,7 +1130,10 @@ struct DestructiveShortcutPolicyTests {
     /// that stops the returning sheet from repeating "Pine found unsaved
     /// changes from a previous session" about files it just refused (#1541).
     private static let silentRestoreFailureFixture = """
-        func recoverTabs() {
+        private func restoreRecoveryRows(
+            _ rows: [(UUID, RecoveryEntry)],
+            keeping remainder: [(UUID, RecoveryEntry)]
+        ) {
             projectManager.beginRecoveryRestore()
             Task { @MainActor in
                 defer { projectManager.endRecoveryRestore() }
@@ -1025,8 +1143,8 @@ struct DestructiveShortcutPolicyTests {
                     context: context
                 )
                 projectManager.markRecoveryOfferAnswered()
-                recoveryEntries = retained
-                showRecoveryDialog = !retained.isEmpty
+                recoveryEntries = remainder + retained
+                showRecoveryDialog = !(remainder + retained).isEmpty
             }
         }
         """
@@ -1034,16 +1152,24 @@ struct DestructiveShortcutPolicyTests {
     /// The safe branch with `showRecoveryDialog = false` taken out. Every
     /// previously pinned substring is still present — the deleting call, the
     /// switch, the branch pairing — and the sheet can no longer be closed at
-    /// all: Escape resolves to `.later`, which is this branch.
+    /// all: every reflex key resolves to `.later`, which is this branch.
     private static let unclosableSheetResolverFixture = """
-        func resolveRecoveryOffer(_ choice: RecoveryDialogChoice) {
-            switch choice {
-            case .recoverAll:
-                recoverTabs()
-            case .discard, .later:
-                projectManager.recoveryManager?.deleteSnapshots(
-                    withRecoveryIDs: choice.snapshotsToDelete(from: recoveryEntries)
+        func resolveRecoveryOffer(_ answer: RecoveryDialogAnswer) {
+            switch answer.choice {
+            case .restore:
+                restoreRecoveryRows([entry], keeping: remainder)
+            case .discard:
+                let confirmed = RecoveryDialogChoice.discard.snapshotsToDelete(
+                    row: answer.recoveryID, from: recoveryEntries
                 )
+                let undeleted = projectManager.recoveryManager?.deleteSnapshots(
+                    withRecoveryIDs: confirmed
+                ) ?? []
+                let deleted = Set(confirmed).subtracting(undeleted)
+                recoveryEntries.removeAll { deleted.contains($0.0) }
+                projectManager.markRecoveryOfferAnswered()
+                recoveryEntries = []
+            case .later:
                 projectManager.markRecoveryOfferAnswered()
                 recoveryEntries = []
             }
@@ -1055,14 +1181,22 @@ struct DestructiveShortcutPolicyTests {
     /// — scene restoration, or the window closed and reopened — offers them
     /// straight back.
     private static let unansweredOfferResolverFixture = """
-        func resolveRecoveryOffer(_ choice: RecoveryDialogChoice) {
-            switch choice {
-            case .recoverAll:
-                recoverTabs()
-            case .discard, .later:
-                projectManager.recoveryManager?.deleteSnapshots(
-                    withRecoveryIDs: choice.snapshotsToDelete(from: recoveryEntries)
+        func resolveRecoveryOffer(_ answer: RecoveryDialogAnswer) {
+            switch answer.choice {
+            case .restore:
+                restoreRecoveryRows([entry], keeping: remainder)
+            case .discard:
+                let confirmed = RecoveryDialogChoice.discard.snapshotsToDelete(
+                    row: answer.recoveryID, from: recoveryEntries
                 )
+                let undeleted = projectManager.recoveryManager?.deleteSnapshots(
+                    withRecoveryIDs: confirmed
+                ) ?? []
+                let deleted = Set(confirmed).subtracting(undeleted)
+                recoveryEntries.removeAll { deleted.contains($0.0) }
+                showRecoveryDialog = false
+                recoveryEntries = []
+            case .later:
                 showRecoveryDialog = false
                 recoveryEntries = []
             }
@@ -1269,7 +1403,7 @@ struct DestructiveShortcutPolicyTests {
     /// spaces into the middle of a condensed sequence. Every multi-statement
     /// needle in this file would then depend on whether anyone had written a
     /// comment inside the run it pins — a failure with nothing wrong behind
-    /// it. `recoverTabs` has eight such lines between its `await` and the tail
+    /// it. `restoreRecoveryRows` has eight such lines between its `await` and the tail
     /// that follows it.
     private static func condense(_ window: String) -> String {
         window

@@ -7,11 +7,22 @@ import CommonCrypto
 import Foundation
 import os
 
+/// What `Save a Copy…` refuses, each with its own sentence for the user.
+nonisolated enum RecoveryCopyFailure: Error, Equatable {
+    /// The chosen destination is the file the snapshot was taken from.
+    case originalFile
+    /// The text cannot be written back in the snapshot's own encoding.
+    case cannotEncode
+}
+
 /// Manages crash recovery snapshots of unsaved editor content.
 ///
 /// Periodically writes dirty tab content to a recovery directory so it can
 /// be restored after a crash, force quit, or power loss.
 /// Each project gets its own subdirectory to avoid mixing recovery files.
+///
+/// A snapshot nobody has decided about is never collected by age (#1760):
+/// it stays in the recovery list until the user restores or discards it.
 @MainActor
 final class RecoveryManager {
 
@@ -37,44 +48,6 @@ final class RecoveryManager {
 
     /// Debounce delay for edit-triggered snapshots.
     nonisolated static let debounceDelay: TimeInterval = 5
-
-    /// How long a snapshot nobody has decided about survives before the
-    /// launch-time sweep collects it.
-    ///
-    /// The recovery sheet prints this number, so closing the sheet without
-    /// choosing is a bounded promise the user can read rather than a silent
-    /// expiry on the eighth day (#1503). Both the sweep in
-    /// `AppDelegate.applicationDidFinishLaunching` and the sheet's footnote
-    /// read it from here so the two cannot drift.
-    nonisolated static let staleEntryRetentionDays = 7
-
-    /// Multiple of ``staleEntryRetentionDays`` granted to a snapshot written
-    /// by a schema this build cannot read.
-    ///
-    /// The normal horizon bounds files the user was *shown* and chose to leave
-    /// alone. A snapshot from a newer build — a beta wrote `schemaVersion: 2`
-    /// and they went back to a release — has had no such decision made about
-    /// it: either it decoded and was offered on a build that will be replaced
-    /// again by the newer one, or it did not decode and could not be shown at
-    /// all. Long enough to survive a downgrade and a return, finite so a
-    /// permanently orphaned file still leaves and its project subdirectory can
-    /// be collected.
-    ///
-    /// This buys time; it does not decide visibility.
-    /// ``readEntries(in:)`` offers every snapshot that decodes, whatever its
-    /// stamp says, precisely so no path can delete a buffer this build could
-    /// read but refused to show (#1503).
-    nonisolated static let unsupportedSchemaRetentionMultiplier = 4
-
-    /// How far ahead of the sweep's own clock a date may sit before it is
-    /// treated as a broken clock rather than as jitter.
-    ///
-    /// NTP steps, a network volume with its own idea of the time, and a
-    /// snapshot written in the same second the sweep runs all produce dates a
-    /// hair in the future. Re-anchoring on a zero tolerance would rewrite the
-    /// modification date of a file the user is actively editing, and that date
-    /// is the only record of when an undecodable snapshot was written.
-    nonisolated static let futureDateTolerance: TimeInterval = 60
 
     private let recoveryDirectory: URL
     private let faultInjector: PersistenceFaultInjector
@@ -131,17 +104,29 @@ final class RecoveryManager {
     /// Used by the recovery sheet's Discard action so successfully migrated
     /// runtime snapshots in the same project directory remain intact.
     ///
+    /// - Returns: the IDs whose file could not be unlinked. A missing file
+    /// counts as removed; EACCES, EIO and friends do not. The caller must
+    /// keep these rows in the recovery list: a discard the filesystem
+    /// refused must not be reported as done, or the sheet claims work was
+    /// destroyed while the file survives on disk (#1760).
+    ///
     /// Named apart from ``deleteSnapshotsOfOpenTabs(_:)`` on purpose. The two
     /// used to differ by one argument label while differing by their entire
     /// blast radius: this one takes crash IDs the user just looked at, that
     /// one takes live tab IDs and also collects whatever crash file each tab
     /// superseded. Passing one's argument to the other is a silent data-loss
     /// bug, so there is no shared base name to autocomplete into.
-    func deleteSnapshots(withRecoveryIDs recoveryIDs: [UUID]) {
-        for recoveryID in Set(recoveryIDs)
-        where removeRecoveryFileOnly(for: recoveryID) {
-            forgetSupersededReference(to: recoveryID)
+    @discardableResult
+    func deleteSnapshots(withRecoveryIDs recoveryIDs: [UUID]) -> Set<UUID> {
+        var undeleted: Set<UUID> = []
+        for recoveryID in Set(recoveryIDs) {
+            if removeRecoveryFileOnly(for: recoveryID) {
+                forgetSupersededReference(to: recoveryID)
+            } else {
+                undeleted.insert(recoveryID)
+            }
         }
+        return undeleted
     }
 
     /// Removes the snapshots this session is answerable for: one per open tab,
@@ -158,9 +143,8 @@ final class RecoveryManager {
     /// cannot veto it because recovery snapshots are not tabs (#1503).
     ///
     /// The one thing this leaves behind is a snapshot for a tab closed earlier
-    /// in the session whose unlink failed. That is collected by
-    /// ``cleanupAllStaleEntries(olderThan:)`` — offering a stale file once is
-    /// recoverable, deleting an undecided one is not.
+    /// in the session whose unlink failed. Nothing collects it by age
+    /// (#1760): it comes back in the recovery list, where the user decides.
     func deleteSnapshotsOfOpenTabs(_ tabIDs: [UUID]) {
         for tabID in Set(tabIDs) {
             deleteRecoveryFile(for: tabID)
@@ -186,15 +170,14 @@ final class RecoveryManager {
     /// the directory, and a snapshot is a whole unsaved buffer — nothing
     /// bounds its size, because ``snapshotDirtyTabs(_:)`` selects on
     /// `isDirty && kind == .text` and the 1 MB large-file threshold is not
-    /// applied to it. Before this branch the directory was emptied on every
-    /// clean quit, so the cost was paid at most once, on the launch after a
-    /// crash. Now snapshots are held for ``staleEntryRetentionDays`` after a
-    /// "Later", and the discovery runs from a scene `.task` that SwiftUI
-    /// re-runs on scene restoration and on closing and reopening the window:
-    /// three 40 MB buffers left for later would otherwise block the main
-    /// thread on ~120 MB of reading and decoding before the window draws,
-    /// every launch and every reopen, for a week (AGENTS.md: never block the
-    /// main thread with file I/O).
+    /// applied to it. The directory used to be emptied on every clean quit,
+    /// so the cost was paid at most once, on the launch after a crash. Now
+    /// snapshots are held until the user decides (#1760), and the discovery
+    /// runs from a scene `.task` that SwiftUI re-runs on scene restoration
+    /// and on closing and reopening the window: three 40 MB buffers left for
+    /// later would otherwise block the main thread on ~120 MB of reading and
+    /// decoding before the window draws, on every launch and every reopen
+    /// (AGENTS.md: never block the main thread with file I/O).
     ///
     /// Only the listing moves. The decision about what is worth offering stays
     /// on the main actor in ``ProjectManager/pendingRecoveryOffer()``, which
@@ -217,14 +200,13 @@ final class RecoveryManager {
     /// combination is a trap: a purely additive `schemaVersion: 2` written by
     /// a beta decodes into today's `RecoveryEntry` with real `content`, a real
     /// `originalPath` and a real `timestamp`, and the release build the user
-    /// went back to would refuse to show it — while
-    /// ``cleanupStaleEntries(olderThan:)`` deleted it after
-    /// ``unsupportedSchemaRetentionMultiplier`` × the window. A build that can
-    /// read a buffer must not both hide it and eventually destroy it; the
-    /// whole point of this branch is that nothing deletes work the user was
-    /// never given the chance to decide about (#1503). ``RecoveryEntry/hasSupportedSchema``
-    /// stays as a signal — it is logged here, and it still buys the longer
-    /// retention horizon in the sweep — but it no longer suppresses the offer.
+    /// went back to would refuse to show it while the launch sweep deleted it
+    /// on a schedule. A build that can read a buffer must not both hide it
+    /// and eventually destroy it; nothing deletes work the user was never
+    /// given the chance to decide about (#1503), and since #1760 nothing
+    /// deletes a snapshot on a schedule at all. ``RecoveryEntry/hasSupportedSchema``
+    /// stays as a signal — it is logged here — but it does not suppress the
+    /// offer.
     ///
     /// What cannot be *decoded* is still not offered, and that is not the same
     /// thing: a file this build cannot turn into content is not content it
@@ -417,257 +399,118 @@ final class RecoveryManager {
         return files.contains { $0.pathExtension == "json" }
     }
 
-    // MARK: - Stale cleanup
+    // MARK: - Save a copy (#1760)
 
-    /// Removes recovery files with timestamps older than the given number of days
-    /// across *all* project subdirectories, then collects the subdirectories
-    /// that hold nothing worth keeping.
+    /// Name the save panel offers: `main.swift` becomes
+    /// `main.recovered.swift`, an untitled buffer `Untitled.recovered.txt`.
     ///
-    /// Collecting the per-project subdirectory is load-bearing since #1503:
-    /// the clean-quit sweep no longer empties a project's directory, so a
-    /// directory is now expected to outlive the project's session and the only
-    /// thing that ever removes it is this pass.
-    static func cleanupAllStaleEntries(olderThan days: Int) {
-        cleanupAllStaleEntries(in: rootDirectory, olderThan: days)
+    /// Never the original name. The panel opens in the file's own folder, so
+    /// the original name would make its default answer "replace the file I
+    /// was editing".
+    static func saveCopyFileName(for entry: RecoveryEntry) -> String {
+        guard !entry.originalPath.isEmpty else {
+            return "\(entry.untitledName ?? Strings.recoveryUntitled).recovered.txt"
+        }
+        let name = (entry.originalPath as NSString).lastPathComponent
+        let ext = (name as NSString).pathExtension
+        guard !ext.isEmpty else { return "\(name).recovered" }
+        return (name as NSString).deletingPathExtension + ".recovered." + ext
     }
 
-    /// The body of ``cleanupAllStaleEntries(olderThan:)``, against an explicit
-    /// root so it can be exercised without writing into the real Application
-    /// Support directory.
-    static func cleanupAllStaleEntries(in root: URL, olderThan days: Int) {
-        let fm = FileManager.default
-        let subdirs: [URL]
-        do {
-            subdirs = try fm.contentsOfDirectory(
-                at: root,
-                includingPropertiesForKeys: [.isDirectoryKey]
-            )
-        } catch {
-            logger.warning("Cannot list recovery root directory: \(error)")
-            return
+    /// Folder the save panel opens in: the file's own, while it still exists,
+    /// otherwise Documents. An untitled buffer has no folder and starts in
+    /// Documents.
+    nonisolated static func saveCopyDirectory(for entry: RecoveryEntry) -> URL {
+        guard !entry.originalPath.isEmpty else { return documentsDirectory }
+        let parent = URL(fileURLWithPath: entry.originalPath)
+            .deletingLastPathComponent()
+        var isDirectory: ObjCBool = false
+        if FileManager.default.fileExists(
+            atPath: parent.path,
+            isDirectory: &isDirectory
+        ), isDirectory.boolValue {
+            return parent
         }
-
-        for subdir in subdirs {
-            // `.isDirectoryKey` was prefetched here and then never consulted,
-            // so a stray regular file at the root — `.DS_Store` above all —
-            // was handed to a `RecoveryManager` as if it were a project
-            // directory, and every listing of it failed and logged.
-            let isDirectory = (try? subdir.resourceValues(
-                forKeys: [.isDirectoryKey]
-            ).isDirectory) ?? false
-            guard isDirectory else { continue }
-
-            let manager = RecoveryManager(recoveryDirectory: subdir)
-            manager.cleanupStaleEntries(olderThan: days)
-
-            do {
-                let remaining = try fm.contentsOfDirectory(atPath: subdir.path)
-                // Not `remaining.isEmpty`. Snapshots are written with
-                // `Data.write(options: .atomic)`, which stages a hidden
-                // temporary beside the destination; a crash between the
-                // staging and the rename leaves that temporary behind forever.
-                // It is not a `.json`, so the sweep above cannot see it — but
-                // an emptiness test does, and one orphaned temporary used to
-                // pin its project's directory open for the life of the
-                // machine. `.DS_Store` did the same. Anything hidden here is
-                // leftovers by construction: this directory holds nothing but
-                // `<uuid>.json` files that Pine itself writes.
-                guard remaining.allSatisfy({ $0.hasPrefix(".") }) else {
-                    continue
-                }
-                do {
-                    // Recursive, because the leftovers go with it.
-                    try fm.removeItem(at: subdir)
-                } catch {
-                    logger.error("Failed to remove empty recovery subdir: \(error)")
-                }
-            } catch {
-                logger.warning("Cannot list recovery subdir \(subdir.lastPathComponent): \(error)")
-            }
-        }
+        return documentsDirectory
     }
 
-    /// Removes recovery files older than the given number of days.
-    ///
-    /// **Stats before it reads.** This runs on the main actor from
-    /// `applicationDidFinishLaunching`, and since #1503 the directory
-    /// deliberately *keeps* crash payload nobody has decided about instead of
-    /// being emptied on every clean quit — so the cost of opening every file
-    /// to read one `Date` now scales with how much unrecovered work the user
-    /// is holding, and a snapshot carries a whole unsaved buffer (Pine's own
-    /// large-file threshold is 1MB, and nothing caps a snapshot at it).
-    /// `AGENTS.md` forbids blocking the main thread with file I/O. A file
-    /// whose modification date is inside the window can only be kept, so one
-    /// `stat` settles it, and in steady state — where everything on disk is
-    /// younger than the window — nothing is read at all. The date is read
-    /// through `includingPropertiesForKeys:` so the values are already
-    /// prefetched by the directory enumeration.
-    ///
-    /// **Which date decides.** The entry's own `timestamp` is the authority
-    /// whenever it is usable. The filesystem date only stands in for a file
-    /// that has no usable one, and it is never a second opinion that can
-    /// overrule a timestamp *into* a deletion: taking the earlier of the two
-    /// would let anything that moves an mtime backwards — a sync client, a
-    /// restore tool, `touch -t`, a volume with coarser timestamps — delete
-    /// undecided work on the filesystem's word against the file's own.
-    ///
-    /// **Three kinds of file used to be immortal here.** Each was `continue`d
-    /// past without ever being reconsidered, so its project's subdirectory
-    /// could never be collected by ``cleanupAllStaleEntries(olderThan:)`` long
-    /// after the project itself was gone, and it logged an error on every
-    /// single launch:
-    ///
-    /// - **Undecodable.** Truncated by the crash that was happening while it
-    ///   was being written, or corrupted since. It ages out on the
-    ///   filesystem's own evidence at the normal horizon. This does not weaken
-    ///   "never delete a snapshot nobody has decided about": a file that
-    ///   cannot be decoded is not content that could have been offered, so
-    ///   there was never a decision to make. *Unreadable* is a different
-    ///   thing and is not treated as evidence of age at all — see below.
-    /// - **A schema this build does not support.** This one *is* the user's
-    ///   work, so it gets ``unsupportedSchemaRetentionMultiplier`` times the
-    ///   horizon rather than the same one — see that constant. The version
-    ///   stamp is probed on its own, before the full decode, because a schema
-    ///   change is exactly what makes `RecoveryEntry.init(from:)` throw before
-    ///   the version is ever read; deciding the horizon from a successful
-    ///   decode would grant the longer window only to purely additive
-    ///   schemas, which are the ones that least need it. If it decodes, it is
-    ///   also *offered* — ``readEntries(in:)`` does not consult the stamp — so
-    ///   the longer horizon covers a file the user has seen and put off, not
-    ///   one being destroyed behind their back.
-    /// - **Dated in the future.** A clock moved forward, a restored backup, a
-    ///   VM snapshot: `timestamp < cutoff` can never come true, so the file
-    ///   outlived every sweep. If any date it carries is usable it is judged
-    ///   by that one; if every date is in the future by more than
-    ///   ``futureDateTolerance`` the file is restamped to now, which gives it
-    ///   a real anchor to age from — this sweep's first sighting — instead of
-    ///   waiting for the calendar to catch up with a wrong clock.
-    ///
-    /// A file that cannot be *read* is kept, whatever its dates say. Launch is
-    /// when every file-system watcher and terminal in the app
-    /// is starting at once, so `EIO` and `EMFILE` are live possibilities here,
-    /// and a file the process could not open has not told anybody how old it
-    /// is.
-    func cleanupStaleEntries(olderThan days: Int) {
-        let now = Date()
-        let day = 24.0 * 3600
-        let cutoff = now.addingTimeInterval(-Double(days) * day)
-        let unsupportedCutoff = now.addingTimeInterval(
-            -Double(days * Self.unsupportedSchemaRetentionMultiplier) * day
-        )
-        // The latest moment a date may claim and still be believed.
-        let believable = now.addingTimeInterval(Self.futureDateTolerance)
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-
-        let files: [URL]
-        do {
-            files = try FileManager.default.contentsOfDirectory(
-                at: recoveryDirectory,
-                includingPropertiesForKeys: [.contentModificationDateKey]
-            )
-        } catch {
-            Self.logger.warning("Cannot list recovery directory for cleanup: \(error)")
-            return
-        }
-
-        for file in files where file.pathExtension == "json" {
-            let modified = Self.modificationDate(of: file)
-            // Inside the window by the filesystem's reckoning: keep it without
-            // reading it. A date well in the future is not "inside the
-            // window", it is a date to distrust, so it does not take this path.
-            if let modified, modified >= cutoff, modified <= believable {
-                continue
-            }
-
-            guard let data = try? Data(contentsOf: file) else {
-                Self.logger.error(
-                    "Cannot read recovery file during cleanup, keeping it: \(file.lastPathComponent)"
-                )
-                continue
-            }
-
-            // Probed separately and first: see the docstring.
-            let probe = try? decoder.decode(
-                RecoveryEntry.SchemaProbe.self,
-                from: data
-            )
-            let horizon = RecoveryEntry.isSupportedSchema(probe?.schemaVersion)
-                ? cutoff
-                : unsupportedCutoff
-
-            var recorded: Date?
-            do {
-                recorded = try decoder
-                    .decode(RecoveryEntry.self, from: data)
-                    .timestamp
-            } catch {
-                Self.logger.error(
-                    "Undecodable recovery file, ageing it out by its modification date \(file.lastPathComponent): \(error)"
-                )
-            }
-
-            let age: Date
-            if let recorded, recorded <= believable {
-                // The file's own account of itself, believed over the
-                // filesystem's in both directions.
-                age = recorded
-            } else if let modified, modified <= believable {
-                // No usable timestamp — either the entry has none or the one
-                // it has is from a broken clock — so the filesystem stands in.
-                age = modified
-            } else if recorded != nil || modified != nil {
-                Self.restampAsSeenNow(file, at: now)
-                continue
-            } else {
-                // Nothing to judge it by, and guessing would mean guessing at
-                // a deletion.
-                continue
-            }
-
-            guard age < horizon else { continue }
-            do {
-                try FileManager.default.removeItem(at: file)
-            } catch {
-                Self.logger.error("Failed to remove stale recovery file \(file.lastPathComponent): \(error)")
-            }
-        }
+    nonisolated private static var documentsDirectory: URL {
+        FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
     }
 
-    /// The file's modification date, or `nil` if the filesystem will not say.
-    private static func modificationDate(of file: URL) -> Date? {
-        try? file.resourceValues(
-            forKeys: [.contentModificationDateKey]
-        ).contentModificationDate
+    /// Writes the buffer to `destination` in its own encoding, or throws
+    /// ``RecoveryCopyFailure`` and writes nothing.
+    ///
+    /// - Parameter replacing: Whether the save panel already asked about a
+    ///   file at `destination`. Without it an existing file is never
+    ///   replaced, whatever appeared there since the panel closed.
+    ///
+    /// `nonisolated`: file I/O, so the caller keeps it off the main actor.
+    ///
+    /// The original file is never the destination, whatever was typed into
+    /// the panel: a snapshot is taken while the file is being edited, and
+    /// the panel's replace confirmation is one reflex Return away. Paths are
+    /// compared case-insensitively because the system volume is, and
+    /// canonicalized on both sides first because APFS is
+    /// normalization-insensitive: Finder writes decomposed names (NFD),
+    /// IMEs and dead keys compose them (NFC), and without this step the
+    /// panel's "Replace?" would really resolve to the file the snapshot was
+    /// taken from.
+    nonisolated static func writeCopy(
+        of entry: RecoveryEntry,
+        to destination: URL,
+        replacing: Bool
+    ) throws {
+        let original = URL(fileURLWithPath: entry.originalPath)
+            .standardizedFileURL.path
+            .precomposedStringWithCanonicalMapping
+        let destinationPath = destination.standardizedFileURL.path
+            .precomposedStringWithCanonicalMapping
+        if !entry.originalPath.isEmpty,
+           destinationPath.caseInsensitiveCompare(original) == .orderedSame {
+            throw RecoveryCopyFailure.originalFile
+        }
+        // Refused before anything is written: the write below would fail the
+        // same way, but only this check can say why.
+        guard let data = entry.content.data(
+            using: entry.encoding,
+            allowLossyConversion: false
+        ) else {
+            throw RecoveryCopyFailure.cannotEncode
+        }
+        if !replacing,
+           FileManager.default.fileExists(atPath: destination.path) {
+            // `Data.write(options: .withoutOverwriting)` asserts instead of
+            // throwing when the destination exists on this OS (S3's crash
+            // forensics, 2026-11-26), so the refusal is explicit and
+            // catchable.
+            throw CocoaError(.fileWriteFileExists)
+        }
+        try data.write(to: destination, options: [.atomic])
     }
 
-    /// Anchors a file whose every recorded date lies in the future to this
-    /// sweep, so the next one can age it out normally.
+    // MARK: - Project resolution
+
+    /// Name of this project's snapshot directory — the hash
+    /// ``directory(for:)`` derives from the project path.
+    var recoveryDirectoryName: String {
+        recoveryDirectory.lastPathComponent
+    }
+
+    /// The project a snapshot directory belongs to: the first of
+    /// `candidates` whose path hashes to the directory's name.
     ///
-    /// Touching the metadata and not the content: the snapshot itself stays
-    /// byte-for-byte what the user's editor wrote, and only the clock claim
-    /// that made it un-collectable is replaced.
-    ///
-    /// It is still destructive in one respect, which is why it is fenced off
-    /// behind ``futureDateTolerance`` rather than firing on any date past
-    /// `now`: for a snapshot whose JSON cannot be decoded, the modification
-    /// date is the *only* surviving record of when it was written, and this
-    /// overwrites it. The trade is deliberate — a date nothing can reach is a
-    /// file no sweep can ever collect — but it is a one-way loss of the one
-    /// piece of provenance such a file has left.
-    private static func restampAsSeenNow(_ file: URL, at now: Date) {
-        do {
-            try FileManager.default.setAttributes(
-                [.modificationDate: now],
-                ofItemAtPath: file.path
-            )
-        } catch {
-            logger.error(
-                "Cannot restamp future-dated recovery file \(file.lastPathComponent): \(error)"
-            )
+    /// An untitled buffer records no path, so the hashed directory is the
+    /// only trace of the project it was open in. `nil` when none of the
+    /// candidates matches.
+    nonisolated static func project(
+        matchingRecoveryDirectoryName directoryName: String,
+        among candidates: [URL]
+    ) -> URL? {
+        candidates.first {
+            directory(for: $0).lastPathComponent == directoryName
         }
     }
-
     // MARK: - Timer
 
     /// Starts the periodic snapshot timer (every 30 seconds).
@@ -871,3 +714,54 @@ final class RecoveryManager {
         return hash.map { String(format: "%02x", $0) }.joined()
     }
 }
+
+#if PINE_TEST_HOST
+// MARK: - UI test fixture (`--ui-test-recovery-entry`)
+
+extension RecoveryManager {
+
+    /// Writes one snapshot nobody has decided about, `daysOld` days old, into
+    /// `projectURL`'s recovery directory. Its modification date is set to
+    /// match: one write sets both in production.
+    ///
+    /// On the main thread on purpose. It runs once, at launch, before the
+    /// project window lists the directory — and only in the test host.
+    @discardableResult
+    static func seedUITestSnapshot(
+        daysOld: Int,
+        fileName: String = "crashed.swift",
+        for projectURL: URL?
+    ) -> Bool {
+        guard let projectURL else { return false }
+        let directory = Self.directory(for: projectURL)
+        let when = Date().addingTimeInterval(-Double(daysOld) * 24 * 3600)
+        let entry = RecoveryEntry(
+            originalPath: projectURL.appendingPathComponent(fileName).path,
+            content: "// unsaved work from a session that crashed\n",
+            timestamp: when
+        )
+        do {
+            try FileManager.default.createDirectory(
+                at: directory,
+                withIntermediateDirectories: true
+            )
+            let file = directory.appendingPathComponent("\(UUID().uuidString).json")
+            try makeEncoder().encode(entry).write(to: file, options: .atomic)
+            try FileManager.default.setAttributes(
+                [.modificationDate: when],
+                ofItemAtPath: file.path
+            )
+            return true
+        } catch {
+            Self.logger.error("Could not seed the UI-test recovery snapshot: \(error)")
+            return false
+        }
+    }
+
+    private static func makeEncoder() -> JSONEncoder {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        return encoder
+    }
+}
+#endif

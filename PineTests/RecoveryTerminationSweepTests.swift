@@ -267,34 +267,37 @@ struct RecoveryTerminationSweepTests {
         #expect(managerB.pendingRecoveryEntries().count == 1)
     }
 
-    // MARK: - The line in `applicationWillTerminate` itself
+    // MARK: - Nothing collects a snapshot by age (#1760)
 
-    @Test("The sheet's footnote and the launch sweep read the same number")
-    func retentionWindowIsASingleNumber() throws {
-        // "Later" is safe but not unlimited, and the sheet says how long.
-        // Two literals would let the promise drift from the behaviour.
-        #expect(RecoveryManager.staleEntryRetentionDays == 7)
-        let source = try String(
+    @Test("No launch sweep is wired into app startup any more")
+    func noStartupPathCollectsSnapshots() throws {
+        // The sweep existed to bound "Later"; since #1760 there is no bound,
+        // so the launch path must not delete anything. Reading the source is
+        // the assertion here: a silent reintroduction compiles fine and would
+        // pass every behaviour test that seeds fresh snapshots.
+        let appSource = try String(
             contentsOf: Self.repositoryRoot()
                 .appendingPathComponent("Pine/PineApp.swift"),
             encoding: .utf8
         )
         #expect(
-            !source.contains("cleanupAllStaleEntries(olderThan: 7)"),
-            "The launch sweep hardcodes its own retention window again"
+            !appSource.contains("cleanupAllStaleEntries"),
+            "The age-based launch sweep is back in app startup (#1760)"
+        )
+        #expect(
+            !appSource.contains("staleEntryRetentionDays"),
+            "The launch path still reads the retired retention window"
         )
     }
 
-    @Test("The sheet still prints the retention window it promises")
-    func theSheetStatesTheRetentionWindow() throws {
-        // `retentionNoticeIsLocalizedEverywhere` only proves the string exists
-        // in the catalog. Deleting the `Text` from the sheet's `body` breaks
+    @Test("The sheet promises that the work is kept, not that it expires")
+    func theSheetSaysTheWorkIsKept() throws {
+        // `keepNoticeIsLocalizedEverywhere` only proves the string exists in
+        // the catalog. Deleting the `Text` from the sheet's `body` breaks
         // nothing else — the sheet is sized by `minWidth`, so it does not even
-        // change shape — and this branch's central claim, that "Later" is a
-        // bounded promise the user can read, silently becomes false with the
-        // whole suite green. The literal is banned here as well as in
-        // `PineApp.swift`: the sheet is the surface the number is *read* on,
-        // so it is the one place a drifting copy does its damage.
+        // change shape — and #1760's central promise, that Later is safe
+        // without a deadline and the list comes back, silently becomes false
+        // with the whole suite green.
         let source = try String(
             contentsOf: Self.repositoryRoot()
                 .appendingPathComponent("Pine/RecoveryDialogView.swift"),
@@ -302,413 +305,68 @@ struct RecoveryTerminationSweepTests {
         )
 
         #expect(
-            source.contains("Strings.recoveryRetentionNotice("),
-            "The recovery sheet no longer tells the user how long Later lasts"
+            source.contains("Strings.recoveryKeepNotice"),
+            "The recovery sheet no longer tells the user the work is kept"
         )
         #expect(
-            source.contains("RecoveryManager.staleEntryRetentionDays"),
-            "The sheet's footnote no longer reads the sweep's own constant"
+            !source.contains("recoveryRetentionNotice"),
+            """
+            The sheet still prints a retention deadline the app no longer \
+            enforces
+            """
         )
+    }
+
+    @Test("A snapshot a year old is still offered")
+    func anAncientSnapshotIsStillOffered() throws {
+        // The retired sweep collected a snapshot a week after the crash the
+        // user never answered. Nothing does now: age is not a decision about
+        // anybody's work (#1760).
+        let dir = try Self.makeTempDir()
+        defer { Self.cleanup(dir) }
+        let manager = RecoveryManager(recoveryDirectory: dir)
+        let ancient = try Self.writeSnapshot(daysOld: 365, in: dir)
+
         #expect(
-            !source.contains("days: 7"),
-            "The sheet hardcodes a retention window that can drift from the sweep"
+            manager.pendingRecoveryEntries().map(\.0) == [ancient],
+            "A snapshot was collected by its age"
         )
+        #expect(Self.snapshotIDs(in: dir) == [ancient])
     }
 
-    @Test("A snapshot older than the retention window is collected")
-    func snapshotsExpireAtTheStatedBoundary() throws {
+    @Test("An undecodable snapshot is left on disk, not aged out")
+    func anUndecodableSnapshotStaysOnDisk() throws {
+        // A file truncated by the crash that was happening while it was
+        // written cannot be decoded or offered — and since nothing collects
+        // by age, it cannot be deleted behind the user's back either. It
+        // stays until a decision names it.
         let dir = try Self.makeTempDir()
         defer { Self.cleanup(dir) }
         let manager = RecoveryManager(recoveryDirectory: dir)
-        let days = Double(RecoveryManager.staleEntryRetentionDays)
-
-        let fresh = try Self.writeSnapshot(daysOld: days - 1, in: dir)
-        try Self.writeSnapshot(daysOld: days + 1, in: dir)
-
-        manager.cleanupStaleEntries(
-            olderThan: RecoveryManager.staleEntryRetentionDays
-        )
-
-        #expect(manager.pendingRecoveryEntries().map(\.0) == [fresh])
-    }
-
-    @Test("A file the filesystem calls fresh is kept without being decoded")
-    func aFreshModificationDateKeepsTheFileWhateverItClaims() throws {
-        // The launch sweep runs on the main actor and a snapshot carries a
-        // whole unsaved buffer, so it now settles a file by its modification
-        // date whenever it can and only decodes what that leaves undecided —
-        // in steady state, nothing (AGENTS.md: never block the main thread
-        // with file I/O). The fast path is observable exactly here: an entry
-        // dated outside the window in a file written moments ago is kept.
-        //
-        // One write sets both dates, so production cannot make them disagree;
-        // a restored backup can, and the disagreement is resolved toward
-        // keeping the file, never toward deleting it.
-        let dir = try Self.makeTempDir()
-        defer { Self.cleanup(dir) }
-        let manager = RecoveryManager(recoveryDirectory: dir)
-        let id = try Self.writeSnapshot(daysOld: 30, in: dir)
-        try FileManager.default.setAttributes(
-            [.modificationDate: Date()],
-            ofItemAtPath: dir.appendingPathComponent("\(id.uuidString).json").path
-        )
-
-        manager.cleanupStaleEntries(olderThan: 7)
-
-        #expect(manager.pendingRecoveryEntries().map(\.0) == [id])
-    }
-
-    // MARK: - The files that used to be immortal
-
-    @Test("An unreadable snapshot is collected instead of living forever")
-    func anUndecodableSnapshotIsCollected() throws {
-        // Truncated by the crash that was happening while it was written.
-        // `pendingRecoveryEntries()` cannot show it and the sweep used to
-        // `continue` past it, so the user could neither see it nor delete it,
-        // it kept its project's directory alive forever, and it logged an
-        // error on every launch. It is not content anybody could have decided
-        // about, so ageing it out is not a decision taken on their behalf.
-        let dir = try Self.makeTempDir()
-        defer { Self.cleanup(dir) }
-        let manager = RecoveryManager(recoveryDirectory: dir)
-        let url = dir.appendingPathComponent("\(UUID().uuidString).json")
-        try Data("{\"originalPath\": \"/tmp/a.swift\", tru".utf8).write(to: url)
-        try FileManager.default.setAttributes(
-            [.modificationDate: Date().addingTimeInterval(-8 * 24 * 3600)],
-            ofItemAtPath: url.path
-        )
-
-        manager.cleanupStaleEntries(olderThan: 7)
-
-        #expect(!FileManager.default.fileExists(atPath: url.path))
-    }
-
-    @Test("A recent unreadable snapshot is left alone")
-    func aRecentUndecodableSnapshotIsKept() throws {
-        let dir = try Self.makeTempDir()
-        defer { Self.cleanup(dir) }
-        let manager = RecoveryManager(recoveryDirectory: dir)
-        let url = dir.appendingPathComponent("\(UUID().uuidString).json")
-        try Data("not json at all".utf8).write(to: url)
-
-        manager.cleanupStaleEntries(olderThan: 7)
-
-        #expect(FileManager.default.fileExists(atPath: url.path))
-    }
-
-    @Test("A snapshot from a newer schema outlives the normal window")
-    func anUnsupportedSchemaGetsALongerHorizon() throws {
-        // The real producer: a beta wrote `schemaVersion: 2` and the user went
-        // back to a release build. The normal window bounds files a user was
-        // shown and left alone for a week; a stamp from a build that is not
-        // running right now says nothing about whether they have decided, so
-        // it gets a multiple of the window — and still leaves eventually, so
-        // a permanently orphaned file cannot pin its project's directory
-        // open. These two decode, so they are also offered (#1503): the
-        // longer horizon buys time, it does not decide visibility.
-        let dir = try Self.makeTempDir()
-        defer { Self.cleanup(dir) }
-        let manager = RecoveryManager(recoveryDirectory: dir)
-        let days = RecoveryManager.staleEntryRetentionDays
-        let multiplier = RecoveryManager.unsupportedSchemaRetentionMultiplier
-        #expect(multiplier > 1)
-
-        let survivor = try Self.writeSnapshot(
-            daysOld: Double(days) + 1,
-            schemaVersion: RecoveryEntry.currentSchemaVersion + 1,
-            in: dir
-        )
-        let expired = try Self.writeSnapshot(
-            daysOld: Double(days * multiplier) + 1,
-            schemaVersion: RecoveryEntry.currentSchemaVersion + 1,
+        let garbage = try Self.writeRawSnapshot(
+            "{\"schemaVersion\": 2, \"content\": 3",
+            daysOld: 10,
             in: dir
         )
 
-        manager.cleanupStaleEntries(olderThan: days)
-
-        #expect(Self.snapshotIDs(in: dir) == [survivor])
-        #expect(!Self.snapshotIDs(in: dir).contains(expired))
-        // …and what survived is offered, not silently held. A build that can
-        // read a buffer must not both hide it and eventually delete it, which
-        // is what the old "unsupported schema is not shown" rule amounted to
-        // on precisely this file (#1503).
-        #expect(manager.pendingRecoveryEntries().map(\.0) == [survivor])
+        #expect(manager.pendingRecoveryEntries().isEmpty)
+        #expect(
+            Self.snapshotIDs(in: dir) == [garbage],
+            "An undecodable snapshot was deleted without a decision"
+        )
     }
 
-    @Test("A future-dated snapshot is anchored to the sweep, then collected")
-    func aFutureDatedSnapshotStopsBeingImmortal() throws {
-        // A clock moved forward, a restored VM snapshot, a bad RTC. Judged by
-        // `timestamp < cutoff` alone the comparison can never come true, so
-        // the file outlived every sweep there would ever be. The first sweep
-        // that sees it gives it a real anchor — now — and the next one that
-        // finds that anchor old collects it.
+    @Test("A future-dated snapshot is offered, not anchored for a sweep")
+    func aFutureDatedSnapshotIsStillOffered() throws {
+        // The retired sweep restamped future-dated files so it could age them
+        // out later. There is no later any more: a broken clock must not hide
+        // the file from the list either.
         let dir = try Self.makeTempDir()
         defer { Self.cleanup(dir) }
         let manager = RecoveryManager(recoveryDirectory: dir)
         let id = try Self.writeSnapshot(daysOld: -365, in: dir)
-        let url = dir.appendingPathComponent("\(id.uuidString).json")
 
-        manager.cleanupStaleEntries(olderThan: 7)
-
-        // Kept — a date nobody can trust is not a reason to delete work…
-        #expect(FileManager.default.fileExists(atPath: url.path))
-        // Through `FileManager`, not `URL.resourceValues`: a `URL` caches the
-        // resource values it has been asked for, so re-reading the same `URL`
-        // after the sweep hands back the date from before it.
-        let stamped = try #require(
-            FileManager.default.attributesOfItem(atPath: url.path)[
-                .modificationDate
-            ] as? Date
-        )
-        #expect(
-            abs(stamped.timeIntervalSinceNow) < 60,
-            """
-            The sweep left the file's date where it was (\(stamped)) instead \
-            of anchoring it to this run. A date the sweep cannot reach is a \
-            file the sweep can never collect
-            """
-        )
-
-        // …and it is no longer immortal: the anchor ages like any other date.
-        try FileManager.default.setAttributes(
-            [.modificationDate: Date().addingTimeInterval(-8 * 24 * 3600)],
-            ofItemAtPath: url.path
-        )
-        manager.cleanupStaleEntries(olderThan: 7)
-
-        #expect(!FileManager.default.fileExists(atPath: url.path))
-    }
-
-    @Test("A snapshot a few seconds ahead of the clock is not restamped")
-    func aSlightlyFutureDateIsToleratedRatherThanRewritten() throws {
-        // Re-anchoring is a one-way loss: for a snapshot whose JSON cannot be
-        // decoded, the modification date is the only surviving record of when
-        // it was written, and restamping overwrites it. Firing on any date
-        // past `now` would do that to ordinary files — an NTP step, a network
-        // volume a second ahead, a snapshot written in the same second the
-        // sweep runs. `futureDateTolerance` is the fence.
-        let dir = try Self.makeTempDir()
-        defer { Self.cleanup(dir) }
-        let manager = RecoveryManager(recoveryDirectory: dir)
-        #expect(RecoveryManager.futureDateTolerance > 0)
-        let id = try Self.writeSnapshot(daysOld: -10.0 / 86_400, in: dir)
-        let url = dir.appendingPathComponent("\(id.uuidString).json")
-        let before = try Self.modificationDate(of: url)
-
-        manager.cleanupStaleEntries(olderThan: 7)
-
-        let after = try Self.modificationDate(of: url)
-        #expect(
-            abs(after.timeIntervalSince(before)) < 1,
-            """
-            A snapshot ten seconds ahead of the sweep's clock was re-anchored \
-            (\(before) became \(after)). Clock jitter is not a broken clock, \
-            and the date it destroys is provenance nothing else records
-            """
-        )
         #expect(manager.pendingRecoveryEntries().map(\.0) == [id])
-    }
-
-    @Test("An old snapshot with a future modification date still expires")
-    func aFutureModificationDateDoesNotProtectAnOldEntry() throws {
-        let dir = try Self.makeTempDir()
-        defer { Self.cleanup(dir) }
-        let manager = RecoveryManager(recoveryDirectory: dir)
-        let id = try Self.writeSnapshot(daysOld: 30, in: dir)
-        let url = dir.appendingPathComponent("\(id.uuidString).json")
-        try FileManager.default.setAttributes(
-            [.modificationDate: Date().addingTimeInterval(365 * 24 * 3600)],
-            ofItemAtPath: url.path
-        )
-
-        manager.cleanupStaleEntries(olderThan: 7)
-
-        #expect(!FileManager.default.fileExists(atPath: url.path))
-    }
-
-    @Test("A modification date older than the entry cannot delete it")
-    func anOlderModificationDateCannotDeleteAFreshEntry() throws {
-        // The mirror of `aFreshModificationDateKeepsTheFileWhateverItClaims`,
-        // and the direction nothing pinned. Taking the earlier of the two
-        // dates reads like caution and is the opposite: it lets the
-        // filesystem's word delete a snapshot the entry itself says is a day
-        // old. Anything that moves an mtime backwards produces it — a sync
-        // client, a restore tool, `touch -t`, a volume whose timestamps are
-        // coarser than those of the one the file came from (SMB, exFAT).
-        let dir = try Self.makeTempDir()
-        defer { Self.cleanup(dir) }
-        let manager = RecoveryManager(recoveryDirectory: dir)
-        let id = try Self.writeSnapshot(daysOld: 1, in: dir)
-        try FileManager.default.setAttributes(
-            [.modificationDate: Date().addingTimeInterval(-30 * 24 * 3600)],
-            ofItemAtPath: dir
-                .appendingPathComponent("\(id.uuidString).json").path
-        )
-
-        manager.cleanupStaleEntries(olderThan: 7)
-
-        #expect(
-            manager.pendingRecoveryEntries().map(\.0) == [id],
-            """
-            A backdated modification date deleted a snapshot whose own \
-            timestamp is a day old. The filesystem date is allowed to keep a \
-            file, never to condemn one (#1503)
-            """
-        )
-    }
-
-    @Test("A newer schema that changed shape also gets the longer horizon")
-    func aNonAdditiveSchemaGetsALongerHorizon() throws {
-        // `anUnsupportedSchemaGetsALongerHorizon` writes `schemaVersion + 1`
-        // into an otherwise current entry — a purely additive change, and the
-        // one case where the whole `RecoveryEntry` still decodes so the
-        // version can be read off the decoded value. The schema changes that
-        // actually motivate a version stamp do not decode: rename a field,
-        // change its type, add a required one, and `init(from:)` throws before
-        // it ever reaches `schemaVersion`. Deciding the horizon from a
-        // successful decode grants the long window to exactly the files that
-        // least need it, and deletes this user's unrecoverable work — which
-        // this build refuses to show them — on the seventh day.
-        let dir = try Self.makeTempDir()
-        defer { Self.cleanup(dir) }
-        let manager = RecoveryManager(recoveryDirectory: dir)
-        let days = RecoveryManager.staleEntryRetentionDays
-        let multiplier = RecoveryManager.unsupportedSchemaRetentionMultiplier
-        // `body` where this build wants `content`, and a numeric `timestamp`.
-        let json = """
-            {"schemaVersion": \(RecoveryEntry.currentSchemaVersion + 1), \
-            "originalPath": "/tmp/a.swift", "body": "unsaved", \
-            "timestamp": 776000000, "encodingRawValue": 4}
-            """
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        #expect(throws: (any Error).self) {
-            try decoder.decode(RecoveryEntry.self, from: Data(json.utf8))
-        }
-
-        let survivor = try Self.writeRawSnapshot(
-            json,
-            daysOld: Double(days) + 1,
-            in: dir
-        )
-        let expired = try Self.writeRawSnapshot(
-            json,
-            daysOld: Double(days * multiplier) + 1,
-            in: dir
-        )
-
-        manager.cleanupStaleEntries(olderThan: days)
-
-        #expect(
-            Self.snapshotIDs(in: dir) == [survivor],
-            """
-            A snapshot from a schema this build cannot decode was collected \
-            at the normal horizon. The version stamp has to be read before \
-            the full decode, or the constant that exists for this file never \
-            applies to it (#1503)
-            """
-        )
-        #expect(!Self.snapshotIDs(in: dir).contains(expired))
-    }
-
-    @Test("A file the sweep cannot read is kept, not aged out")
-    func anUnreadableSnapshotIsKept() throws {
-        // Launch is when every file-system watcher and terminal in the app
-        // is starting at once, so a transient `EIO` or
-        // `EMFILE` here is a live possibility. A file the process could not
-        // open has not told anybody how old it is, and ageing it out by its
-        // modification date means deleting undecided work on the strength of
-        // a read that failed.
-        let dir = try Self.makeTempDir()
-        defer { Self.cleanup(dir) }
-        let manager = RecoveryManager(recoveryDirectory: dir)
-        let id = try Self.writeSnapshot(daysOld: 30, in: dir)
-        let url = dir.appendingPathComponent("\(id.uuidString).json")
-        try FileManager.default.setAttributes(
-            [.posixPermissions: 0],
-            ofItemAtPath: url.path
-        )
-        defer {
-            try? FileManager.default.setAttributes(
-                [.posixPermissions: 0o600],
-                ofItemAtPath: url.path
-            )
-        }
-        guard (try? Data(contentsOf: url)) == nil else {
-            // Root, or a filesystem that ignores mode bits: the premise
-            // cannot be established, so there is nothing here to assert.
-            return
-        }
-
-        manager.cleanupStaleEntries(olderThan: 7)
-
-        #expect(
-            FileManager.default.fileExists(atPath: url.path),
-            """
-            An unreadable snapshot was deleted by its modification date. \
-            Unreadable is not evidence of age (#1503)
-            """
-        )
-    }
-
-    // MARK: - Collecting the per-project subdirectories
-
-    @Test("A subdirectory holding nothing but leftovers is collected")
-    func aSubdirectoryWithOnlyLeftoversIsCollected() throws {
-        // Snapshots are written with `Data.write(options: .atomic)`, which
-        // stages a hidden temporary beside the destination. A crash between
-        // the staging and the rename leaves it behind — and it is not a
-        // `.json`, so the stale sweep cannot see it, while an emptiness test
-        // can. One orphaned temporary used to pin its project's directory
-        // open for the life of the machine, long after the project was gone.
-        let root = try Self.makeTempDir()
-        defer { Self.cleanup(root) }
-        let orphaned = root.appendingPathComponent("orphaned")
-        let live = root.appendingPathComponent("live")
-        for dir in [orphaned, live] {
-            try FileManager.default.createDirectory(
-                at: dir,
-                withIntermediateDirectories: true
-            )
-        }
-        try Data("half a snapshot".utf8).write(
-            to: orphaned.appendingPathComponent(".dat.nosync0f12.QwErTy")
-        )
-        try Data("".utf8).write(to: orphaned.appendingPathComponent(".DS_Store"))
-        try Self.writeSnapshot(daysOld: 0, in: live)
-
-        RecoveryManager.cleanupAllStaleEntries(in: root, olderThan: 7)
-
-        #expect(
-            !FileManager.default.fileExists(atPath: orphaned.path),
-            "A directory holding only leftovers was kept forever"
-        )
-        #expect(
-            FileManager.default.fileExists(atPath: live.path),
-            "A directory with a live snapshot in it was collected"
-        )
-    }
-
-    @Test("A stray file at the recovery root is not swept as a project")
-    func aStrayFileAtTheRootIsNotAProject() throws {
-        // `.isDirectoryKey` was prefetched here and never consulted, so a
-        // `.DS_Store` at the root was handed to a `RecoveryManager` as a
-        // project directory and logged a failure on every launch.
-        let root = try Self.makeTempDir()
-        defer { Self.cleanup(root) }
-        let stray = root.appendingPathComponent(".DS_Store")
-        try Data("not a project".utf8).write(to: stray)
-        let project = root.appendingPathComponent("project")
-        try FileManager.default.createDirectory(
-            at: project,
-            withIntermediateDirectories: true
-        )
-        let old = try Self.writeSnapshot(daysOld: 30, in: project)
-
-        RecoveryManager.cleanupAllStaleEntries(in: root, olderThan: 7)
-
-        #expect(FileManager.default.fileExists(atPath: stray.path))
-        #expect(!Self.snapshotIDs(in: project).contains(old))
     }
 
     // MARK: - Not offering the same sheet twice in one session
@@ -739,13 +397,13 @@ struct RecoveryTerminationSweepTests {
 
     @Test("A restore in flight suppresses the offer without answering it")
     func anInFlightRestoreSuppressesTheOffer() async throws {
-        // Recover All is not instantaneous. A snapshot past the large-file
+        // Restoring is not instantaneous. A snapshot past the large-file
         // threshold parks the whole restore on a native sheet, and the sheet's
         // own state was already cleared synchronously — so a scene `.task`
         // re-running in that window (restoration, or the window closed and
         // reopened) finds both crash files still on disk, owned by no open
         // tab, and `didAnswerRecoveryOffer` still false. It builds the same
-        // sheet again. A second Recover All then migrates the same entries a
+        // sheet again. A second restore then migrates the same entries a
         // second time: the parked restore resumes against a detached
         // `TabManager`, and the migration writes a snapshot under a runtime ID
         // no window owns, which comes back on the next launch as a phantom
@@ -812,7 +470,7 @@ struct RecoveryTerminationSweepTests {
         // knows "there is a JSON file named after a UUID".
         //
         // Offering those back is not cosmetic. Discard would delete the crash
-        // protection of tabs the user is looking at, and Recover All would
+        // protection of tabs the user is looking at, and restoring would
         // clone each one and then have `migrateRecoverySnapshot` unlink the
         // original's live snapshot. A snapshot whose ID is an open tab's ID is
         // by definition not a crash leftover.
@@ -841,12 +499,11 @@ struct RecoveryTerminationSweepTests {
         // `snapshotDirtyTabs` selects on `isDirty && kind == .text`, and the
         // 1 MB large-file threshold is not applied to it. Before this branch
         // the directory was emptied on every clean quit, so a launch paid for
-        // it at most once, after a crash. Now snapshots are held for
-        // `staleEntryRetentionDays` after a "Later" and the scene `.task`
-        // re-runs on restoration and on close/reopen, which would put three
-        // 40 MB buffers in front of the window on every launch and every
-        // reopen for a week. AGENTS.md: never block the main thread with file
-        // I/O.
+        // it at most once, after a crash. Since #1760 snapshots are held until
+        // the user decides, and the scene `.task` re-runs on restoration and
+        // on close/reopen, which would put three 40 MB buffers in front of
+        // the window on every launch and every reopen, indefinitely.
+        // AGENTS.md: never block the main thread with file I/O.
         //
         // This test does not compile at all unless the listing is
         // `nonisolated` — that is half the assertion — and the thread check is
@@ -877,7 +534,7 @@ struct RecoveryTerminationSweepTests {
     func answeringDuringTheListingSuppressesTheOffer() async throws {
         // The suspension `pendingRecoveryOffer()` gained is a window, and the
         // two flags it checks are exactly what that window can invalidate: a
-        // Recover All can begin, or the user can answer the sheet, between the
+        // restore can begin, or the user can answer the sheet, between the
         // listing starting and its results coming back. Checking only before
         // the `await` would let a stale listing repopulate `recoveryEntries`
         // and put a second sheet on screen over the answer that was just given
@@ -937,6 +594,59 @@ struct RecoveryTerminationSweepTests {
         await project.workspace.waitForLoadingComplete()
     }
 
+    // MARK: - File ▸ Recover Unsaved Work… (#1760)
+
+    @Test("Work put off with Later stays reachable through the menu")
+    func theMenuListsWhatLaterLeftBehind() async throws {
+        // "Later" silences the launch offer, and since #1760 nothing ever
+        // collects the files by age — so the menu, not the next launch, is
+        // the only way back. An answered flag that made the menu lie would
+        // turn "Later" into a soft deletion.
+        let dir = try Self.makeTempDir()
+        defer { Self.cleanupProject(dir) }
+        let registry = ProjectRegistry()
+        let project = try #require(registry.projectManager(for: dir))
+        let crashed = Self.crashedTab(in: dir)
+        project.recoveryManager?.snapshotDirtyTabs([crashed])
+        #expect(await project.pendingRecoveryOffer().count == 1)
+
+        project.markRecoveryOfferAnswered()
+        #expect(await project.pendingRecoveryOffer().isEmpty)
+
+        // The menu asks the project directly and does not consult the flag.
+        let listed = await project.recoveryEntriesForMenu()
+        #expect(listed.map(\.0) == [crashed.id])
+        // …and nothing was deleted by any of this: the relaunch that follows
+        // a crash or a quit finds the same file on disk.
+        #expect(
+            project.recoveryManager?.pendingRecoveryEntries().count == 1
+        )
+        await project.workspace.waitForLoadingComplete()
+    }
+
+    @Test("The menu never lists a snapshot the user is looking at")
+    func theMenuNeverListsAnOpenTabsSnapshot() async throws {
+        let dir = try Self.makeTempDir()
+        defer { Self.cleanupProject(dir) }
+        let registry = ProjectRegistry()
+        let project = try #require(registry.projectManager(for: dir))
+        let file = dir.appendingPathComponent("dirty.swift")
+        try "original".write(to: file, atomically: true, encoding: .utf8)
+        project.primaryTabManager.autoSavePreferenceProvider = { false }
+        project.primaryTabManager.openTab(url: file)
+        project.primaryTabManager.updateContent("modified")
+        project.recoveryManager?.snapshotDirtyTabs(project.allTabs)
+
+        #expect(
+            await project.recoveryEntriesForMenu().isEmpty,
+            """
+            The menu offered the crash protection of a buffer the user is \
+            looking at; Discard there would delete it
+            """
+        )
+        await project.workspace.waitForLoadingComplete()
+    }
+
     // MARK: - Helpers
 
     private static func repositoryRoot() -> URL {
@@ -968,9 +678,9 @@ struct RecoveryTerminationSweepTests {
     /// `RecoveryManager` rooted at `RecoveryManager.directory(for:)` — a
     /// SHA-256 of the project path under the user's own Application Support,
     /// not under the temporary directory the test cleans up. Removing only the
-    /// project left one subdirectory per test run behind. (Since #1503 the
-    /// launch sweep does eventually collect them, leftovers and all, but a
-    /// test suite should not be leaning on that.)
+    /// project left one subdirectory per test run behind. (Nothing in the app
+    /// collects these any more — #1760 removed the launch sweep — so a test
+    /// suite certainly may not lean on that.)
     private static func cleanupProject(_ projectURL: URL) {
         cleanup(projectURL)
         cleanup(RecoveryManager.directory(for: projectURL))

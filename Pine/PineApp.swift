@@ -1634,6 +1634,27 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
         }
     }
 
+    #if PINE_TEST_HOST
+    /// UI testing support (`--ui-test-recovery-entry`): writes one
+    /// nobody-decided recovery snapshot into the project's recovery
+    /// directory before the window lists it, so a UI test can launch into a
+    /// pending recovery offer. Reads the project from `PINE_OPEN_PROJECT`,
+    /// like the rest of the launch fixtures.
+    func seedUITestRecoveryEntryIfNeeded() {
+        guard CommandLine.arguments.contains("--ui-test-recovery-entry") else {
+            return
+        }
+        let project = pendingProjectURL
+            ?? ProcessInfo.processInfo.environment["PINE_OPEN_PROJECT"].map {
+                URL(fileURLWithPath: $0).resolvingSymlinksInPath()
+            }
+        _ = RecoveryManager.seedUITestSnapshot(
+            daysOld: 1,
+            for: project
+        )
+    }
+    #endif
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         #if DEBUG
         if let applicationLifecycleProcessDriver {
@@ -1658,12 +1679,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
         agentNotifications.start()
         agentPresence.start()
 
-        // Clean up stale recovery files across all projects. The recovery
-        // sheet states this same window, so a snapshot the user keeps putting
-        // off has a published lifetime rather than a silent one (#1503).
-        RecoveryManager.cleanupAllStaleEntries(
-            olderThan: RecoveryManager.staleEntryRetentionDays
-        )
+        // No launch sweep any more (#1760): nothing collects a recovery
+        // snapshot by age. A snapshot nobody has decided about stays on disk
+        // until the user restores or discards it in the recovery list, which
+        // File ▸ Recover Unsaved Work… brings back at any time.
+
+        #if PINE_TEST_HOST
+        seedUITestRecoveryEntryIfNeeded()
+        #endif
 
         // Arm the global quick-terminal hotkey (#1113). Carbon hotkeys work
         // in the App Sandbox without Accessibility permission; disabled by

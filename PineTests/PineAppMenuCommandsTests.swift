@@ -54,7 +54,8 @@ struct PineAppMenuCommandsTests {
             .navigateChange, .findInTerminal,
             .sendToTerminal, .sendTextToTerminal,
             .revealInSidebar, .inlineDiffAction, .tabReloadedFromDisk,
-            .refreshLineDiffs, .fileRenamed, .fileDeleted
+            .refreshLineDiffs, .fileRenamed, .fileDeleted,
+            .showRecoveryList
         ]
         let raws = names.map(\.rawValue)
         #expect(Set(raws).count == raws.count, "Notification names must be unique")

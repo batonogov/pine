@@ -378,6 +378,26 @@ struct PineAppMenuCommands: Commands {
             }
             .disabled(focusedProject?.workspace.rootURL == nil)
 
+            Divider()
+
+            // Nothing collects a recovery snapshot by age (#1760), so this
+            // is the only way back to work the user put off with "Later" —
+            // the recovery list, at any time, not just the launch after a
+            // crash.
+            Button {
+                NotificationCenter.default.post(
+                    name: .showRecoveryList,
+                    object: focusedProject
+                )
+            } label: {
+                Label(
+                    Strings.menuRecoverUnsavedWork,
+                    systemImage: MenuIcons.recoverUnsavedWork
+                )
+            }
+            .keyboardShortcut("r", modifiers: [.command, .shift])
+            .disabled(focusedProject?.workspace.rootURL == nil)
+
         }
 
         // MARK: - File ▸ Sidebar (#1537)

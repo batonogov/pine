@@ -43,6 +43,10 @@ struct ContentView: View {
     /// attempt handed back, so it can say so instead of repeating the
     /// launch-time question (#1541).
     @State var recoveryRestoreFailed = false
+    /// Why the last Save a Copy… wrote nothing (#1760). Replaces the sheet's
+    /// footnote until the next attempt, so a refusal is never mistaken for a
+    /// silent save.
+    @State var recoveryNotice: String?
     @State var isDragTargeted = false
     @State var isAgentActivityPresented = false
     @State var isAgentHistoryPresented = false
@@ -239,6 +243,10 @@ struct ContentView: View {
             RecoveryDialogView(
                 entries: recoveryEntries,
                 didFailToRestore: recoveryRestoreFailed,
+                notice: recoveryNotice,
+                projects: recoveryProjectCandidates,
+                recoveryDirectoryName: projectManager.recoveryManager?
+                    .recoveryDirectoryName,
                 onChoose: { resolveRecoveryOffer($0) }
             )
         }
@@ -346,6 +354,19 @@ struct ContentView: View {
         ))
         .onReceive(NotificationCenter.default.publisher(for: .revealInSidebar)) { notification in
             handleRevealInSidebar(notification)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .showRecoveryList)) { notification in
+            // File ▸ Recover Unsaved Work… (#1760). Routed to the focused
+            // project's window like every other targeted File command, so a
+            // window that is not key does not steal the sheet.
+            guard Self.shouldHandleTargetedCommand(
+                notificationObject: notification.object,
+                currentProject: projectManager,
+                isKeyWindow: controlActiveState == .key
+            ) else { return }
+            Task { @MainActor in
+                await showRecoveryListFromMenu()
+            }
         }
         .onChange(of: selectedNode, initial: true) { _, node in
             // Mirror the sidebar selection onto the project so the

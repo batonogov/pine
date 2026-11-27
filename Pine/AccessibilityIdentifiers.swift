@@ -145,11 +145,23 @@ nonisolated enum AccessibilityID {
     static let paneDivider = "paneDivider"
     static func paneLeaf(_ id: String) -> String { "paneLeaf_\(id)" }
 
-    // MARK: - Crash recovery sheet (#1503)
+    // MARK: - Crash recovery sheet (#1503, #1760)
     static let recoverySheet = "recoverySheet"
     static let recoveryDiscardButton = "recoveryDiscardButton"
     static let recoveryLaterButton = "recoveryLaterButton"
-    static let recoveryRecoverAllButton = "recoveryRecoverAllButton"
+    static let recoveryRestoreButton = "recoveryRestoreButton"
+    static let recoverySaveCopyButton = "recoverySaveCopyButton"
+    /// The destructive button of the second-confirmation alert a Discard
+    /// click has to pass before anything is deleted (#1760).
+    static let recoveryConfirmDiscardButton = "recoveryConfirmDiscardButton"
+    static let recoveryEntryList = "recoveryEntryList"
+    /// One row per snapshot, keyed by the snapshot's recovery UUID: two
+    /// snapshots of the same original path (a buffer edited across a
+    /// crash) would collide on a file-name key. The row's label already
+    /// carries name, location, size and date for humans.
+    static func recoveryEntry(_ recoveryID: UUID) -> String {
+        "recoveryEntry_\(recoveryID.uuidString)"
+    }
 
     // MARK: - Toast notifications
     static let toastNotification = "toastNotification"

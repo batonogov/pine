@@ -71,11 +71,12 @@ nonisolated private struct AgentTaskTerminationRollback: Sendable {
 final class AgentTaskRegistry {
     /// How long a fully settled task (finished or unreachable, no live route)
     /// remains listed in the Inbox before the registry dismisses it
-    /// automatically (#1664). Mirrors the seven-day stale-entry horizon
-    /// `RecoveryManager.staleEntryRetentionDays` already applies to crash
-    /// recovery files. Dismissed metadata stays durable until the bounded
-    /// per-project cap reclaims it, so the sweep never destroys records — it
-    /// only takes settled rows out of the user-facing Inbox.
+    /// automatically (#1664). Unlike crash-recovery snapshots — which since
+    /// #1760 stay until the user decides — settled Inbox rows are only
+    /// metadata, so a bounded horizon is fine here. Dismissed metadata stays
+    /// durable until the bounded per-project cap reclaims it, so the sweep
+    /// never destroys records — it only takes settled rows out of the
+    /// user-facing Inbox.
     nonisolated static let terminalRetentionInterval: TimeInterval =
         7 * 86_400
 

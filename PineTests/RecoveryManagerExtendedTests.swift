@@ -155,9 +155,13 @@ struct RecoveryManagerExtendedTests {
         #expect(manager.pendingRecoveryEntries().isEmpty)
     }
 
-    // MARK: - cleanupAllStaleEntries
+    // MARK: - Nothing collects a snapshot by age (#1760)
 
-    @Test func cleanupAllStaleEntries_removesOldAcrossProjects() throws {
+    @Test func anOldSnapshotAcrossProjectsIsStillListed() throws {
+        // The suite used to pin the opposite: `cleanupAllStaleEntries` deleted
+        // an old snapshot in every project subdirectory it found. #1760
+        // removed the sweep, so the old snapshots are the ones that must
+        // survive — age is nobody's decision about somebody's work.
         let root = try makeTempDir()
         defer { cleanup(root) }
 
@@ -168,9 +172,7 @@ struct RecoveryManagerExtendedTests {
         try FileManager.default.createDirectory(at: projB, withIntermediateDirectories: true)
 
         // Write old recovery entries in both. The modification date matches
-        // the timestamp because a single write sets both in production, and
-        // the sweep now settles fresh files by that date instead of decoding
-        // every snapshot on the main thread at launch (#1503).
+        // the timestamp because a single write sets both in production.
         let writtenAt = Date().addingTimeInterval(-10 * 24 * 3600) // 10 days ago
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
@@ -191,22 +193,13 @@ struct RecoveryManagerExtendedTests {
             )
         }
 
-        // Verify both have entries
         let mgrA = RecoveryManager(recoveryDirectory: projA)
         let mgrB = RecoveryManager(recoveryDirectory: projB)
         #expect(mgrA.pendingRecoveryEntries().count == 1)
         #expect(mgrB.pendingRecoveryEntries().count == 1)
-
-        // Clean up with custom root (we can't use the static method directly
-        // since it uses a fixed root, but we can test individual cleanup)
-        mgrA.cleanupStaleEntries(olderThan: 7)
-        mgrB.cleanupStaleEntries(olderThan: 7)
-
-        #expect(mgrA.pendingRecoveryEntries().isEmpty)
-        #expect(mgrB.pendingRecoveryEntries().isEmpty)
     }
 
-    @Test func cleanupStaleEntries_keepsNewAndRemovesOld() throws {
+    @Test func oldAndNewSnapshotsCoexist() throws {
         let dir = try makeTempDir()
         defer { cleanup(dir) }
 
@@ -235,13 +228,11 @@ struct RecoveryManagerExtendedTests {
         let newTab = makeDirtyTab()
         manager.snapshotDirtyTabs([newTab])
 
-        #expect(manager.pendingRecoveryEntries().count == 2)
-
-        manager.cleanupStaleEntries(olderThan: 7)
-
+        // Both stay: the old one is still offered, the new one is still
+        // crash protection.
         let remaining = manager.pendingRecoveryEntries()
-        #expect(remaining.count == 1)
-        #expect(remaining[0].0 == newTab.id)
+        #expect(remaining.count == 2)
+        #expect(Set(remaining.map(\.0)) == [oldID, newTab.id])
     }
 
     // MARK: - Edge cases
@@ -257,11 +248,5 @@ struct RecoveryManagerExtendedTests {
         let dir = URL(fileURLWithPath: "/tmp/nonexistent-\(UUID().uuidString)")
         let manager = RecoveryManager(recoveryDirectory: dir)
         manager.deleteSnapshotsOfOpenTabs([UUID()]) // Should not crash
-    }
-
-    @Test func cleanupStaleEntries_noOpOnNonExistentDirectory() {
-        let dir = URL(fileURLWithPath: "/tmp/nonexistent-\(UUID().uuidString)")
-        let manager = RecoveryManager(recoveryDirectory: dir)
-        manager.cleanupStaleEntries(olderThan: 7) // Should not crash
     }
 }

@@ -34,19 +34,22 @@ struct RecoveryDialogEscapeSafetyTests {
 
         Self.sendEscape(to: hosted.window)
 
-        #expect(hosted.recorder.chosen == [.later])
-        #expect(hosted.recorder.chosen.allSatisfy { !$0.isDestructive })
+        #expect(hosted.recorder.choices == [.later])
+        #expect(hosted.recorder.choices.allSatisfy { !$0.isDestructive })
     }
 
-    @Test("Return in the hosted sheet recovers instead of discarding")
-    func returnResolvesToRecoverAll() {
+    @Test("Return in the hosted sheet closes it safely: Later is the default")
+    func returnResolvesToLater() {
         let hosted = Self.hostSheet()
         defer { hosted.window.close() }
 
+        // Since #1760 the row actions are chosen per row, not by a reflex,
+        // and Later — which deletes nothing and keeps every snapshot — is
+        // what Return and Escape both land on.
         Self.sendReturn(to: hosted.window)
 
-        #expect(hosted.recorder.chosen == [.recoverAll])
-        #expect(hosted.recorder.chosen.allSatisfy { !$0.isDestructive })
+        #expect(hosted.recorder.choices == [.later])
+        #expect(hosted.recorder.choices.allSatisfy { !$0.isDestructive })
     }
 
     @Test("⌘-. dismisses the hosted sheet exactly like Escape")
@@ -61,11 +64,11 @@ struct RecoveryDialogEscapeSafetyTests {
 
         Self.sendCommandPeriod(to: hosted.window)
 
-        #expect(hosted.recorder.chosen == [.later])
+        #expect(hosted.recorder.choices == [.later])
     }
 
     @Test("The keypad Enter key is also the default action, never a delete")
-    func keypadEnterResolvesToRecoverAll() {
+    func keypadEnterResolvesToLater() {
         let hosted = Self.hostSheet()
         defer { hosted.window.close() }
 
@@ -75,7 +78,7 @@ struct RecoveryDialogEscapeSafetyTests {
             keyCode: 76
         )
 
-        #expect(hosted.recorder.chosen == [.recoverAll])
+        #expect(hosted.recorder.choices == [.later])
     }
 
     @Test("No sequence of reflex keys ever reaches the destructive choice")
@@ -93,13 +96,13 @@ struct RecoveryDialogEscapeSafetyTests {
             Self.sendReturn(to: hosted.window)
         }
 
-        #expect(hosted.recorder.chosen.count == 9)
-        #expect(!hosted.recorder.chosen.contains { $0.isDestructive })
+        #expect(hosted.recorder.choices.count == 9)
+        #expect(!hosted.recorder.choices.contains { $0.isDestructive })
         #expect(
-            Set(hosted.recorder.chosen) == [.later, .recoverAll],
+            Set(hosted.recorder.choices) == [.later],
             """
-            A reflex key resolved to something other than the two safe \
-            choices: \(hosted.recorder.chosen)
+            A reflex key resolved to something other than the one safe \
+            dismissal: \(hosted.recorder.choices)
             """
         )
     }
@@ -113,7 +116,7 @@ struct RecoveryDialogEscapeSafetyTests {
 
         Self.sendEscape(to: hosted.window)
 
-        #expect(hosted.recorder.chosen == [.later])
+        #expect(hosted.recorder.choices == [.later])
     }
 
     @Test("A hundred entries do not change what Escape means")
@@ -132,7 +135,7 @@ struct RecoveryDialogEscapeSafetyTests {
 
         Self.sendEscape(to: hosted.window)
 
-        #expect(hosted.recorder.chosen == [.later])
+        #expect(hosted.recorder.choices == [.later])
     }
 
     @Test("Hosting and laying out the sheet chooses nothing on its own")
@@ -144,7 +147,7 @@ struct RecoveryDialogEscapeSafetyTests {
         RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
         hosted.window.contentView?.layoutSubtreeIfNeeded()
 
-        #expect(hosted.recorder.chosen.isEmpty)
+        #expect(hosted.recorder.choices.isEmpty)
     }
 
     @Test("Escape means the same thing in every supported locale")
@@ -156,8 +159,8 @@ struct RecoveryDialogEscapeSafetyTests {
             Self.sendEscape(to: hosted.window)
 
             #expect(
-                hosted.recorder.chosen == [.later],
-                "Escape resolved to \(hosted.recorder.chosen) in \(identifier)"
+                hosted.recorder.choices == [.later],
+                "Escape resolved to \(hosted.recorder.choices) in \(identifier)"
             )
         }
     }
@@ -169,7 +172,7 @@ struct RecoveryDialogEscapeSafetyTests {
     // suite that only checks which enum case came back cannot tell a resolver
     // that deletes on `.later` from one that does not. These drive a real
     // `RecoveryManager` over a real directory through the seam production
-    // uses — `choice.snapshotsToDelete(from:)` into
+    // uses — `choice.snapshotsToDelete(row:from:)` into
     // `deleteSnapshots(withRecoveryIDs:)`, exactly as
     // `ContentView.resolveRecoveryOffer` spells it — and then look at the
     // files.
@@ -183,7 +186,7 @@ struct RecoveryDialogEscapeSafetyTests {
 
             Self.sendEscape(to: hosted.window)
 
-            #expect(hosted.recorder.chosen == [.later])
+            #expect(hosted.recorder.choices == [.later])
             #expect(
                 fixture.files == before,
                 "Escape unlinked a recovered buffer (#1503)"
@@ -203,7 +206,7 @@ struct RecoveryDialogEscapeSafetyTests {
 
             // The choice, not only the filesystem: a sheet that answered ⌘-.
             // with nothing at all would leave the files alone too, and pass.
-            #expect(hosted.recorder.chosen == [.later])
+            #expect(hosted.recorder.choices == [.later])
             #expect(fixture.files == before)
         }
     }
@@ -215,41 +218,114 @@ struct RecoveryDialogEscapeSafetyTests {
             defer { hosted.window.close() }
             let before = fixture.files
 
-            // Return resolves to `.recoverAll`, which in production hands off
-            // to the restorer instead of this resolver; what matters here is
-            // that no reflex key can reach the deletion path from the sheet.
+            // Return resolves to `.later`, which in production closes the
+            // sheet and keeps every snapshot; what matters here is that no
+            // reflex key can reach the deletion path from the sheet.
             for _ in 0..<3 {
                 Self.sendEscape(to: hosted.window)
                 Self.sendReturn(to: hosted.window)
                 Self.sendCommandPeriod(to: hosted.window)
             }
 
-            #expect(hosted.recorder.chosen.count == 9)
+            #expect(hosted.recorder.choices.count == 9)
             #expect(fixture.files == before)
         }
     }
 
-    @Test("The same wire does delete when the choice is Discard")
-    func discardOverTheSameWireDeletesTheSnapshots() throws {
+    @Test("Discard deletes nothing until the alert confirms it, then one row")
+    func discardRequiresTheSecondConfirmation() throws {
         // Without this, every test above could be passing because the seam is
         // dead — a resolver that never deletes anything would satisfy them all
-        // and ship a Discard button that does nothing.
+        // and ship a Discard button that does nothing. And since #1760 the
+        // first Discard click must not reach the resolver at all: the sheet
+        // asks again, and only the confirmed answer names one row.
         try Self.withSnapshotFixture { fixture in
             let hosted = Self.hostResolvingSheet(fixture)
             defer { hosted.window.close() }
             #expect(fixture.files.count == 2)
+            // The sheet selects its first row when it appears, so the
+            // confirmed answer names that row and only that row's snapshot
+            // may go. `entries.last` is the row that must survive.
+            let selectedRow = try #require(fixture.entries.first?.0)
+            let survivingRow = try #require(fixture.entries.last?.0)
 
             // Discard carries no key equivalent by design, so it is reached
-            // the only way it can be: by choosing it.
-            hosted.resolve(.discard)
+            // the only way it can be: the way a click arrives — the
+            // accessibility action VoiceOver's activate gesture sends.
+            #expect(
+                Self.pressButton(
+                    AccessibilityID.recoveryDiscardButton,
+                    under: hosted.window.contentView
+                ),
+                "The Discard button did not answer an accessibility press"
+            )
+            #expect(
+                Self.wait(forConfirmationAlertOn: hosted.window) != nil,
+                "Discard did not raise the confirmation alert"
+            )
 
-            #expect(fixture.files.isEmpty)
-            #expect(fixture.manager.pendingRecoveryEntries().isEmpty)
+            // The first click was intercepted: nothing deleted, nothing
+            // reported.
+            #expect(fixture.files.count == 2)
+            #expect(
+                fixture.manager.pendingRecoveryEntries().count == 2
+            )
+            #expect(hosted.recorder.choices.isEmpty)
+
+            // The alert's destructive button reports exactly this answer —
+            // `RecoveryDialogAnswer(choice: .discard, recoveryID:)` for the
+            // row the user confirmed — and it is the only thing in the app
+            // that produces one. Its `NSButton` is not materialised inside an
+            // offscreen test window (macOS 26 builds the alert's buttons only
+            // for an on-screen window), so the click itself is UI-test
+            // territory; what a unit test can pin is that nothing deletes
+            // before this answer exists, and what this answer deletes through
+            // the production seam.
+            hosted.onChoose(
+                RecoveryDialogAnswer(choice: .discard, recoveryID: selectedRow)
+            )
+
+            #expect(hosted.recorder.choices == [.discard])
+            #expect(hosted.recorder.chosen.first?.recoveryID == selectedRow)
+            // Exactly one snapshot — the confirmed row's — is gone.
+            #expect(fixture.files.count == 1)
+            #expect(
+                fixture.manager.pendingRecoveryEntries().map(\.0)
+                    == [survivingRow]
+            )
         }
     }
 
-    @Test("Discard takes only what the sheet was showing")
-    func discardLeavesSnapshotsThatWereNotOffered() throws {
+    @Test("Cancelling the discard confirmation keeps both snapshots")
+    func cancellingTheConfirmationDeletesNothing() throws {
+        try Self.withSnapshotFixture { fixture in
+            let hosted = Self.hostResolvingSheet(fixture)
+            defer { hosted.window.close() }
+            let before = fixture.files
+
+            #expect(
+                Self.pressButton(
+                    AccessibilityID.recoveryDiscardButton,
+                    under: hosted.window.contentView
+                )
+            )
+            let alert = Self.wait(forConfirmationAlertOn: hosted.window)
+            #expect(alert != nil, "Discard did not raise the confirmation")
+
+            // Escape belongs to the alert's Cancel there, not to the sheet
+            // behind it — the reflex way out of the confirmation deletes
+            // nothing and leaves the list exactly as it was.
+            Self.sendEscape(to: try #require(alert))
+            Self.wait(forConfirmationAlertOn: hosted.window)
+
+            #expect(hosted.recorder.choices.isEmpty)
+            #expect(fixture.files == before)
+            #expect(fixture.manager.pendingRecoveryEntries().count == 2)
+        }
+    }
+
+    @Test("Discard takes only the row it was confirmed for")
+    func discardLeavesSnapshotsThatWereNotConfirmed() throws {
         let dir = try Self.makeTempDir()
         defer { Self.removeTempDir(dir) }
         let manager = RecoveryManager(recoveryDirectory: dir)
@@ -260,10 +336,15 @@ struct RecoveryDialogEscapeSafetyTests {
         let later = Self.dirtyTab(path: "/tmp/written-later.swift")
         manager.snapshotDirtyTabs([later])
 
-        manager.deleteSnapshots(
-            withRecoveryIDs: RecoveryDialogChoice.discard
-                .snapshotsToDelete(from: offered)
+        let undeleted = manager.deleteSnapshots(
+            withRecoveryIDs: RecoveryDialogChoice.discard.snapshotsToDelete(
+                row: offered.first?.0,
+                from: offered
+            )
         )
+        // The manager reports which unlinks it refused, so the resolver can
+        // keep a row whose Discard the filesystem did not perform (#1760).
+        #expect(undeleted.isEmpty)
 
         #expect(manager.pendingRecoveryEntries().map(\.0) == [later.id])
     }
@@ -275,25 +356,54 @@ struct RecoveryDialogEscapeSafetyTests {
         let entries = Self.makeEntries()
 
         for choice in RecoveryDialogChoice.allCases where !choice.isDestructive {
+            // Hoisted out of the macro: a generic call with an optional
+            // argument inside `#expect` expands into something the type
+            // checker refuses.
+            let deleted = choice.snapshotsToDelete(
+                row: entries.first?.0,
+                from: entries
+            )
             #expect(
-                choice.snapshotsToDelete(from: entries).isEmpty,
+                deleted.isEmpty,
                 """
                 \(choice.rawValue) is not destructive, so it must unlink \
-                nothing — Escape and ⌘-. resolve to `.later` and a user who \
-                dismissed the sheet has to find their work again on the next \
-                launch (#1503)
+                nothing — even for the row it is answering. Escape, Return \
+                and ⌘-. resolve to `.later`, which unlinks nothing (#1503), \
+                and nothing collects a snapshot by age any more (#1760)
                 """
             )
         }
     }
 
-    @Test("Discard is allowed to unlink exactly what is on screen")
-    func discardDeletesEveryDisplayedEntry() {
+    @Test("Discard unlinks exactly the row it was given")
+    func discardDeletesExactlyItsRow() {
+        let entries = Self.makeEntries()
+        let first = entries[0].0
+        let second = entries[1].0
+
+        let firstDeleted = RecoveryDialogChoice.discard.snapshotsToDelete(
+            row: first, from: entries
+        )
+        let secondDeleted = RecoveryDialogChoice.discard.snapshotsToDelete(
+            row: second, from: entries
+        )
+        #expect(firstDeleted == [first])
+        #expect(secondDeleted == [second])
+    }
+
+    @Test("Discard without a confirmed row unlinks nothing")
+    func discardWithoutARowDeletesNothing() {
         let entries = Self.makeEntries()
 
+        let unconfirmed = RecoveryDialogChoice.discard.snapshotsToDelete(
+            row: nil, from: entries
+        )
         #expect(
-            RecoveryDialogChoice.discard.snapshotsToDelete(from: entries)
-                == entries.map(\.0)
+            unconfirmed.isEmpty,
+            """
+            An unconfirmed Discard must not fall back to deleting everything \
+            the sheet is showing (#1760)
+            """
         )
     }
 
@@ -302,15 +412,19 @@ struct RecoveryDialogEscapeSafetyTests {
         let empty: [(UUID, RecoveryEntry)] = []
 
         for choice in RecoveryDialogChoice.allCases {
-            #expect(choice.snapshotsToDelete(from: empty).isEmpty)
+            let withRow = choice.snapshotsToDelete(row: UUID(), from: empty)
+            let withoutRow = choice.snapshotsToDelete(row: nil, from: empty)
+            #expect(withRow.isEmpty)
+            #expect(withoutRow.isEmpty)
         }
     }
 
     @Test("Exactly one choice is allowed to unlink anything")
     func onlyOneChoiceCanDelete() {
         let entries = Self.makeEntries()
+        let row = entries[0].0
         let deleters = RecoveryDialogChoice.allCases.filter {
-            !$0.snapshotsToDelete(from: entries).isEmpty
+            !$0.snapshotsToDelete(row: row, from: entries).isEmpty
         }
 
         #expect(deleters == [.discard])
@@ -352,11 +466,24 @@ struct RecoveryDialogEscapeSafetyTests {
             }
         }
 
+        // Every reflex — Escape, Return, keypad Enter, ⌘-. — lands on Later,
+        // which unlinks nothing. The row actions are reached by selecting a
+        // row, never by a keystroke (#1760).
         #expect(owners(.cancelAction) == [.later])
-        #expect(owners(.defaultAction) == [.recoverAll])
+        #expect(owners(.defaultAction) == [.later])
         #expect(
             owners(KeyboardShortcut(".", modifiers: .command)) == [.later]
         )
+        for choice in [RecoveryDialogChoice.restore, .saveCopy] {
+            #expect(
+                choice.keyboardShortcuts.isEmpty,
+                """
+                \(choice.rawValue) acts on the selected row; giving it a key \
+                equivalent would let a reflex act on whatever selection the \
+                list happens to hold (#1760)
+                """
+            )
+        }
     }
 
     @Test("No two choices answer to the same keystroke")
@@ -371,7 +498,7 @@ struct RecoveryDialogEscapeSafetyTests {
     func everyChoiceIsPresent() {
         #expect(
             Set(RecoveryDialogChoice.allCases)
-                == [.discard, .later, .recoverAll]
+                == [.discard, .later, .restore, .saveCopy]
         )
     }
 
@@ -405,15 +532,15 @@ struct RecoveryDialogEscapeSafetyTests {
     }
 
     @Test("The shortcut proxies stay out of the accessibility tree")
-    func theHostedSheetExposesExactlyThreeButtons() throws {
+    func theHostedSheetExposesExactlyFourButtons() throws {
         // ⌘-. rides an invisible 0×0 `Button` in the visible button's
         // `.background`, because SwiftUI gives a control only one key
         // equivalent. Nothing but `.accessibilityHidden(true)` keeps it out of
         // the accessibility tree, and removing that modifier is a one-line
         // edit no other test in this file can see: every behavioural
         // assertion here goes through `performKeyEquivalent`, which the proxy
-        // answers either way. What it costs is a VoiceOver user hearing four
-        // buttons on a three-button sheet, two of them announced "Later" — on
+        // answers either way. What it costs is a VoiceOver user hearing five
+        // buttons on a four-button sheet, two of them announced "Later" — on
         // the one sheet in Pine where picking the wrong button is
         // unrecoverable.
         let hosted = Self.hostSheet()
@@ -443,7 +570,7 @@ struct RecoveryDialogEscapeSafetyTests {
 
     @Test("The footer lays out every choice, destructive first, default last")
     func theFooterDrawsEveryChoice() {
-        // The row used to name its three buttons one by one, so a fourth
+        // The row used to name its buttons one by one, so a new
         // choice would have existed in the type, been reachable by nothing,
         // and shown up nowhere. It is built by walking `allCases` now, and
         // this is the assertion that keeps it that way.
@@ -476,10 +603,15 @@ struct RecoveryDialogEscapeSafetyTests {
 
     // MARK: - Localization
 
-    @Test("Every locale gives the three choices three different titles")
+    @Test("Every locale gives the four choices four different titles")
     func choiceTitlesAreDistinctInEveryLocale() throws {
         let catalog = try Self.loadCatalog()
-        let keys = ["recovery.discard", "recovery.later", "recovery.recoverAll"]
+        let keys = [
+            "recovery.discard",
+            "recovery.later",
+            "recovery.restore",
+            "recovery.saveCopy",
+        ]
 
         for locale in Self.supportedLocales {
             let titles = try keys.map { key -> String in
@@ -558,9 +690,8 @@ struct RecoveryDialogEscapeSafetyTests {
         // the one who loses their work.
         #expect(RecoveryDialogChoice.discard.title == Strings.recoveryDiscard)
         #expect(RecoveryDialogChoice.later.title == Strings.recoveryLater)
-        #expect(
-            RecoveryDialogChoice.recoverAll.title == Strings.recoveryRecoverAll
-        )
+        #expect(RecoveryDialogChoice.restore.title == Strings.recoveryRestore)
+        #expect(RecoveryDialogChoice.saveCopy.title == Strings.recoverySaveCopy)
 
         // The identity check above is blind to the other half of the same
         // swap — done inside `Strings`, where `recoveryDiscard` is pointed at
@@ -581,7 +712,8 @@ struct RecoveryDialogEscapeSafetyTests {
         let keys: [RecoveryDialogChoice: String] = [
             .discard: "recovery.discard",
             .later: "recovery.later",
-            .recoverAll: "recovery.recoverAll",
+            .restore: "recovery.restore",
+            .saveCopy: "recovery.saveCopy",
         ]
         #expect(
             Set(keys.keys) == Set(RecoveryDialogChoice.allCases),
@@ -595,12 +727,16 @@ struct RecoveryDialogEscapeSafetyTests {
                     Self.value(for: key, locale: locale, in: catalog),
                     "Missing \(key) [\(locale)]"
                 )
-                let rendered = Self.measuredWidth(
-                    of: Text(choice.title),
+                // Measured with the typesetting language pinned on both
+                // sides, like `measuredNoticeWidth`: the row actions' titles
+                // end in "…", and in `ja` and `zh-Hans` the typesetter
+                // squeezes that punctuation only when it knows the language.
+                let rendered = Self.measuredNoticeWidth(
+                    Text(choice.title),
                     locale: locale
                 )
-                let fromCatalog = Self.measuredWidth(
-                    of: Text(verbatim: expected),
+                let fromCatalog = Self.measuredNoticeWidth(
+                    Text(verbatim: expected),
                     locale: locale
                 )
                 #expect(
@@ -675,64 +811,42 @@ struct RecoveryDialogEscapeSafetyTests {
         }
     }
 
-    @Test("The retention footnote is localized for every supported locale")
-    func retentionNoticeIsLocalizedEverywhere() throws {
-        // "Later" is a bounded promise: the launch sweep collects undecided
-        // snapshots after `staleEntryRetentionDays`. The sheet says so, so the
-        // string has to exist wherever the sheet can be shown.
+    @Test("The keep notice is localized for every supported locale")
+    func keepNoticeIsLocalizedEverywhere() throws {
+        // "Later" is safe without a deadline now (#1760): nothing collects a
+        // snapshot by age, and the menu reopens the list. That promise has to
+        // exist wherever the sheet can be shown, or the footnote regresses to
+        // a raw key.
         let catalog = try Self.loadCatalog()
-        let entry = try #require(
-            catalog["recovery.retentionNotice %lld"] as? [String: Any]
-        )
-        let localizations = try #require(
-            entry["localizations"] as? [String: Any]
-        )
 
         for locale in Self.supportedLocales {
-            let localization = try #require(
-                localizations[locale] as? [String: Any],
-                "Missing retention notice [\(locale)]"
-            )
-            let substitutions = try #require(
-                localization["substitutions"] as? [String: Any]
-            )
             #expect(
-                substitutions["days"] != nil,
-                "Retention notice in \(locale) does not substitute the count"
+                Self.value(
+                    for: "recovery.keepNotice",
+                    locale: locale,
+                    in: catalog
+                )?.isEmpty == false,
+                "Missing keep notice [\(locale)]"
             )
         }
-        #expect(RecoveryManager.staleEntryRetentionDays > 0)
     }
 
-    @Test("The retention footnote the sheet renders is the catalog's")
-    func theRenderedRetentionNoticeResolves() throws {
+    @Test("The keep notice the sheet renders is the catalog's")
+    func theRenderedKeepNoticeResolves() throws {
         // Everything above reads the catalog and never asks whether the sheet
-        // can reach it. The key is built by interpolation —
-        // `"recovery.retentionNotice \(days)"` — so its *format specifier* is
-        // part of its name: changing the parameter to `Double` makes the key
-        // `recovery.retentionNotice %lf`, and renaming the catalog entry does
-        // the same from the other side. Either way the footnote prints the
-        // literal "recovery.retentionNotice 7" and both
-        // `retentionNoticeIsLocalizedEverywhere` (which reads the file) and
-        // `theSheetStatesTheRetentionWindow` (which greps the source) stay
-        // green while this branch's central promise — that "Later" is a
-        // bounded window the user can read — becomes a raw key on screen.
-        //
-        // Same technique and tolerance as
+        // can reach it. Same technique and tolerance as
         // `localeSubstitutionChangesWhatIsMeasured`: a resolved
         // `Text(LocalizedStringKey)` and a `Text(verbatim:)` of the same
         // characters lay out to the same width, an unresolved key does not.
         let catalog = try Self.loadCatalog()
-        let days = 7
 
         for locale in Self.supportedLocales {
-            let expected = try Self.retentionNotice(
-                days: days,
-                locale: locale,
-                in: catalog
+            let expected = try #require(
+                Self.value(for: "recovery.keepNotice", locale: locale, in: catalog),
+                "Missing keep notice [\(locale)]"
             )
             let rendered = Self.measuredNoticeWidth(
-                Text(Strings.recoveryRetentionNotice(days: days)),
+                Text(Strings.recoveryKeepNotice),
                 locale: locale
             )
             let fromCatalog = Self.measuredNoticeWidth(
@@ -743,32 +857,30 @@ struct RecoveryDialogEscapeSafetyTests {
             #expect(
                 abs(rendered - fromCatalog) <= Self.typesettingTolerance,
                 """
-                The retention footnote in \(locale) does not render the \
+                The keep-notice footnote in \(locale) does not render the \
                 catalog's "\(expected)" — \(rendered)pt against \
                 \(fromCatalog)pt. The lookup did not resolve, so the sheet is \
-                printing a raw key where it promises the user how long \
-                "Later" lasts (#1503)
+                printing a raw key where it promises the user that nothing \
+                collects their work (#1760)
                 """
             )
         }
     }
 
-    @Test("A wrong retention key is something the render check can see")
-    func theRenderedRetentionNoticeCheckHasTeeth() throws {
+    @Test("A wrong keep-notice key is something the render check can see")
+    func theRenderedKeepNoticeCheckHasTeeth() throws {
         // The positive control for the test above: an unresolved key is not
         // within a couple of points of the sentence it should have produced.
         // Without this, a measurement that silently returned the same number
         // for everything would make that test pass forever.
         let catalog = try Self.loadCatalog()
-        let expected = try Self.retentionNotice(
-            days: 7,
-            locale: "en",
-            in: catalog
+        let expected = try #require(
+            Self.value(for: "recovery.keepNotice", locale: "en", in: catalog)
         )
         // What SwiftUI draws for a key the catalog does not contain: the key
-        // itself. This is exactly what `%lf` or a renamed entry produces.
+        // itself. This is exactly what a renamed entry produces.
         let unresolved = Self.measuredNoticeWidth(
-            Text(LocalizedStringKey("recovery.retentionNotice \(7.0)")),
+            Text(LocalizedStringKey("recovery.keepNoticeTypo")),
             locale: "en"
         )
         let fromCatalog = Self.measuredNoticeWidth(
@@ -781,9 +893,43 @@ struct RecoveryDialogEscapeSafetyTests {
             """
             A key that resolves to nothing measured the same as the resolved \
             footnote (\(unresolved)pt against \(fromCatalog)pt), so \
-            `theRenderedRetentionNoticeResolves` cannot tell them apart either
+            `theRenderedKeepNoticeResolves` cannot tell them apart either
             """
         )
+    }
+
+    @Test("The discard confirmation and save-copy notices are localized everywhere")
+    func discardConfirmAndSaveCopyNoticesAreLocalizedEverywhere() throws {
+        let catalog = try Self.loadCatalog()
+        let formatKeys = [
+            "recovery.discardConfirmTitle %@",
+            "recovery.discardRefused %@",
+            "recovery.saveCopyOriginalRefused %@",
+            "recovery.saveCopyEncodingFailure %@",
+            "recovery.saveCopyPanelUnavailable %@",
+            "recovery.saveCopyWriteFailure %@ %@",
+        ]
+        let plainKeys = [
+            "recovery.discardConfirmMessage",
+            "menu.recoverUnsavedWork",
+        ]
+
+        for locale in Self.supportedLocales {
+            for key in formatKeys {
+                let text = try #require(
+                    Self.value(for: key, locale: locale, in: catalog),
+                    "Missing \(key) [\(locale)]"
+                )
+                #expect(text.contains("%@"), "\(key) [\(locale)] lost its substitution")
+            }
+            for key in plainKeys {
+                #expect(
+                    Self.value(for: key, locale: locale, in: catalog)?
+                        .isEmpty == false,
+                    "Missing \(key) [\(locale)]"
+                )
+            }
+        }
     }
 
     // MARK: - Layout
@@ -803,7 +949,7 @@ struct RecoveryDialogEscapeSafetyTests {
             #expect(
                 sheet >= footer + Self.sheetPadding,
                 """
-                The three buttons need \(footer)pt plus \
+                The four buttons need \(footer)pt plus \
                 \(Self.sheetPadding)pt of padding in \(identifier), but the \
                 sheet only takes \(sheet)pt — the row is being squeezed
                 """
@@ -1028,13 +1174,16 @@ struct RecoveryDialogEscapeSafetyTests {
         let hosted = NSHostingView(
             rootView: RecoveryDialogView(entries: []) { recorder.record($0) }
         )
-        hosted.frame = NSRect(x: 0, y: 0, width: 420, height: 520)
+        hosted.frame = NSRect(x: 0, y: 0, width: 560, height: 520)
         hosted.layoutSubtreeIfNeeded()
 
-        #expect(recorder.chosen.isEmpty)
-        #expect(hosted.fittingSize.width == Self.restingSheetWidth)
+        #expect(recorder.choices.isEmpty)
+        // A band, like `theSheetRestsAtItsDesignedWidth`: the sheet's own
+        // `minWidth` is the floor, and a locale that needs a few more points
+        // may have them.
+        #expect(hosted.fittingSize.width >= Self.restingSheetWidth)
         // The list has a 100pt floor, so an empty sheet is still a real sheet
-        // and not a collapsed strip with three buttons in it.
+        // and not a collapsed strip with four buttons in it.
         #expect(hosted.fittingSize.height > 200)
     }
 
@@ -1046,7 +1195,7 @@ struct RecoveryDialogEscapeSafetyTests {
 
     /// 24pt of padding on each edge, from `RecoveryDialogView.body`.
     private static let sheetPadding: CGFloat = 48
-    private static let restingSheetWidth: CGFloat = 400
+    private static let restingSheetWidth: CGFloat = 496
     /// How much a shipped translation may add to the resting width before the
     /// growth stops being a translation and starts being a missing cap.
     private static let widthHeadroom: CGFloat = 40
@@ -1061,16 +1210,7 @@ struct RecoveryDialogEscapeSafetyTests {
     private struct HostedSheet {
         let window: NSWindow
         let recorder: ChoiceRecorder
-        let onChoose: (RecoveryDialogChoice) -> Void
-
-        /// Applies a choice the way the sheet's own callback does. The only
-        /// way to reach Discard from a test, because Discard is denied a key
-        /// equivalent on purpose and there is no click to send.
-        @MainActor
-        func resolve(_ choice: RecoveryDialogChoice) {
-            recorder.record(choice)
-            onChoose(choice)
-        }
+        let onChoose: (RecoveryDialogAnswer) -> Void
     }
 
     /// A real recovery directory with two snapshots in it.
@@ -1110,14 +1250,15 @@ struct RecoveryDialogEscapeSafetyTests {
     }
 
     /// Hosts the sheet wired to the fixture's manager through the production
-    /// seam: the choice decides what may be unlinked, and the call is made
-    /// whatever the choice is.
+    /// seam: the answer's choice and confirmed row decide what may be
+    /// unlinked, and the call is made whatever the answer is.
     private static func hostResolvingSheet(
         _ fixture: SnapshotFixture
     ) -> HostedSheet {
-        hostSheet(entries: fixture.entries) { choice in
+        hostSheet(entries: fixture.entries) { answer in
             fixture.manager.deleteSnapshots(
-                withRecoveryIDs: choice.snapshotsToDelete(
+                withRecoveryIDs: answer.choice.snapshotsToDelete(
+                    row: answer.recoveryID,
                     from: fixture.entries
                 )
             )
@@ -1151,7 +1292,7 @@ struct RecoveryDialogEscapeSafetyTests {
     private static func hostSheet(
         entries: [(UUID, RecoveryEntry)]? = nil,
         locale: String = "en",
-        onChoose: @escaping (RecoveryDialogChoice) -> Void = { _ in }
+        onChoose: @escaping (RecoveryDialogAnswer) -> Void = { _ in }
     ) -> HostedSheet {
         let recorder = ChoiceRecorder()
         let hosted = NSHostingView(
@@ -1186,7 +1327,13 @@ struct RecoveryDialogEscapeSafetyTests {
         return HostedSheet(
             window: window,
             recorder: recorder,
-            onChoose: onChoose
+            // The combined closure — record, then hand to the seam — so a
+            // direct call goes through exactly what the sheet reports
+            // through.
+            onChoose: { answer in
+                recorder.record(answer)
+                onChoose(answer)
+            }
         )
     }
 
@@ -1361,74 +1508,6 @@ struct RecoveryDialogEscapeSafetyTests {
         )
     }
 
-    /// Which plural category `7` selects, per supported locale.
-    ///
-    /// Spelled out rather than derived: Foundation exposes no public plural
-    /// rules, and the alternative — accepting whichever variation happens to
-    /// match — would stop the render check from noticing that the sheet picked
-    /// the wrong form. Russian is the one that is not `other`: 5…20 is `many`,
-    /// and `other` there is only reached by fractions.
-    private static let pluralCategoryForSeven = [
-        "de": "other",
-        "en": "other",
-        "es": "other",
-        "fr": "other",
-        "ja": "other",
-        "ko": "other",
-        "pt-BR": "other",
-        "ru": "many",
-        "zh-Hans": "other",
-    ]
-
-    /// The retention footnote as the catalog holds it, with the count already
-    /// substituted — the string the sheet must be rendering.
-    private static func retentionNotice(
-        days: Int,
-        locale: String,
-        in catalog: [String: Any]
-    ) throws -> String {
-        let entry = try #require(
-            catalog["recovery.retentionNotice %lld"] as? [String: Any],
-            "The retention notice is no longer keyed on an `%lld` count"
-        )
-        let localizations = try #require(entry["localizations"] as? [String: Any])
-        let localization = try #require(
-            localizations[locale] as? [String: Any],
-            "Missing retention notice [\(locale)]"
-        )
-        let substitutions = try #require(
-            localization["substitutions"] as? [String: Any]
-        )
-        let daysSubstitution = try #require(
-            substitutions["days"] as? [String: Any],
-            "The retention notice in \(locale) no longer substitutes `days`"
-        )
-        let variations = try #require(
-            daysSubstitution["variations"] as? [String: Any]
-        )
-        let plural = try #require(variations["plural"] as? [String: Any])
-        let category = try #require(
-            pluralCategoryForSeven[locale],
-            "No expected plural category for \(locale)"
-        )
-        let form = try #require(
-            plural[category] as? [String: Any],
-            """
-            The retention notice in \(locale) has no "\(category)" plural \
-            form, which is the one \(days) selects there
-            """
-        )
-        let unit = try #require(form["stringUnit"] as? [String: Any])
-        let variationValue = try #require(unit["value"] as? String)
-        let outer = try #require(
-            (localization["stringUnit"] as? [String: Any])?["value"] as? String
-        )
-
-        return outer
-            .replacingOccurrences(of: "%#@days@", with: variationValue)
-            .replacingOccurrences(of: "%lld", with: String(days))
-    }
-
     // MARK: - Reading the accessibility tree
     //
     // SwiftUI does not put its accessibility elements in the view hierarchy:
@@ -1518,6 +1597,46 @@ struct RecoveryDialogEscapeSafetyTests {
         return result
     }
 
+    // MARK: - Pressing the sheet's real buttons
+    //
+    // The Discard button carries no keyboard equivalent (#1503), so the only
+    // way a test can reach it is the way a click does: the accessibility
+    // action VoiceOver's activate gesture sends — the same mechanics
+    // `AccessibilityTreeProbe` uses for sidebar rows. The confirmation alert
+    // is AppKit behind SwiftUI's `.alert`, so its buttons live under the
+    // window's attached sheet.
+
+    /// Presses the element named `identifier` the way an assistive client's
+    /// activate gesture does. `false` means no such element answered a press,
+    /// which is a failure mode of its own: a button VoiceOver cannot use is
+    /// a button the recovery sheet does not really offer.
+    @discardableResult
+    private static func pressButton(
+        _ identifier: String,
+        under root: NSView?
+    ) -> Bool {
+        guard let root else { return false }
+        awakenAccessibility()
+        root.layoutSubtreeIfNeeded()
+
+        guard let button = descendant(of: root, where: {
+            accessibilityValue("accessibilityIdentifier", of: $0) as? String
+                == identifier
+        }) else { return false }
+        return AccessibilityTreeProbe.performPress(button) == true
+    }
+
+    @discardableResult
+    private static func wait(
+        forConfirmationAlertOn window: NSWindow
+    ) -> NSWindow? {
+        for _ in 0..<50 {
+            if let sheet = window.attachedSheet { return sheet }
+            RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.02))
+        }
+        return window.attachedSheet
+    }
+
     private static func forEachDescendant(
         of root: NSObject,
         _ body: (NSObject) -> Void
@@ -1556,10 +1675,14 @@ struct RecoveryDialogEscapeSafetyTests {
 
     @MainActor
     private final class ChoiceRecorder {
-        private(set) var chosen: [RecoveryDialogChoice] = []
+        private(set) var chosen: [RecoveryDialogAnswer] = []
 
-        func record(_ choice: RecoveryDialogChoice) {
-            chosen.append(choice)
+        /// The choices in report order, so tests written against the old
+        /// choice-only shape keep reading the same way.
+        var choices: [RecoveryDialogChoice] { chosen.map(\.choice) }
+
+        func record(_ answer: RecoveryDialogAnswer) {
+            chosen.append(answer)
         }
     }
 }
