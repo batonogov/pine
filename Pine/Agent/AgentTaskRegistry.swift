@@ -477,6 +477,21 @@ final class AgentTaskRegistry {
         tasks.first { $0.id == id }
     }
 
+    /// The limits a new task's title and goal are admitted under. Request UI
+    /// reads them so it refuses the same text the registry would.
+    var persistenceLimits: AgentTaskPersistenceLimits { limits }
+
+    /// This project's durable metadata load outcome, or `nil` while the
+    /// admission read is still in flight. Read-only: selection and attention
+    /// surfaces use it to tell an empty list that is still loading from one
+    /// that has finished and is authoritative (#1760). A `.rejected` status
+    /// completes the read but proves nothing about which tasks exist.
+    func metadataLoadStatus(
+        for project: AgentTaskProjectIdentity
+    ) -> AgentTaskMetadataLoadStatus? {
+        loadStatusByProject[project.persistenceKey]
+    }
+
     func matchesNotificationRoute(
         _ identity: AgentNotificationRouteIdentity
     ) -> Bool {

@@ -27,19 +27,28 @@ class PineUITestCase: XCTestCase {
         try super.tearDownWithError()
     }
 
+    /// The baseline launch arguments EVERY fresh instance applies. A
+    /// replacement `XCUIApplication` inherits nothing from the instance it
+    /// replaces, so the relaunch helper re-applies these too: without them a
+    /// relaunch runs with the `ps`-poll detector (#1060 macOS-26 hang), the
+    /// global hotkey (#1113), Metal rendering (#1108), saved-state
+    /// restoration, and the host locale — each one a lost debugging
+    /// afternoon.
+    private static let baseLaunchArguments = [
+        "--reset-state",
+        "--disable-agent-detection",
+        "--disable-metal",
+        "--disable-quick-terminal",
+        "--disable-terminal-seeding",
+        "-ApplePersistenceIgnoreState", "YES",
+        "-AppleLanguages", "(en)",
+        "-AppleLocale", "en_US"
+    ]
+
     override func setUpWithError() throws {
         continueAfterFailure = false
         app = XCUIApplication()
-        app.launchArguments += [
-            "--reset-state",
-            "--disable-agent-detection",
-            "--disable-metal",
-            "--disable-quick-terminal",
-            "--disable-terminal-seeding",
-            "-ApplePersistenceIgnoreState", "YES",
-            "-AppleLanguages", "(en)",
-            "-AppleLocale", "en_US"
-        ]
+        app.launchArguments += Self.baseLaunchArguments
     }
 
     // MARK: - Helpers
@@ -92,6 +101,21 @@ class PineUITestCase: XCTestCase {
     func launchClean() {
         app.launch()
         app.activate()
+    }
+
+    /// Replaces the app with a fresh `XCUIApplication` for a relaunch that
+    /// keeps this test's isolated state: the base class re-applies the same
+    /// state namespace to the replacement instance, so persisted stores and
+    /// preferences survive the relaunch while the process itself is new.
+    /// `configure` runs after replacement and before launch, so fixture
+    /// arguments and environment apply to the new process.
+    func relaunchIsolatedApp(configure: ((XCUIApplication) -> Void)? = nil) {
+        app = XCUIApplication()
+        app.launchArguments += Self.baseLaunchArguments
+        configure?(app)
+        app.launch()
+        app.activate()
+        _ = app.windows.firstMatch.waitForExistence(timeout: 10)
     }
 
     /// Overrides the deterministic locale configured by the base class.
