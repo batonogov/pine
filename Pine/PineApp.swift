@@ -69,7 +69,6 @@ struct PineApp: App {
 
         Window(Strings.welcomeTitle, id: "welcome") {
             WelcomeView(registry: registry, appDelegate: appDelegate)
-                .background { AppDelegateBridge(appDelegate: appDelegate, registry: registry) }
                 .background { WelcomeWindowCapture(appDelegate: appDelegate) }
         }
         .defaultSize(
@@ -126,33 +125,6 @@ private final class WindowCaptureSentinel: NSView {
     }
 }
 
-// MARK: - AppDelegate bridge (passes SwiftUI openWindow closures to AppDelegate)
-
-/// Invisible view that hands SwiftUI's openWindow/dismissWindow actions to AppDelegate
-/// so it can open windows when no SwiftUI views are active.
-/// Also opens a pending project (from `--open-project` launch argument)
-/// once the closures are wired up — guaranteeing no race condition.
-private struct AppDelegateBridge: View {
-    let appDelegate: AppDelegate
-    let registry: ProjectRegistry
-    @Environment(\.openWindow) var openWindow
-    @Environment(\.dismissWindow) var dismissWindow
-
-    var body: some View {
-        Color.clear.onAppear {
-            appDelegate.openNamedWindow = { id in openWindow(id: id) }
-            appDelegate.openProjectWindow = { [registry] url in
-                // Every open that names a project funnels through here, so
-                // this is the one place the intent can be recorded before the
-                // scene reads its persisted "last active project" (#1543).
-                registry.noteExplicitProjectOpenRequest(url)
-                openWindow(value: url)
-            }
-
-        }
-    }
-}
-
 /// A restored value-based scene can have no URL. Keep a real view mounted so
 /// its task can replace that otherwise blank window with the named Welcome scene.
 struct UnassignedProjectWindowView: View {
@@ -171,8 +143,9 @@ struct UnassignedProjectWindowView: View {
 
 // MARK: - Project Window wrapper
 
-/// Resolves a ProjectManager from the registry and injects it into ContentView.
-/// Also ensures AppDelegate is wired up even when Welcome window is never shown.
+/// Resolves a ProjectManager from the registry and injects it into the
+/// Pine 3 workspace. Also ensures AppDelegate is wired up even when the
+/// Welcome window is never shown.
 ///
 /// Deliberately **not** `private`. AppKit derives autosave names for the
 /// window's `NSSplitView` from `_typeName` of the scene's content type, and a
@@ -212,9 +185,14 @@ struct ProjectWindowView: View {
             if let pm = registry.projectManagerIfAdmitted(
                 for: windowSession.activeProjectURL
             ) {
-                ContentView(onInboxSuccessfulNavigation: { [weak appDelegate] in
-                    appDelegate?.hideWelcome()
-                })
+                // One project, its tasks, and the selected task's result (#1760).
+                ADEWorkspaceView(
+                    projectURL: registry.canonicalProjectURL(windowSession.activeProjectURL),
+                    registry: registry,
+                    onInboxSuccessfulNavigation: { [weak appDelegate] in
+                        appDelegate?.hideWelcome()
+                    }
+                )
                     .id(ObjectIdentifier(pm))
                     .environment(pm)
                     .environment(pm.workspace)
@@ -301,7 +279,6 @@ struct ProjectWindowView: View {
                 report.managedRoot.path
             ))
         }
-        .background { AppDelegateBridge(appDelegate: appDelegate, registry: registry) }
         // Note: project cleanup (session save, Welcome restore) is handled by
         // CloseDelegate.windowWillClose — not onDisappear, which doesn't fire
         // reliably when windows are closed via AppKit performClose:.
@@ -1137,13 +1114,68 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
             environment: self
         )
 
-    /// Closure to open a named SwiftUI window, set by PineApp on launch.
+    /// The one app-lifetime host of SwiftUI's window actions. Installed in
+    /// `applicationWillFinishLaunching`, before any window exists, so opening
+    /// a project or the Welcome scene never depends on another window.
+    let windowActions = AppWindowActions()
+
+    /// Unit-test seam: replaces the app-lifetime route for a delegate a test
+    /// builds directly. Production never assigns it; it reads `windowActions`.
     var openNamedWindow: ((String) -> Void)?
-    /// Closure to open a project SwiftUI window by URL, set by PineApp on launch.
     var openProjectWindow: ((URL) -> Void)?
 
     func showAgentInbox() {
         agentInboxPresentation.present()
+    }
+
+    /// Creates the window-action host. Called exactly once, for the run.
+    func installWindowActionHost() {
+        windowActions.install { [weak self] openProject, openNamed in
+            AppWindowActions.Routes(
+                openProject: { url in
+                    // Every open that names a project funnels through here, so
+                    // this is the one place the intent can be recorded before the
+                    // scene reads its persisted "last active project" (#1543).
+                    self?.registry.noteExplicitProjectOpenRequest(url)
+                    openProject(url)
+                },
+                openNamed: { id in openNamed(id) }
+            )
+        }
+    }
+
+    /// Opens the named scene (`"welcome"`) through the app-lifetime host.
+    @discardableResult
+    func openNamedScene(_ id: String) -> Bool {
+        if let openNamedWindow {
+            openNamedWindow(id)
+            return true
+        }
+        return windowActions.openNamed(id)
+    }
+
+    /// The route into the project scene: the unit-test seam, then the
+    /// app-lifetime host, then — only where a caller brought one — its own
+    /// fallback. Production has the host and never reaches the fallback.
+    private func projectWindowOpener(_ fallback: ((URL) -> Void)? = nil) -> ((URL) -> Void)? {
+        openProjectWindow ?? windowActions.projectOpener ?? fallback
+    }
+
+    /// Opens the project scene for `url`. A `false` return means no route
+    /// exists at all — that is release-visible: the AppDelegate-only opens
+    /// (Open panel, Open Recent, notification presentation) fail closed,
+    /// while Welcome-window flows keep working and can hide the breakage.
+    @discardableResult
+    func openProjectScene(_ url: URL, fallback: ((URL) -> Void)? = nil) -> Bool {
+        guard let open = projectWindowOpener(fallback) else {
+            Logger.app.error(
+                "AppWindowActions: no project-scene route is available; the \
+                project open of \(url.path, privacy: .public) failed closed."
+            )
+            return false
+        }
+        open(url)
+        return true
     }
 
     // MARK: - AgentInboxHostEnvironment
@@ -1276,10 +1308,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
         registry.openProjects.values.contains { $0 === project }
     }
 
-    /// Focuses one exact agent route on behalf of an explicit user action —
-    /// a notification response, or a Dock live-task entry (#1492). This is the
-    /// single navigation authority for both: every failure mode degrades to
-    /// the Agent Inbox rather than to a different session.
+    /// Focuses one exact agent task on behalf of an explicit user action —
+    /// a notification response, or a Dock live-task entry (#1492). Every
+    /// failure mode degrades to the Agent Inbox rather than to a different
+    /// session.
+    ///
+    /// The task's own project window is the first destination: its task list
+    /// shows every project-backed task, native ones included. Only a task
+    /// that window cannot show falls through to the legacy exact live-route
+    /// navigation.
     private func openAgentTaskRoute(
         _ identity: AgentNotificationRouteIdentity
     ) {
@@ -1287,16 +1324,27 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
             showAgentInbox()
             return
         }
-        guard openProjectWindow != nil else {
-            showAgentInbox()
-            return
-        }
         Task { @MainActor [weak self] in
             guard let self else { return }
+            switch await registry.selectAgentTask(
+                identity.taskID,
+                openProjectWindow: { [weak self] url in
+                    _ = self?.openProjectScene(url)
+                }
+            ) {
+            case .selected, .queued:
+                return
+            case .refused:
+                // No listed task has this identity: truthful durable history.
+                showAgentInbox()
+                return
+            case .unsupportedSurface, .projectUnavailable:
+                break
+            }
             let result = await registry.navigateToAgentTaskFromInbox(
                 identity.taskID,
                 openProjectWindow: { [weak self] url in
-                    self?.openProjectWindow?(url)
+                    _ = self?.openProjectScene(url)
                 },
                 expectedNotificationRoute: identity
             )
@@ -1315,7 +1363,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
     weak var welcomeWindow: NSWindow?
 
     /// Project URL passed via `--open-project` launch argument (UI testing).
-    /// Consumed by AppDelegateBridge once SwiftUI closures are wired up.
+    /// Consumed by WelcomeView's `.task`, which spends it once its window's
+    /// initial SwiftUI layout has settled.
     var pendingProjectURL: URL?
 
     /// Handles cleanup when a project window disappears: saves session,
@@ -1363,7 +1412,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
 
         // Try SwiftUI first — may silently fail after repeated dismiss cycles
         // because the captured @Environment(\.openWindow) closure becomes stale.
-        openNamedWindow?("welcome")
+        openNamedScene("welcome")
 
         // Give SwiftUI a moment to process, then verify and fallback via AppKit.
         let wait = waitBeforeEnsure ?? {
@@ -1453,8 +1502,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
             selectedURL = await registry.openProjectViaPanel(context: context)
         }
         guard let selectedURL else { return false }
-        guard let openProjectWindow else { return false }
-        openProjectWindow(selectedURL)
+        guard openProjectScene(selectedURL) else { return false }
         hideWelcome()
         return true
     }
@@ -1589,6 +1637,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
     }
 
     func applicationWillFinishLaunching(_ notification: Notification) {
+        // Before any window work: the project-open funnel must not depend on
+        // a scene being alive.
+        installWindowActionHost()
         #if DEBUG
         if let driver = ApplicationLifecycleProcessDriver.fromEnvironment() {
             applicationLifecycleProcessDriver = driver
@@ -1860,7 +1911,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
         for dir in classified.directories {
             let canonical = dir.resolvingSymlinksInPath()
             guard registry.projectManager(for: canonical) != nil else { continue }
-            openProjectWindow?(canonical)
+            openProjectScene(canonical)
             hideWelcome()
         }
 
@@ -1873,7 +1924,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
             } else if let firstFile = classified.files.first {
                 let projectDir = firstFile.deletingLastPathComponent().resolvingSymlinksInPath()
                 guard let projectManager = registry.projectManager(for: projectDir) else { return }
-                openProjectWindow?(projectDir)
+                openProjectScene(projectDir)
                 hideWelcome()
                 Task { @MainActor [weak self, weak projectManager] in
                     guard let self, let projectManager else { return }
@@ -2162,8 +2213,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
                 registry: targetRegistry,
                 presentationIntent: intent
             ), presentationIsCurrent(), windowSession.activeProjectURL == canonical,
-                  let openProjectWindow = self.openProjectWindow
-                    ?? fallbackOpenProjectWindow else {
+                  let openProjectWindow = projectWindowOpener() else {
                 return false
             }
             openProjectWindow(windowSession.sceneProjectURL)
@@ -2211,8 +2261,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
         if targetRegistry.isWindowOpen(canonical) {
             targetRegistry.closeProjectWindow(canonical)
         }
-        guard let openProjectWindow =
-                self.openProjectWindow ?? fallbackOpenProjectWindow else {
+        guard let openProjectWindow = projectWindowOpener(fallbackOpenProjectWindow) else {
             targetRegistry.closeProjectWindow(canonical)
             return false
         }

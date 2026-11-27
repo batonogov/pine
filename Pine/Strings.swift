@@ -2822,6 +2822,61 @@ enum Strings {
     static let howToRunExpiredCredentials: LocalizedStringKey = "howToRun.expiredCredentials"
     static let howToRunNativeCredentials: LocalizedStringKey = "howToRun.nativeCredentials"
     static let agentResumeTask: LocalizedStringKey = "agent.resumeTask"
+
+    // MARK: - Pine 3 workspace (#1760)
+
+    static let menuNewTask: LocalizedStringKey = "menu.newTask"
+    static let workspaceTasks: LocalizedStringKey = "workspace.tasks"
+    static let workspaceNewTask: LocalizedStringKey = "workspace.newTask"
+    static let workspaceNoTasks: LocalizedStringKey = "workspace.noTasks"
+    static let workspaceOverviewSelectHint: LocalizedStringKey =
+        "workspace.overview.selectHint"
+    static let workspaceInputMode: LocalizedStringKey = "workspace.inputMode"
+    static let workspaceModeRequest: LocalizedStringKey = "workspace.mode.request"
+    static let workspaceModeCommand: LocalizedStringKey = "workspace.mode.command"
+    static let workspaceComposerPrompt: LocalizedStringKey = "workspace.composer.prompt"
+    static let workspaceCommandPrompt: LocalizedStringKey =
+        "workspace.composer.commandPrompt"
+    static let workspaceContinuePrompt: LocalizedStringKey =
+        "workspace.composer.continuePrompt"
+    static let workspaceSend: LocalizedStringKey = "workspace.send"
+    static let workspaceCommandUnavailable: LocalizedStringKey =
+        "workspace.commandUnavailable"
+    static let workspaceNoLiveSession: LocalizedStringKey = "workspace.noLiveSession"
+    static let workspaceAwaitingRetry: LocalizedStringKey = "workspace.awaitingRetry"
+    static let workspaceRequestTooLong: LocalizedStringKey = "workspace.requestTooLong"
+    static let workspaceRequestTooLongDetail: LocalizedStringKey =
+        "workspace.requestTooLongDetail"
+    static let workspaceQuestionTitle: LocalizedStringKey = "workspace.questionTitle"
+    static let workspaceDetails: LocalizedStringKey = "workspace.details"
+    static let workspaceEnvironmentWorktree: LocalizedStringKey =
+        "workspace.environment.worktree"
+    static let workspaceEnvironmentBranch: LocalizedStringKey =
+        "workspace.environment.branch"
+    static let workspaceEnvironmentRecovery: LocalizedStringKey =
+        "workspace.environment.recovery"
+    static let workspaceRunHistory: LocalizedStringKey = "workspace.runHistory"
+    static let workspaceNotAvailableYet: LocalizedStringKey = "workspace.notAvailableYet"
+    static let workspaceProjectFolder: LocalizedStringKey = "workspace.projectFolder"
+    static let workspaceSessionOutput: LocalizedStringKey = "workspace.sessionOutput"
+    static let workspaceTaskUnavailable: LocalizedStringKey = "workspace.taskUnavailable"
+    static let workspaceTaskUnavailableDetail: LocalizedStringKey =
+        "workspace.taskUnavailableDetail"
+    static let workspaceStateNotStarted: LocalizedStringKey = "workspace.state.notStarted"
+
+    /// Resolved `String` form of ``workspaceStateNotStarted``, for row and VoiceOver labels.
+    static func workspaceStateNotStartedText(locale: Locale = .current) -> String {
+        localizedString(
+            forKey: "workspace.state.notStarted",
+            fallback: "Not started",
+            locale: locale
+        )
+    }
+
+    /// Resolved `String` form of ``openCodeTaskFailed``, for row and VoiceOver labels.
+    static func openCodeTaskFailedText(locale: Locale = .current) -> String {
+        localizedString(forKey: "openCodeTask.failed", fallback: "Task failed", locale: locale)
+    }
     static let tabMoveLeading: LocalizedStringKey = "tab.moveLeading"
     static let tabMoveTrailing: LocalizedStringKey = "tab.moveTrailing"
 

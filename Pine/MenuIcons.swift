@@ -69,6 +69,7 @@ nonisolated enum MenuIcons {
 
     // MARK: - Context menu
     static let newFile = "doc.badge.plus"
+    static let newTask = "sparkles"
     static let newFolder = "folder.badge.plus"
     static let revealInFinder = "arrow.right.circle"
     static let rename = "pencil"

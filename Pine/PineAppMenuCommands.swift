@@ -149,6 +149,15 @@ struct PineAppMenuCommands: Commands {
             )
             .disabled(focusedProject?.workspace.rootURL == nil)
 
+            // The Pine 3 task input (#1760). No chord of its own yet: ⌘N is
+            // still New File until the editor's removal settles that.
+            Button {
+                NotificationCenter.default.post(name: .newTask, object: focusedProject)
+            } label: {
+                Label(Strings.menuNewTask, systemImage: MenuIcons.newTask)
+            }
+            .disabled(focusedProject?.workspace.rootURL == nil)
+
             Button {
                 UserCommandInvocationRouter.dispatch(
                     .openFile,
