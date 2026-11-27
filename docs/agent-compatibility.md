@@ -173,17 +173,6 @@ await the shared provider outcome table port (#1821). The real-version smoke (bo
 gate, PENDING; until it passes on the pinned binary, the catalog record above
 remains **Detected** and no structured tier is claimed.
 
-Observed 2026-11-26 on the local machine, not re-pinned: Homebrew `kimi`
-2.7.3 printed `2.7.3` and answered a v1 `initialize` as `Kimi Code CLI`
-2.7.3 with the same capability matrix (`session/new` was not sent). The pin
-stays 2.6.2 because Pine's executable identity model refuses the installed
-2.7.3 entry: Homebrew links `kimi` to the bundled `dist/main.mjs` shebang
-script (25,382,638 bytes), above the 1 MiB entry cap of
-`KimiACPExecutableIdentity`, so `capture` fails with `unsupportedBinary`
-before the version probe. Re-pinning needs a maintainer decision on that cap
-and a fresh dated observation; see the
-[decision record, section 7.3](ade-acp-reuse-comparison-2026-11-23.md#73-close-out-runs-2026-11-26).
-
 Deliberate boundaries:
 
 - `session/load` replays bounded history before settling; `session/resume`

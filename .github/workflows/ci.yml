@@ -658,12 +658,12 @@ jobs:
             test-classes: >-
               -only-testing:PineUITests/WelcomeWindowTests
               -only-testing:PineUITests/NativeFileWindowMenuUITests
-          # Shard 3 — Navigation (35 tests; accessibility matrix skips here)
+          # Shard 3 — Navigation (32 tests; accessibility matrix skips here)
           - shard-name: "Navigation"
             test-classes: >-
               -only-testing:PineUITests/TabOverflowExternalChangesUITests
               -only-testing:PineUITests/CommandPaletteUITests
-              -only-testing:PineUITests/ADEWorkspaceUITests
+              -only-testing:PineUITests/AgentTaskResultUITests
               -only-testing:PineUITests/EditorTabNavigationTests
               -only-testing:PineUITests/AccessibilityLocalizationSmokeTests
               -only-testing:PineUITests/OpenCodeRealModelJourneyUITests
@@ -701,10 +701,9 @@ jobs:
               -only-testing:PineUITests/AgentAttentionKeyboardUITests
               -only-testing:PineUITests/UnsavedChangesUITests
               -only-testing:PineUITests/AgentMenuBarCommandsUITests
-          # Shard 7 — Security & Layout (34 tests)
+          # Shard 7 — Security & Layout (30 tests)
           - shard-name: "Security & Layout"
             test-classes: >-
-              -only-testing:PineUITests/AgentTaskResultUITests
               -only-testing:PineUITests/AgentInboxToolbarButtonTests
               -only-testing:PineUITests/GitignoreFilterTests
               -only-testing:PineUITests/SymlinkSecurityUITests

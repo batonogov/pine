@@ -1274,10 +1274,6 @@ final class ProjectRegistry {
         let windowIntent: AgentInboxWindowIntent?
     }
 
-    private struct WeakTaskSelectionHost {
-        weak var host: (any AgentTaskSelectionHosting)?
-    }
-
     /// Open projects keyed by their root directory URL.
     private(set) var openProjects: [URL: ProjectManager] = [:]
     /// Projects whose window was closed but whose ProjectManager (and terminal processes)
@@ -1369,12 +1365,6 @@ final class ProjectRegistry {
     private var backgroundPresentationLeases: [URL: Set<UUID>] = [:]
     @ObservationIgnored
     private var agentInboxPresentationOperations: [URL: UUID] = [:]
-    /// Surfaces that list one project's tasks, weakly, with their registration tokens.
-    @ObservationIgnored
-    private var taskSelectionHosts: [(token: UUID, host: WeakTaskSelectionHost)] = []
-    /// A selection asked for before its window's task list mounted.
-    @ObservationIgnored
-    private var pendingTaskSelections: [URL: UUID] = [:]
     @ObservationIgnored
     private var agentTaskProjectsByRoot: [URL: AgentTaskProjectIdentity] = [:] {
         didSet {
@@ -1584,12 +1574,9 @@ final class ProjectRegistry {
         onTaskCreated: @MainActor (UUID) -> Void = { _ in }
     ) async throws -> UUID {
         let text = instruction.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else { throw OpenCodeACPError.invalidState }
-        // The limit the task store admits, not the wire limit: a longer goal
-        // would be refused by `createNativeTask` as an unexplained failure.
-        guard OpenCodeTaskLaunchValidation.isValid(
-            text, limits: agentTasks.persistenceLimits
-        ) else { throw OpenCodeTaskLaunchError.instructionTooLong }
+        guard !text.isEmpty, text.utf8.count <= 65_536 else {
+            throw OpenCodeACPError.invalidState
+        }
         let selected = if let executable {
             executable
         } else {
@@ -1603,51 +1590,10 @@ final class ProjectRegistry {
         guard let reservation = await agentTasks.createNativeTask(
             project: project,
             descriptor: AgentDescriptor(agentType: .openCode, launchExecutable: "opencode"),
-            title: OpenCodeTaskLaunchValidation.title(of: text),
+            title: text.split(whereSeparator: \.isNewline).first.map(String.init),
             objective: text
         ) else { throw OpenCodeACPError.unavailable }
         onTaskCreated(reservation.taskID)
-        try await launchOpenCodeTask(
-            taskID: reservation.taskID, runID: reservation.runID, instruction: text,
-            project: project, executable: selected, managedRoot: managedRoot
-        )
-        return reservation.taskID
-    }
-
-    /// Explicit retry of a launch that failed after its task already existed.
-    /// Sends that task's recorded goal — never edited field text — and never
-    /// creates another task. Not called by restoration.
-    func retryOpenCodeTaskLaunch(
-        taskID: UUID, executable: URL? = nil
-    ) async throws {
-        guard let task = agentTasks.task(for: taskID), task.runs.isEmpty,
-              let runID = task.nativeDispatch?.runID,
-              let text = task.objective else {
-            throw OpenCodeACPError.unavailable
-        }
-        let selected = if let executable {
-            executable
-        } else {
-            await runOnBackground {
-                ExternalToolResolver.fromEnvironment().resolve(tool: "opencode").map {
-                    URL(fileURLWithPath: $0)
-                }
-            }
-        }
-        guard let selected else { throw OpenCodeACPError.unavailable }
-        try await launchOpenCodeTask(
-            taskID: taskID, runID: runID, instruction: text,
-            project: task.project, executable: selected, managedRoot: nil
-        )
-    }
-
-    // The launch half shared by a first Send and an explicit retry: reserved
-    // worktree, one owned ACP process, one physical prompt.
-    // swiftlint:disable:next function_parameter_count
-    private func launchOpenCodeTask(
-        taskID: UUID, runID: UUID, instruction text: String,
-        project: AgentTaskProjectIdentity, executable selected: URL, managedRoot: URL?
-    ) async throws {
         let root = managedRoot ?? ProjectWindowSession.managedRoot(
             for: URL(fileURLWithPath: project.canonicalProjectPath)
         )
@@ -1657,26 +1603,17 @@ final class ProjectRegistry {
                 attributes: [.posixPermissions: 0o700]
             )
         }
-        let target = root.appendingPathComponent(taskID.uuidString.lowercased())
-        // A first launch creates the reserved worktree; a retry re-adopts the
-        // one this task already set up.
-        let binding = if agentTasks.task(for: taskID)?.worktreeSetup == nil {
-            await agentTasks.setupReservedWorktree(
-                taskID: taskID, runID: runID,
-                expectedWorktree: target, bindings: openCodeNativeBindings
-            )
-        } else {
-            await agentTasks.reconcileReservedWorktree(
-                taskID: taskID, bindings: openCodeNativeBindings
-            )
-        }
-        guard let binding else { throw OpenCodeACPError.unavailable }
+        let target = root.appendingPathComponent(reservation.taskID.uuidString.lowercased())
+        guard let binding = await agentTasks.setupReservedWorktree(
+            taskID: reservation.taskID, runID: reservation.runID,
+            expectedWorktree: target, bindings: openCodeNativeBindings
+        ) else { throw OpenCodeACPError.unavailable }
         let selection = AgentTaskNativeLaunchPolicy.Selection(
             agentID: try AgentID(migratingLegacyStableIdentifier: "openCode"),
             selectedExecutable: selected
         )
         guard case .eligible(let policy) = AgentTaskNativeLaunchPolicy.evaluate(
-            taskID: taskID, runID: runID,
+            taskID: reservation.taskID, runID: reservation.runID,
             bindingID: binding.id, selection: selection,
             provenance: AgentTaskLaunchProvenance(
                 authenticationOrigin: .inheritNative,
@@ -1692,6 +1629,7 @@ final class ProjectRegistry {
         guard try await runtime.submit(text) == .acknowledged else {
             throw OpenCodeACPError.unavailable
         }
+        return reservation.taskID
     }
 
     /// Explicit exact-session restore for a new owner (#1811): re-adopts the
@@ -2652,10 +2590,6 @@ final class ProjectRegistry {
         manager.saveSession()
         backgroundProjects.insert(canonical)
         manager.suspendEditorServices()
-        // A selection queued for a window that just closed must not pop into
-        // whatever surface shows this project next: the next open is the
-        // user's own navigation, not the old attention route (#1760).
-        pendingTaskSelections.removeValue(forKey: canonical)
         if let identity = agentTaskProjectsByRoot[canonical] {
             agentTasks.setWindowOpen(false, project: identity)
         }
@@ -2871,113 +2805,6 @@ final class ProjectRegistry {
         guard agentTasks.canResumeTask(taskID),
               let task = agentTasks.task(for: taskID) else { return false }
         return agentRecoveryInspector.canOfferVendorResume(for: task)
-    }
-
-    // MARK: - Task selection (#1760)
-
-    /// Announces a surface that lists one project's tasks. A selection that
-    /// arrived before it mounted is handed over here.
-    @discardableResult
-    func registerTaskSelectionHost(_ host: any AgentTaskSelectionHosting) -> UUID {
-        let token = UUID()
-        taskSelectionHosts.removeAll { $0.host.host == nil || $0.host.host === host }
-        taskSelectionHosts.append((token, WeakTaskSelectionHost(host: host)))
-        let project = canonicalProjectURL(host.hostedProjectURL)
-        if let pending = pendingTaskSelections[project] {
-            pendingTaskSelections[project] = nil
-            host.selectTask(pending)
-        }
-        return token
-    }
-
-    func unregisterTaskSelectionHost(_ token: UUID) {
-        taskSelectionHosts.removeAll { $0.token == token || $0.host == nil }
-    }
-
-    private func taskSelectionHost(for projectURL: URL) -> (any AgentTaskSelectionHosting)? {
-        taskSelectionHosts.compactMap(\.host.host).first {
-            canonicalProjectURL($0.hostedProjectURL) == projectURL
-        }
-    }
-
-    /// Shows one exact task in the window of the project that owns it.
-    ///
-    /// Attention routing for every project-backed task, native ones included.
-    /// The owner is `canonicalProjectPath`; the worktree a task runs in is
-    /// never opened as a project of its own. Selecting is view-only: nothing
-    /// is launched, resumed, accepted, or executed, and a task Pine cannot
-    /// list is refused so the caller can fall back to the Inbox.
-    func selectAgentTask(
-        _ taskID: UUID,
-        openProjectWindow: @escaping @MainActor (URL) -> Void,
-        waitUntilPresented: (@MainActor (ProjectManager) async -> Bool)? = nil,
-        activateApplication: (@MainActor (ProjectManager) -> Void)? = nil
-    ) async -> AgentTaskSelectionOutcome {
-        guard let task = agentTasks.task(for: taskID) else { return .refused }
-        guard task.lifecycle != .dismissed else { return .refused }
-        guard task.route.surface == .projectWindow || task.route.surface == .ownedProcess else {
-            return .unsupportedSurface
-        }
-        let owner = canonicalProjectURL(
-            URL(fileURLWithPath: task.project.canonicalProjectPath, isDirectory: true)
-        )
-        if isWindowOpen(owner), let manager = openProjects[owner] {
-            focusAgentTaskWindow(of: manager, activateApplication: activateApplication)
-            return selectAgentTask(taskID, in: owner)
-        }
-        let windowIntent = beginAgentInboxWindowIntent(for: owner)
-        let presented = await agentInboxProjectCanonicalizer(owner)
-        guard presented.path == task.project.canonicalProjectPath,
-              !Task.isCancelled else { return .projectUnavailable }
-        if let presentation = await ensureAgentInboxProjectPresented(
-            task, at: presented, windowIntent: windowIntent,
-            openProjectWindow: openProjectWindow, waitUntilPresented: waitUntilPresented
-        ) {
-            defer { finishAgentInboxPresentation(presentation) }
-            guard agentTasks.task(for: taskID)?.lifecycle != .dismissed else { return .refused }
-            focusAgentTaskWindow(of: presentation.manager, activateApplication: activateApplication)
-            return selectAgentTask(taskID, in: owner)
-        }
-        // The Inbox presentation path could not admit this task's exact
-        // surface — its guard keys on `canonicalWorktreePath`, so a task
-        // running in a managed worktree never matches the root-window flow.
-        // The Pine 3 window for the root project is still the right host: it
-        // lists every project-backed task, worktree ones included. Open it
-        // and queue the selection rather than degrade to the legacy route;
-        // the task re-validates when the queue is spent.
-        guard agentTaskRoutingSnapshotIsCurrent(task) else { return .projectUnavailable }
-        openProjectWindow(owner)
-        if let manager = openProjects[owner] {
-            focusAgentTaskWindow(of: manager, activateApplication: activateApplication)
-        }
-        return selectAgentTask(taskID, in: owner)
-    }
-
-    private func selectAgentTask(_ taskID: UUID, in projectURL: URL) -> AgentTaskSelectionOutcome {
-        guard let task = agentTasks.task(for: taskID), task.lifecycle != .dismissed,
-              canonicalProjectURL(
-                URL(fileURLWithPath: task.project.canonicalProjectPath, isDirectory: true)
-              ) == projectURL else { return .refused }
-        if let host = taskSelectionHost(for: projectURL) {
-            host.selectTask(taskID)
-            return .selected
-        }
-        // The window is up but its task list has not mounted yet.
-        pendingTaskSelections[projectURL] = taskID
-        return .queued
-    }
-
-    private func focusAgentTaskWindow(
-        of manager: ProjectManager,
-        activateApplication: (@MainActor (ProjectManager) -> Void)?
-    ) {
-        if let activateApplication {
-            activateApplication(manager)
-        } else if let window = manager.dialogOwnerWindow {
-            if window.isMiniaturized { window.deminiaturize(nil) }
-            window.makeKeyAndOrderFront(nil)
-            NSApp.activate()
-        }
     }
 
     private func agentTaskRoutingSnapshotIsCurrent(_ task: AgentTask) -> Bool {

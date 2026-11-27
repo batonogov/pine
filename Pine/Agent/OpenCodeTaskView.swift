@@ -6,24 +6,15 @@ struct OpenCodeTaskView: View {
     let project: AgentTaskProjectIdentity
     let onDismiss: () -> Void
 
-    @State private var submission: OpenCodeTaskSubmission
+    @State private var taskID: UUID?
+    @State private var input = ""
+    @State private var answers: [UUID: [String: String]] = [:]
+    @State private var isSending = false
+    @State private var actionFailed = false
 
-    init(
-        registry: ProjectRegistry,
-        project: AgentTaskProjectIdentity,
-        onDismiss: @escaping () -> Void
-    ) {
-        self.registry = registry
-        self.project = project
-        self.onDismiss = onDismiss
-        _submission = State(initialValue: OpenCodeTaskSubmission(
-            registry: registry, project: project
-        ))
+    private var runtime: OpenCodeACPTaskRuntime? {
+        taskID.flatMap { registry.openCodeRuntime(for: $0) }
     }
-
-    private var runtime: OpenCodeACPTaskRuntime? { submission.runtime }
-    private var taskID: UUID? { submission.taskID }
-    private var isSending: Bool { submission.isSending }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -66,10 +57,7 @@ struct OpenCodeTaskView: View {
                         .foregroundStyle(.secondary)
                 }
                 ForEach(snapshot.questions, id: \.id) { question in
-                    OpenCodeTaskQuestionView(
-                        question: question, runtime: runtime, isBusy: isSending,
-                        perform: submission.perform
-                    )
+                    questionView(question, runtime: runtime)
                 }
             } else {
                 ContentUnavailableView(
@@ -79,44 +67,38 @@ struct OpenCodeTaskView: View {
                 )
             }
 
-            if submission.failure == .instructionTooLong || submission.isTooLong {
-                submissionFailure(
-                    Strings.workspaceRequestTooLong, detail: Strings.workspaceRequestTooLongDetail
-                )
-            } else if submission.failure == .actionFailed
-                        || runtime?.lastDispatch == .uncertain {
-                submissionFailure(Strings.openCodeTaskActionFailed, detail: nil)
+            if actionFailed || runtime?.lastDispatch == .uncertain {
+                Text(Strings.openCodeTaskActionFailed)
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+                    .accessibilityIdentifier(AccessibilityID.openCodeTaskError)
             }
 
             VStack(alignment: .leading, spacing: 8) {
                 Text(taskID == nil ? Strings.openCodeTaskRequest : Strings.openCodeTaskFeedback)
                     .font(.caption.weight(.medium))
-                TextEditor(text: $submission.input)
+                TextEditor(text: $input)
                     .frame(minHeight: 72, maxHeight: 120)
                     .overlay {
                         RoundedRectangle(cornerRadius: 6)
                             .stroke(Color.secondary.opacity(0.25))
                     }
-                    // A pending retry sends the task's recorded goal, not field text.
-                    .disabled(submission.isAwaitingRetry)
                     .accessibilityIdentifier(AccessibilityID.openCodeTaskInput)
                 HStack {
                     if runtime?.isActive == true {
                         Button(Strings.openCodeTaskCancel) {
-                            submission.perform { try await runtime?.cancel() }
+                            perform { try await runtime?.cancel() }
                         }
                         .disabled(isSending || runtime?.snapshot?.context == nil)
                         .accessibilityIdentifier(AccessibilityID.openCodeTaskCancel)
                     }
                     Spacer()
                     Button(taskID == nil ? Strings.openCodeTaskSend : Strings.openCodeTaskSendFeedback) {
-                        submission.send()
+                        send()
                     }
                     .buttonStyle(.borderedProminent)
-                    .disabled(isSending
-                               || submission.trimmedInput.isEmpty
-                               || submission.isTooLong
-                               || runtime?.snapshot?.inputFenced == true)
+                    .disabled(isSending || input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                              || runtime?.snapshot?.inputFenced == true)
                     .accessibilityIdentifier(AccessibilityID.openCodeTaskSend)
                 }
             }
@@ -124,21 +106,6 @@ struct OpenCodeTaskView: View {
         .padding(20)
         .frame(width: 620, height: 640)
         .disabled(isSending && taskID == nil)
-    }
-
-    private func submissionFailure(
-        _ message: LocalizedStringKey, detail: LocalizedStringKey?
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(message)
-            if let detail {
-                Text(detail)
-            }
-        }
-        .font(.caption)
-        .foregroundStyle(.orange)
-        .accessibilityElement(children: .combine)
-        .accessibilityIdentifier(AccessibilityID.openCodeTaskError)
     }
 
     /// The contextual "How to run" disclosure (#1765): agent,
@@ -240,17 +207,7 @@ struct OpenCodeTaskView: View {
     }
 
     private func status(_ state: OpenCodeACPSession.State) -> some View {
-        Label(
-            Self.sessionStateText(state),
-            systemImage: state == .working || state == .submitted
-                ? "ellipsis.circle" : "info.circle"
-        )
-        .accessibilityIdentifier(AccessibilityID.openCodeTaskStatus)
-    }
-
-    /// The wording for one session state, shared with the Pine 3 task detail.
-    static func sessionStateText(_ state: OpenCodeACPSession.State) -> LocalizedStringKey {
-        switch state {
+        let text = switch state {
         case .fresh, .starting, .idle: Strings.openCodeTaskStarting
         case .submitted, .working: Strings.openCodeTaskWorking
         case .waiting: Strings.openCodeTaskWaiting
@@ -260,6 +217,150 @@ struct OpenCodeTaskView: View {
         case .failed, .blocked: Strings.openCodeTaskFailed
         case .unknown: Strings.openCodeTaskUnknown
         case .stopped: Strings.openCodeTaskStopped
+        }
+        return Label(text, systemImage: state == .working || state == .submitted
+                     ? "ellipsis.circle" : "info.circle")
+            .accessibilityIdentifier(AccessibilityID.openCodeTaskStatus)
+    }
+
+    @ViewBuilder
+    private func questionView(
+        _ question: OpenCodeACPSession.Question,
+        runtime: OpenCodeACPTaskRuntime
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if question.permission {
+                if let title = permissionTitle(question) {
+                    Text(verbatim: title)
+                } else {
+                    Text(Strings.openCodeTaskPermission)
+                }
+                HStack {
+                    Button(Strings.openCodeTaskAllowOnce) {
+                        guard let optionID = question.allowOnceOptionID else { return }
+                        perform {
+                            try await runtime.answerPermission(
+                                question, optionID: optionID, decision: .allowOnce
+                            )
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    Button(Strings.openCodeTaskDeny) {
+                        guard let optionID = question.denyOptionID else { return }
+                        perform {
+                            try await runtime.answerPermission(
+                                question, optionID: optionID, decision: .deny
+                            )
+                        }
+                    }
+                }
+            } else if let form = question.form {
+                Text(verbatim: form.message)
+                ForEach(form.fields.keys.sorted(), id: \.self) { key in
+                    if let field = form.fields[key] {
+                        fieldView(field, question: question, key: key)
+                    }
+                }
+                Button(Strings.openCodeTaskAnswer) {
+                    perform {
+                        try await runtime.answerQuestion(
+                            question, answers: (answers[question.id] ?? [:]).mapValues { [$0] }
+                        )
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(isSending || !requiredAnswersArePresent(form, question: question))
+            }
+        }
+        .padding(12)
+        .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+        .accessibilityIdentifier(AccessibilityID.openCodeTaskQuestion)
+    }
+
+    @ViewBuilder
+    private func fieldView(
+        _ field: OpenCodeACPForm.Field,
+        question: OpenCodeACPSession.Question,
+        key: String
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(verbatim: field.title ?? key)
+            if let choices = field.choices {
+                Picker(field.title ?? key, selection: answerBinding(question: question, key: key)) {
+                    ForEach(choices, id: \.self) { choice in
+                        Text(verbatim: field.choiceTitles[choice] ?? choice).tag(choice)
+                    }
+                }
+                .labelsHidden()
+                .onAppear {
+                    if answers[question.id]?[key] == nil {
+                        answers[question.id, default: [:]][key] = choices.first
+                    }
+                }
+            } else {
+                TextField(field.title ?? key, text: answerBinding(question: question, key: key))
+                    .textFieldStyle(.roundedBorder)
+            }
+            if let detail = field.detail {
+                Text(verbatim: detail).font(.caption).foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func answerBinding(
+        question: OpenCodeACPSession.Question, key: String
+    ) -> Binding<String> {
+        Binding(
+            get: { answers[question.id]?[key] ?? "" },
+            set: { answers[question.id, default: [:]][key] = $0 }
+        )
+    }
+
+    private func requiredAnswersArePresent(
+        _ form: OpenCodeACPForm, question: OpenCodeACPSession.Question
+    ) -> Bool {
+        form.fields.allSatisfy { key, field in
+            !field.required || !(answers[question.id]?[key]?.isEmpty ?? true)
+        }
+    }
+
+    private func permissionTitle(_ question: OpenCodeACPSession.Question) -> String? {
+        guard case .object(let fields) = question.details,
+              case .string(let title) = fields["title"] else { return nil }
+        return title
+    }
+
+    private func send() {
+        let text = input
+        if let runtime {
+            perform {
+                _ = try await runtime.submit(text)
+                input = ""
+            }
+        } else {
+            isSending = true
+            actionFailed = false
+            Task { @MainActor in
+                defer { isSending = false }
+                do {
+                    taskID = try await registry.startOpenCodeTask(
+                        instruction: text, project: project,
+                        onTaskCreated: { taskID = $0 }
+                    )
+                    input = ""
+                } catch {
+                    actionFailed = true
+                }
+            }
+        }
+    }
+
+    private func perform(_ operation: @escaping @MainActor () async throws -> Void) {
+        isSending = true
+        actionFailed = false
+        Task { @MainActor in
+            defer { isSending = false }
+            do { try await operation() } catch { actionFailed = true }
         }
     }
 }

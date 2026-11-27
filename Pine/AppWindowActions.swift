@@ -55,9 +55,11 @@ final class AppWindowActions {
         #if DEBUG
         if routes == nil {
             Logger.app.fault(
-                "AppWindowActions: the hidden host did not report its routes \
+                """
+                AppWindowActions: the hidden host did not report its routes \
                 after the first layout/display pass; app-lifetime opens will \
-                fail closed until a view re-reports them."
+                fail closed until a view re-reports them.
+                """
             )
         }
         #endif

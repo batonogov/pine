@@ -328,27 +328,4 @@ nonisolated enum AccessibilityID {
     static let agentTaskResultLaunchEvidence = "agentTaskResultLaunchEvidence"
     static let agentTaskResultReplyEvidence = "agentTaskResultReplyEvidence"
     static let agentTaskResultUnsupported = "agentTaskResultUnsupported"
-
-    // MARK: - Pine 3 workspace (#1760)
-    static let workspace = "workspace"
-    static let workspaceProjectColumn = "workspaceProjectColumn"
-    static let workspaceProjectIdentity = "workspaceProjectIdentity"
-    static let workspaceTaskList = "workspaceTaskList"
-    static let workspaceNoTasks = "workspaceNoTasks"
-    static let workspaceNewTaskButton = "workspaceNewTaskButton"
-    static let workspaceOverview = "workspaceOverview"
-    static let workspaceComposer = "workspaceComposer"
-    static let workspaceComposerInput = "workspaceComposerInput"
-    static let workspaceComposerSend = "workspaceComposerSend"
-    static let workspaceComposerNotice = "workspaceComposerNotice"
-    static let workspaceInputMode = "workspaceInputMode"
-    static let workspaceTaskDetail = "workspaceTaskDetail"
-    static let workspaceTaskGoal = "workspaceTaskGoal"
-    static let workspaceTaskState = "workspaceTaskState"
-    static let workspaceTaskDetails = "workspaceTaskDetails"
-    static let workspaceSessionOutput = "workspaceSessionOutput"
-    static let workspaceTaskUnavailable = "workspaceTaskUnavailable"
-    static func workspaceTaskRow(_ id: UUID) -> String {
-        "workspaceTaskRow_\(id.uuidString)"
-    }
 }

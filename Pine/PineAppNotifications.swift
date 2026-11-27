@@ -99,10 +99,6 @@ extension Notification.Name {
     /// created for agent tasks.
     static let showAgentWorktrees = Notification.Name("showAgentWorktrees")
 
-    /// Starts a new task in the target window (#1760): focuses the task input.
-    /// `object` is the window's ProjectManager, or `nil` for the key window.
-    static let newTask = Notification.Name("newTask")
-
     // MARK: - Agent handoff (#933)
     /// Posted after the user changes the read-only editor-context permission.
     static let agentHandoffSettingsChanged = Notification.Name(

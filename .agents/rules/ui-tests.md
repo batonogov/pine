@@ -9,7 +9,7 @@ Every "known issue" below has already cost someone a debugging session.
 
 ## Targets and shards
 
-- UI test target: `PineUITests` (XCTest/XCUITest) — 42 test classes, base class `PineUITestCase`. CI runs 7 parallel shards (Terminal, Welcome & Session, Navigation, Editor Chrome, Files & Save, Panes & Files, Security & Layout) on each of two OS axes (`xcode-27` primary, `macos-26` compatibility)
+- UI test target: `PineUITests` (XCTest/XCUITest) — 40 test classes, base class `PineUITestCase`. CI runs 7 parallel shards (Terminal, Welcome & Session, Navigation, Editor Chrome, Files & Save, Panes & Files, Security & Layout) on each of two OS axes (`xcode-27` primary, `macos-26` compatibility)
 
 ## Launch arguments and environment
 
@@ -35,7 +35,7 @@ Every "known issue" below has already cost someone a debugging session.
   child fixtures explicitly propagate their owned namespace. Cocoa/SwiftUI saved
   state also uses the separate test-host application identity.
 
-- Launch arguments for UI testing: `--reset-state` (clears persisted sessions), `--disable-agent-detection` (disables the `ps`-polling agent detector — avoids the macOS-26 fork/spawn hang #1060), `--disable-metal` (pins the terminal to SwiftTerm's CoreGraphics renderer — Metal may be unavailable on CI virtual displays #1108), `--disable-quick-terminal` (disables the global ⌃⌥Space hotkey so it does not grab key events on CI #1113), `--ui-test-agent-result` / `--ui-test-agent-result-decision` (test-host-only Ready/Needs-decision fixtures; callbacks record intent without process execution or acceptance), `--ui-test-ade-workspace` (seeds the Pine 3 workspace fixture — one presentation-only task per row state with fixed task IDs, no process, grant, acceptance, or provider; used by `ADEWorkspaceUITests` #1760), `-ApplePersistenceIgnoreState YES` (ignores macOS saved window state), `-AppleLanguages (en)`, `-AppleLocale en_US` (force English locale so menu item names are predictable)
+- Launch arguments for UI testing: `--reset-state` (clears persisted sessions), `--disable-agent-detection` (disables the `ps`-polling agent detector — avoids the macOS-26 fork/spawn hang #1060), `--disable-metal` (pins the terminal to SwiftTerm's CoreGraphics renderer — Metal may be unavailable on CI virtual displays #1108), `--disable-quick-terminal` (disables the global ⌃⌥Space hotkey so it does not grab key events on CI #1113), `--ui-test-agent-result` / `--ui-test-agent-result-decision` (test-host-only Ready/Needs-decision fixtures; callbacks record intent without process execution or acceptance), `-ApplePersistenceIgnoreState YES` (ignores macOS saved window state), `-AppleLanguages (en)`, `-AppleLocale en_US` (force English locale so menu item names are predictable)
 - `ScreenshotTests` additionally passes `--ui-test-dark-appearance` (forces `NSAppearance.darkAqua` regardless of the host system theme) so marketing captures always match the dark landing page
 - Environment variable for UI testing: `PINE_OPEN_PROJECT=<path>` (opens project without file dialog — uses env var because macOS interprets bare paths in launch arguments as files to open)
 - **Known issue:** XCUITest launch arguments (`-key YES`) store values as strings in NSArgumentDomain. `UserDefaults.object(forKey:) as? Bool` returns nil for strings. To set boolean UserDefaults for UI tests, use `defaults write <isolatedDefaultsSuiteName> <key> -bool YES` via `Process` in setUp, and `defaults delete` in tearDown. Never seed the production bundle identifier; the base class exposes this test-owned suite name

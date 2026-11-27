@@ -1169,8 +1169,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
     func openProjectScene(_ url: URL, fallback: ((URL) -> Void)? = nil) -> Bool {
         guard let open = projectWindowOpener(fallback) else {
             Logger.app.error(
-                "AppWindowActions: no project-scene route is available; the \
-                project open of \(url.path, privacy: .public) failed closed."
+                """
+                AppWindowActions: no project-scene route is available; the \
+                project open of \(url.path, privacy: .public) failed closed.
+                """
             )
             return false
         }

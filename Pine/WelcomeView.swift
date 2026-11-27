@@ -554,15 +554,19 @@ struct WelcomeView: View {
         return projectManager
     }
 
-    /// Opens a project window through the app-lifetime route, which outlives
-    /// this window, and falls back to this view's own action only without one.
+    /// Opens a project window using AppDelegate's captured closure (works from both
+    /// SwiftUI scene windows and AppKit-created fallback windows) or falls back
+    /// to the SwiftUI environment action.
     private func openProjectWindow(_ url: URL) {
-        if let appDelegate, appDelegate.openProjectScene(url) { return }
-        // Same record the AppDelegate closure makes: without it the
-        // fallback path lets a window's remembered project override the
-        // one the user picked (#1543).
-        registry.noteExplicitProjectOpenRequest(url)
-        openWindow(value: url)
+        if let open = appDelegate?.openProjectWindow {
+            open(url)
+        } else {
+            // Same record the AppDelegate closure makes: without it the
+            // fallback path lets a window's remembered project override the
+            // one the user picked (#1543).
+            registry.noteExplicitProjectOpenRequest(url)
+            openWindow(value: url)
+        }
     }
 
     /// Closes all Welcome windows — both SwiftUI-managed and AppKit-created fallback.
