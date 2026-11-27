@@ -148,3 +148,41 @@ struct ProjectRecentProjectsLaunchTests {
         #expect(defaults.stringArray(forKey: storeKey) == [existing.path])
     }
 }
+
+/// Wiring: the failed-open path in the app delegate must prune a missing
+/// recent through the registry seam (#1869). Production wiring otherwise has
+/// no test; the seam's own suite above covers its semantics in isolation.
+@MainActor
+@Suite(.serialized)
+struct ProjectRecentOpenPruneWiringTests {
+    private let storeKey = "recentProjectPaths"
+
+    @Test func failedOpenOfAMissingRecentPrunesTheEntry() async {
+        let suite = "ProjectRecentOpenPruneWiringTests.\(UUID().uuidString)"
+        guard let defaults = UserDefaults(suiteName: suite) else {
+            Issue.record("UserDefaults(suiteName:) returned nil for \(suite)")
+            return
+        }
+        defaults.removePersistentDomain(forName: suite)
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let missing = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pine-1869-gone-\(UUID().uuidString)", isDirectory: true)
+        defaults.set([missing.path], forKey: storeKey)
+
+        let registry = ProjectRegistry(
+            defaults: defaults,
+            agentDetectionPollInterval: 3_600,
+            agentDetectionInitialPollDelay: 3_600
+        )
+        #expect(registry.recentProjects.map(\.path) == [missing.path])
+
+        let delegate = AppDelegate()
+        delegate.registry = registry
+
+        let opened = await delegate.openRecentProject(missing)
+
+        #expect(opened == false)
+        #expect(registry.recentProjects.isEmpty)
+        #expect(defaults.stringArray(forKey: storeKey) == [])
+    }
+}

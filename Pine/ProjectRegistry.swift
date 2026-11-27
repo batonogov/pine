@@ -4053,7 +4053,7 @@ final class ProjectRegistry {
         // trailing separator, and a loaded entry never carries one.
         let path = url.standardizedFileURL.path
         recentProjects.removeAll { $0.standardizedFileURL.path == path }
-        removeRecentAgentTaskRecord(for: url)
+        removeRecentAgentTaskRecord(for: url.standardizedFileURL)
         saveRecentProjects()
     }
 
