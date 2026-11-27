@@ -1624,8 +1624,12 @@ enum Strings {
         case commandExit, outputTruncated, noChecks
         case noRecordedLimitations, limitations, reviewerOutcome, noReviewerOutcome
         case unknown, codeIdentity
-        case contextPlaceholder, decisionConsequence
+        case decisionConsequence
         case unresolvedFinding, preservedWork, replyPlaceholder, sendReply, verifyAgain
+        case replyTextOnly, findingTextUnavailable
+        case identityUnsavedChanges, identityUnproven
+        case briefGoalVersion, briefAttemptStarted, briefFeedbackCount, briefDecisionCount
+        case limitationCheckOutput, limitationReviewFinding
         case staleDecisionDetail, historicalReview, replyDeliveryFailed
         case prepared, starting, actionReady, actionFailed, portConflict, stopping
         case stopped, cancelled, stale, startupFailed, missingPrerequisite, processExited
@@ -1688,8 +1692,6 @@ enum Strings {
             case .noReviewerOutcome: "No reviewer outcome was recorded."
             case .unknown: "Unknown"
             case .codeIdentity: "Current code · HEAD %@ · tracked %@ · untracked %@ · relevant ignored %@"
-            case .contextPlaceholder:
-                "Contextual command outcomes and result-revision comparison are not available yet."
             case .decisionConsequence:
                 "The result is not Ready until this decision is resolved."
             case .unresolvedFinding: "Unresolved finding: %@"
@@ -1697,6 +1699,25 @@ enum Strings {
             case .replyPlaceholder: "Reply with how to continue"
             case .sendReply: "Send reply"
             case .verifyAgain: "Verify again"
+            case .replyTextOnly:
+                "This agent’s connection does not support screenshots or other visual references yet. "
+                    + "Only the reply text is sent."
+            case .findingTextUnavailable:
+                "This finding is kept only as a reference; its text is not stored with the task."
+            case .identityUnsavedChanges:
+                "Unsaved editor changes prevent Pine from proving the current result. "
+                    + "Save them, then reopen the result."
+            case .identityUnproven:
+                "Pine could not re-prove the current code and environment for this result, "
+                    + "so it is not shown as Ready."
+            case .briefGoalVersion: "Goal version: %@"
+            case .briefAttemptStarted: "Latest attempt started: %@"
+            case .briefFeedbackCount: "Recorded feedback: %@"
+            case .briefDecisionCount: "Recorded decisions: %@"
+            case .limitationCheckOutput:
+                "Checks are kept as status and exit codes; command output and arguments are not recorded."
+            case .limitationReviewFinding:
+                "The review verdict is kept; the reviewer’s finding text is not stored with the task."
             case .staleDecisionDetail:
                 "This request belongs to an earlier result and can no longer be answered."
             case .historicalReview: "Historical review for code %@; not current Ready evidence."

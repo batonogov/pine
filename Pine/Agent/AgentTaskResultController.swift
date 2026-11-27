@@ -10,6 +10,16 @@ typealias AgentTaskResultCommandAuthorityProvider = @MainActor (
     AgentProjectRecipe.Selected, AgentVerificationIdentitySnapshot
 ) -> AgentTaskResultCommandAuthority?
 
+/// Re-proves the current identity of an opened result. Production captures
+/// it with the #1753 primitives; nil means no proof was attempted.
+typealias AgentTaskResultIdentityResolver = @MainActor (
+    AgentTask
+) async -> AgentVerificationIdentityCaptureResult?
+
+/// The text of a review finding, supplied by the surface that received the
+/// verdict; the task record keeps only an opaque reference.
+typealias AgentTaskResultFindingProvider = @MainActor (AgentTaskReviewDecision) -> String?
+
 nonisolated private final class AgentTaskResultGrantStore: Sendable {
     private let state = Mutex<AgentTaskCheckGrant?>(nil)
     var current: AgentTaskCheckGrant? { state.withLock { $0 } }
@@ -54,11 +64,16 @@ final class AgentTaskResultController {
     private let executor: any AgentTaskResultActionExecuting
     private let commandAuthority: AgentTaskResultCommandAuthorityProvider?
     private let replyDispatcher: AgentTaskResultReplyDispatcher?
+    /// nil in production, where the #1753 capture re-proves the identity.
+    private let identityResolver: AgentTaskResultIdentityResolver?
+    private let findingProvider: AgentTaskResultFindingProvider?
     private let grant = AgentTaskResultGrantStore()
     private var task: AgentTask
     private var taskSignature: TaskSignature
     private var observerToken: UUID?
     private var snapshot: AgentVerificationIdentitySnapshot?
+    /// Why the identity on open could not be proven; nil once it is.
+    private(set) var identityGap: AgentTaskResultIdentityGap?
     private var selection: AgentProjectRecipe.Selected? {
         didSet { registry.updateResultActionSelection(selection, for: taskID) }
     }
@@ -78,9 +93,12 @@ final class AgentTaskResultController {
     var presentation: AgentTaskResultPresentation {
         AgentTaskResultPresentation(
             task: task, codeState: snapshot?.code, environment: snapshot?.environment,
+            identityGap: snapshot == nil ? identityGap : nil,
             action: driver?.state, preparation: preparation,
             preparationIsRunning: preparationTask != nil,
             lastOutcome: driver?.lastOutcome,
+            findingText: AgentTaskReviewOrchestrator.decisionRequest(for: task)
+                .flatMap { findingProvider?($0) },
             replyInFlight: replyInFlight, replyDeliveryFailed: replyDeliveryFailed
         )
     }
@@ -93,7 +111,9 @@ final class AgentTaskResultController {
         initialDriver: AgentTaskResultActionDriver? = nil,
         initialSelection: AgentProjectRecipe.Selected? = nil,
         commandAuthority: AgentTaskResultCommandAuthorityProvider? = nil,
-        replyDispatcher: AgentTaskResultReplyDispatcher? = nil
+        replyDispatcher: AgentTaskResultReplyDispatcher? = nil,
+        identityResolver: AgentTaskResultIdentityResolver? = nil,
+        findingProvider: AgentTaskResultFindingProvider? = nil
     ) {
         guard let task = registry.task(for: taskID) else { return nil }
         self.registry = registry
@@ -102,6 +122,8 @@ final class AgentTaskResultController {
         self.executor = executor
         self.commandAuthority = commandAuthority
         self.replyDispatcher = replyDispatcher
+        self.findingProvider = findingProvider
+        self.identityResolver = identityResolver
         snapshot = AgentTaskReviewOrchestrator.decisionRequest(for: task).map {
             AgentVerificationIdentitySnapshot(
                 code: $0.candidateCodeState, environment: $0.candidateEnvironment
@@ -353,6 +375,7 @@ final class AgentTaskResultController {
         driver?.stop()
         driver = nil
         snapshot = nil
+        identityGap = nil
         // Selection and preparation stay with the registry-owned driver so a
         // production reopen resumes the same launch/preparation controls.
         proposal = nil
@@ -380,13 +403,87 @@ final class AgentTaskResultController {
             )
         }
         if snapshot != decisionSnapshot { snapshot = nil }
+        identityGap = nil
         grant.clear()
         cancelPreparation()
         if current.lifecycle == .dismissed || current.nativeDispatch?.phase == .unavailable {
             close()
         } else {
             driver?.candidateChanged()
+            Task { @MainActor [weak self] in await self?.establishIdentity() }
         }
+    }
+
+    /// Ready needs a Pine-observed identity that the bound evidence
+    /// matches. Opening re-proves it; selecting a recipe is no
+    /// precondition, and no snapshot is ever assumed.
+    private func establishIdentity() async {
+        let current = task
+        guard snapshot == nil, current.verificationState == .verified,
+              let run = current.runs.last, AgentTaskLifecycleReducer.isSettled(run),
+              run.outcome == .success else { return }
+        let operation = selectionOperation
+        let result: AgentVerificationIdentityCaptureResult?
+        if let identityResolver {
+            result = await identityResolver(current)
+        } else {
+            result = await captureCurrentIdentity(current)
+        }
+        guard operation == selectionOperation, !Task.isCancelled else { return }
+        switch result {
+        case .current(let captured):
+            snapshot = captured
+            identityGap = nil
+        case .unavailable(.unsavedEditorChanges):
+            identityGap = .unsavedEditorChanges
+        case nil, .changed, .cancelled, .unavailable:
+            identityGap = .unproven
+        }
+    }
+
+    /// Re-proves the current identity with the #1753 capture over the same
+    /// inputs the recorded checks ran under. Opening selects no recipe: the
+    /// recognized recipe only supplies those inputs, and only while its
+    /// plan is the recorded one — another plan yields an environment
+    /// identity that is not comparable with the evidence.
+    private func captureCurrentIdentity(
+        _ current: AgentTask
+    ) async -> AgentVerificationIdentityCaptureResult? {
+        guard let owner = registry.resultActionOwnership(for: taskID),
+              let proposal, (try? owner.validateSelection()) != nil,
+              let plan = Self.recordedPlan(proposal, for: current) else { return nil }
+        let root = owner.filesystem.canonicalWorktree
+        var capture = AgentVerificationIdentityCapture(
+            inputs: AgentVerificationIdentityCapture.Inputs(
+                lease: owner.filesystem, policy: plan.capturePolicy,
+                editor: editorPreflight(), tools: Array(Set(plan.commands.map(\.executable))),
+                configurationFiles: plan.configurationFiles.sorted().map {
+                    root.appending(path: $0)
+                }
+            ),
+            cancellation: GitCommandCancellationToken()
+        )
+        capture.authorityIsCurrent = {
+            (try? owner.validateSelection()) != nil
+        }
+        return await capture.capture()
+    }
+
+    /// The plan the recorded checks ran under, rebuilt from the recognized
+    /// recipe; nil when the recipe does not reproduce it. Built directly:
+    /// the selection APIs are reserved for an explicit user choice.
+    nonisolated private static func recordedPlan(
+        _ recipe: AgentProjectRecipe, for task: AgentTask
+    ) -> AgentTaskCheckPlan? {
+        let plan = AgentTaskCheckPlan(
+            scheme: AgentTaskCheckPlan.currentScheme,
+            recipeFingerprint: recipe.checks.fingerprint,
+            commands: recipe.checks.commands,
+            capturePolicy: recipe.checks.capturePolicy,
+            configurationFiles: recipe.checks.configurationFiles
+        )
+        let recorded = [task.checkGrant?.planFingerprint, task.checkExecution?.planFingerprint]
+        return plan.isValid && recorded.contains(plan.fingerprint) ? plan : nil
     }
 
     private func issueGrant(
@@ -537,6 +634,7 @@ final class AgentTaskResultController {
 
     private func discoverRecipe() async {
         let root = URL(fileURLWithPath: task.project.canonicalWorktreePath)
+        let rootName = root.lastPathComponent
         let operation = selectionOperation
         let files = await runOnBackground {
             var recognized = Set<String>()
@@ -547,12 +645,19 @@ final class AgentTaskResultController {
             for case let url as URL in enumerator {
                 visited += 1
                 if visited > 20_000 { break }
-                let relative = url.path.dropFirst(root.path.count + 1)
                 if url.lastPathComponent == ".git" || url.lastPathComponent == ".build" {
                     enumerator.skipDescendants()
                     continue
                 }
-                let path = String(relative)
+                // The enumerator reports the base with its symlinks resolved
+                // (/var … becomes /private/var …), so a literal prefix strip
+                // corrupts every relative path. Anchor on the base directory's
+                // own component instead; a same-named ancestor merely fails
+                // recognition, it never misattributes anything.
+                let components = url.pathComponents
+                guard let base = components.firstIndex(of: rootName),
+                      base + 1 < components.count else { continue }
+                let path = components[(base + 1)...].joined(separator: "/")
                 if path == "Package.swift" || path == "Package.resolved"
                         || path.hasPrefix("Tests/") || path.hasPrefix("Sources/") {
                     recognized.insert(path)
@@ -562,5 +667,6 @@ final class AgentTaskResultController {
         }
         guard operation == selectionOperation else { return }
         proposal = AgentProjectRecipe.propose(recognizedFiles: files, for: task.project)
+        await establishIdentity()
     }
 }

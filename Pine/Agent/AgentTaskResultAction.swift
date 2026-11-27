@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import Synchronization
 
 /// A loopback endpoint a result action may own.
 nonisolated struct AgentProjectResultEndpoint: Equatable, Hashable, Sendable {
@@ -450,6 +451,22 @@ nonisolated struct AgentTaskResultActionState: Equatable, Sendable {
     }
 }
 
+/// Slot for the refusal the spawn gate named during pre-spawn validation. A
+/// noncopyable `Mutex` reaches the `@Sendable` validation closure only
+/// through a sendable box, the same shape as `AgentTaskResultGrantStore`.
+nonisolated private final class PreSpawnRefusalBox: Sendable {
+    private let value = Mutex<AgentTaskResultLaunchRefusal?>(nil)
+
+    func set(_ refusal: AgentTaskResultLaunchRefusal?) { value.withLock { $0 = refusal } }
+
+    func take() -> AgentTaskResultLaunchRefusal? {
+        value.withLock { named -> AgentTaskResultLaunchRefusal? in
+            defer { named = nil }
+            return named
+        }
+    }
+}
+
 /// Explicit-user driver for the result-action value lifecycle. Constructing or
 /// presenting it starts nothing. Only `launch` revalidates and may execute;
 /// trying a result has no acceptance, Git, or publication side effect.
@@ -462,6 +479,9 @@ final class AgentTaskResultActionDriver {
     @ObservationIgnored private let executor: any AgentTaskResultActionExecuting
     @ObservationIgnored private var activeAttempt: UUID?
     @ObservationIgnored private var cancellation: UserTaskCancellation?
+    /// The runner reports a pre-spawn rejection as a bare fact; the refusal
+    /// the spawn gate named is kept here so the failure states that reason.
+    @ObservationIgnored private let preSpawnRefusal = PreSpawnRefusalBox()
 
     init(
         binding: AgentTaskResultActionBinding,
@@ -480,6 +500,7 @@ final class AgentTaskResultActionDriver {
         guard next.phase == .starting, next.attempts == state.attempts + 1 else { return }
         state = next
         lastOutcome = nil
+        preSpawnRefusal.set(nil)
         let attempt = UUID()
         activeAttempt = attempt
         let binding = state.binding
@@ -562,11 +583,13 @@ final class AgentTaskResultActionDriver {
     }
 
     private func start(context: AgentTaskResultLaunchContext, attempt: UUID) {
+        let preSpawnRefusal = preSpawnRefusal
         let handle = executor.execute(
             command: context.command,
             workingDirectory: context.workingDirectory,
             preSpawnValidation: { environment in
                 if let refusal = context.validate(environment: environment) {
+                    preSpawnRefusal.set(refusal)
                     throw AgentTaskResultLaunchRejection(refusal: refusal)
                 }
             },
@@ -622,7 +645,10 @@ final class AgentTaskResultActionDriver {
         guard activeAttempt == attempt else { return }
         if outcome.preSpawnRejected {
             guard state.phase == .stopping else {
-                refuse(.authorityChanged, attempt: attempt)
+                // A rejection the runner raised on its own keeps the generic
+                // authority reason.
+                let refusal = preSpawnRefusal.take()
+                refuse(refusal ?? .authorityChanged, attempt: attempt)
                 return
             }
             // Cancellation already owns this launch: finish that transition
@@ -652,6 +678,7 @@ final class AgentTaskResultActionDriver {
 
     private func refuse(_ refusal: AgentTaskResultLaunchRefusal, attempt: UUID) {
         guard activeAttempt == attempt else { return }
+        preSpawnRefusal.set(nil)
         state = state.reduced(by: .launchRefused(refusal))
         activeAttempt = nil
         cancellation = nil

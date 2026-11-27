@@ -156,6 +156,10 @@ nonisolated private final class AgentResultAuthorityProbe: @unchecked Sendable {
         lock.withLock { identityResult = value }
     }
 
+    func setEnvironmentCurrent(_ value: Bool) {
+        lock.withLock { storedEnvironmentCurrent = value }
+    }
+
     func captureIdentity(
         environment: [String: String], expected: AgentVerificationIdentitySnapshot
     ) -> AgentVerificationIdentityCaptureResult {
@@ -238,7 +242,7 @@ struct AgentTaskResultActionDriverTests {
         return Fixture(task: task, binding: binding, selection: selection, grant: grant)
     }
 
-    private func decisionTask() throws -> AgentTask {
+    private func decisionTask(findingReference: String? = nil) throws -> AgentTask {
         let code = ADEContractFixtures.codeState("a")
         let environment = ADEContractFixtures.environment
         var task = try ADEContractFixtures.verifiedSuccessTask(
@@ -251,9 +255,53 @@ struct AgentTaskResultActionDriverTests {
             checkPlanIdentity: ADEContractFixtures.hex("f"),
             reviewerControl: .writeDisabledAtAdapter
         )
+        if let findingReference { cycle.recordRejectedReference(findingReference) }
         cycle.stop(.checksFailed)
         task.reviewCycle = cycle
         return task
+    }
+
+    /// A verified Ready task with no recipe selected and no result action
+    /// bound: what it presents on open depends only on `resolve`.
+    private func openVerifiedTask(
+        projectPath: String = "/tmp/pine-result-project",
+        mutate: (inout AgentTask) -> Void = { _ in },
+        resolve: @escaping AgentTaskResultIdentityResolver
+    ) async throws -> (
+        controller: AgentTaskResultController, registry: AgentTaskRegistry
+    ) {
+        var task = try ADEContractFixtures.verifiedSuccessTask(
+            seed: 1762, codeState: ADEContractFixtures.codeState("a"),
+            environment: ADEContractFixtures.environment, projectPath: projectPath
+        )
+        mutate(&task)
+        let registry = AgentTaskRegistry()
+        registry.setTasksForTesting([task])
+        // The optional-closure init parameter escapes; the resolver stays out
+        // of #require's sendable expansion, which cannot capture it.
+        let controller = AgentTaskResultController(
+            registry: registry, taskID: task.id,
+            editorPreflight: { .available([], isCurrent: { true }) },
+            identityResolver: resolve
+        )
+        return (try #require(controller), registry)
+    }
+
+    /// Recipe discovery only reports a proposal for a recognized project,
+    /// which is the observable end of an open.
+    private func temporarySwiftPackage() throws -> URL {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pine-result-open-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: root.appending(path: "Sources/Example"), withIntermediateDirectories: true
+        )
+        try "// swift-tools-version: 5.9".write(
+            to: root.appending(path: "Package.swift"), atomically: true, encoding: .utf8
+        )
+        try "print(\"example\")".write(
+            to: root.appending(path: "Sources/Example/main.swift"), atomically: true, encoding: .utf8
+        )
+        return root
     }
 
     nonisolated private func context(
@@ -337,10 +385,31 @@ struct AgentTaskResultActionDriverTests {
             try executor.finish(-1, preSpawnRejected: true)
         }
         try #require(await waitUntilMainActor {
-            driver.state.phase == .failed(.launchRefused(.authorityChanged))
+            driver.state.phase == .failed(.launchRefused(.grantNotCurrent))
         })
         #expect(driver.state.ownership == nil)
         #expect(authority.environmentChecks == 1) // grant fence ran before the lease check
+    }
+
+    @Test func preSpawnEnvironmentLossIsRefusedAsEnvironmentUnavailable() async throws {
+        let fixture = try fixture()
+        let executor = AgentResultExecutorDouble()
+        let authority = AgentResultAuthorityProbe(grant: fixture.grant)
+        let driver = AgentTaskResultActionDriver(binding: fixture.binding, executor: executor)
+        driver.launch { _ in context(fixture, authority: authority) }
+        try #require(await waitUntilMainActor { executor.count == 1 })
+
+        authority.setEnvironmentCurrent(false)
+        do {
+            try executor.spawn()
+            Issue.record("A lost environment reached process observation")
+        } catch {
+            try executor.finish(-1, preSpawnRejected: true)
+        }
+        try #require(await waitUntilMainActor {
+            driver.state.phase == .failed(.launchRefused(.environmentUnavailable))
+        })
+        #expect(driver.state.ownership == nil)
     }
 
     @Test func originalCheckoutAndUnreadyContextsNeverReachExecutor() async throws {
@@ -404,7 +473,7 @@ struct AgentTaskResultActionDriverTests {
             try executor.finish(-1, preSpawnRejected: true)
         }
         try #require(await waitUntilMainActor {
-            driver.state.phase == .failed(.launchRefused(.authorityChanged))
+            driver.state.phase == .failed(.launchRefused(.bindingChanged))
         })
         #expect(authority.capturedEnvironment == environment)
         #expect(driver.state.ownership == nil)
@@ -428,7 +497,7 @@ struct AgentTaskResultActionDriverTests {
             try executor.finish(-1, preSpawnRejected: true)
         }
         try #require(await waitUntilMainActor {
-            driver.state.phase == .failed(.launchRefused(.authorityChanged))
+            driver.state.phase == .failed(.launchRefused(.notReady))
         })
         #expect(driver.state.ownership == nil)
     }
@@ -844,5 +913,165 @@ struct AgentTaskResultActionDriverTests {
         driver.launch { _ in context(refreshed, authority: authority) }
         try #require(await waitUntilMainActor { executor.count == 2 })
         #expect(driver.state.attempts == 1)
+    }
+
+    // MARK: - First open and honest refusals (#1725)
+
+    @Test func secretBearingResultCommandIsRefusedBeforeAnySpawn() async throws {
+        let base = try fixture()
+        let recipe = base.selection.recipe
+        // A result command that needs a secret can never become a launch
+        // context: no resolution path exists, so the launch is refused.
+        let secret = AgentProjectRecipe(
+            scheme: recipe.scheme, kind: recipe.kind,
+            canonicalProjectPath: recipe.canonicalProjectPath,
+            prerequisites: recipe.prerequisites, setup: recipe.setup, checks: recipe.checks,
+            results: recipe.results,
+            secretRequirements: ["run": [AgentProjectSecretReference(name: "DEPLOY_TOKEN")]]
+        )
+        let selection = try AgentProjectRecipe.select(projectCheckedIn: secret, for: base.task.project)
+        let binding = try #require(AgentTaskResultActionBinding(
+            task: base.task, selection: selection, actionID: "run-example",
+            snapshot: base.binding.snapshot
+        ))
+        let grant = AgentTaskCheckGrant(
+            scheme: AgentTaskCheckGrant.currentScheme, id: UUID(), taskID: base.task.id,
+            planFingerprint: selection.plan.fingerprint,
+            environment: base.binding.snapshot.environment, approvedAt: Date(), revokedAt: nil
+        )
+        let secretFixture = Fixture(task: base.task, binding: binding, selection: selection, grant: grant)
+        let executor = AgentResultExecutorDouble()
+        let authority = AgentResultAuthorityProbe(grant: grant)
+        let driver = AgentTaskResultActionDriver(binding: binding, executor: executor)
+        // The same make-gated shape as the controller's production launch.
+        driver.launch { _ in
+            let built = context(secretFixture, authority: authority)
+            return AgentTaskResultLaunchContext.make(
+                binding: built.binding, selection: selection,
+                preparation: built.preparation, authority: built.authority
+            )
+        }
+        try #require(await waitUntilMainActor {
+            driver.state.phase == .failed(.launchRefused(.authorityChanged))
+        })
+        #expect(executor.isEmpty)
+    }
+
+    @Test func firstOpenOfReadyTaskIsReadyWhenItsIdentityIsCurrent() async throws {
+        let opened = try await openVerifiedTask(resolve: { _ in
+            .current(AgentVerificationIdentitySnapshot(
+                code: ADEContractFixtures.codeState("a"), environment: ADEContractFixtures.environment
+            ))
+        })
+        defer { opened.controller.close() }
+        try #require(await waitUntilMainActor { opened.controller.presentation.readiness.isReady })
+        // Ready came from the proof alone: no recipe was selected and no
+        // result action was bound by opening.
+        let taskID = opened.controller.presentation.taskID
+        #expect(opened.controller.presentation.action == nil)
+        #expect(opened.controller.presentation.identityGap == nil)
+        #expect(opened.registry.resultActionSelection(for: taskID) == nil)
+        #expect(opened.registry.resultActionDriver(for: taskID) == nil)
+    }
+
+    @Test(arguments: [
+        AgentVerificationIdentityCaptureResult.unavailable(.unsavedEditorChanges),
+        .unavailable(.unavailableBinding), .changed, .cancelled,
+    ])
+    func firstOpenWithoutProvenIdentityStaysUnverifiedWithItsReason(
+        result: AgentVerificationIdentityCaptureResult
+    ) async throws {
+        let opened = try await openVerifiedTask(resolve: { _ in result })
+        defer { opened.controller.close() }
+        var expected = AgentTaskResultIdentityGap.unproven
+        if case .unavailable(.unsavedEditorChanges) = result { expected = .unsavedEditorChanges }
+        try #require(await waitUntilMainActor {
+            opened.controller.presentation.identityGap == expected
+        })
+        #expect(!opened.controller.presentation.readiness.isReady)
+        #expect(opened.controller.presentation.readiness.gaps.contains(.codeStateUnknown))
+    }
+
+    @Test func firstOpenWithNoProofAttemptStaysUnverifiedAndSelectsNothing() async throws {
+        let root = try temporarySwiftPackage()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let opened = try await openVerifiedTask(projectPath: root.path, resolve: { _ in nil })
+        defer { opened.controller.close() }
+        try #require(await waitUntilMainActor { opened.controller.proposal != nil })
+        let taskID = opened.controller.presentation.taskID
+        #expect(opened.controller.presentation.identityGap == .unproven)
+        #expect(!opened.controller.presentation.readiness.isReady)
+        #expect(opened.registry.resultActionSelection(for: taskID) == nil)
+        #expect(opened.registry.resultActionDriver(for: taskID) == nil)
+    }
+
+    @Test func identityIsNotCapturedWhileReadyIsUnreachable() async throws {
+        let root = try temporarySwiftPackage()
+        defer { try? FileManager.default.removeItem(at: root) }
+        var captures = 0
+        let opened = try await openVerifiedTask(
+            projectPath: root.path, mutate: { $0.verificationState = .stale },
+            resolve: { _ in
+                captures += 1
+                return .current(AgentVerificationIdentitySnapshot(
+                    code: ADEContractFixtures.codeState("a"), environment: ADEContractFixtures.environment
+                ))
+            }
+        )
+        defer { opened.controller.close() }
+        try #require(await waitUntilMainActor { opened.controller.proposal != nil })
+        #expect(captures == 0)
+        #expect(opened.controller.presentation.identityGap == nil)
+        #expect(opened.controller.presentation.readiness.gaps.contains(.verificationNotCurrent))
+    }
+
+    @Test func openedResultIsNotReadyWhenTheObservedIdentityMoved() async throws {
+        let moved = AgentTaskCodeStateIdentity(
+            headCommit: String(repeating: "b", count: 40),
+            trackedFingerprint: ADEContractFixtures.hex("9"),
+            untrackedFingerprint: ADEContractFixtures.hex("9"),
+            ignoredRelevantFingerprint: ADEContractFixtures.hex("9")
+        )
+        let opened = try await openVerifiedTask(resolve: { _ in
+            .current(AgentVerificationIdentitySnapshot(
+                code: moved, environment: ADEContractFixtures.environment
+            ))
+        })
+        defer { opened.controller.close() }
+        try #require(await waitUntilMainActor { opened.controller.presentation.codeState == moved })
+        // What was observed is shown as is; the evidence is stale for it.
+        #expect(!opened.controller.presentation.readiness.isReady)
+        #expect(opened.controller.presentation.readiness.gaps.contains(.staleEvidence(.independentCheck)))
+        #expect(opened.controller.presentation.identityGap == nil)
+    }
+
+    @Test func findingTextReachesThePresentationOnlyFromItsProvider() throws {
+        let reference = ADEContractFixtures.hex("f")
+        let finding = "The example exits with code 1 when it is run without arguments."
+        let task = try decisionTask(findingReference: reference)
+        let registry = AgentTaskRegistry()
+        registry.setTasksForTesting([task])
+        // The provider closure stays out of #require's sendable expansion,
+        // which cannot capture it.
+        let controller = AgentTaskResultController(
+            registry: registry, taskID: task.id,
+            editorPreflight: { .available([], isCurrent: { true }) },
+            findingProvider: { decision in
+                #expect(decision.unresolvedFindingReference == reference)
+                return finding
+            }
+        )
+        let held = try #require(controller)
+        defer { held.close() }
+        #expect(held.presentation.unresolvedFinding == .text(finding))
+
+        // Without a holder of the text nothing invents it, and the opaque
+        // reference is not presented as a finding.
+        let bare = try #require(AgentTaskResultController(
+            registry: registry, taskID: task.id,
+            editorPreflight: { .available([], isCurrent: { true }) }
+        ))
+        defer { bare.close() }
+        #expect(bare.presentation.unresolvedFinding == .textUnavailable)
     }
 }

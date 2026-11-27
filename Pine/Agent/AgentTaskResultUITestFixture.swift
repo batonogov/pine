@@ -2,6 +2,25 @@
 import AppKit
 import SwiftUI
 
+/// One result-window fixture per test-host launch argument.
+@MainActor
+enum AgentTaskResultUITestFixture: String, CaseIterable {
+    /// Ready with a selected, prepared result action.
+    case ready = "--ui-test-agent-result"
+    /// Ready as the production controller presents it on first open: the
+    /// identity is proven, no result action has been chosen.
+    case readyFirstOpen = "--ui-test-agent-result-first-open"
+    case needsDecision = "--ui-test-agent-result-decision"
+    /// A decision request that belongs to an earlier result.
+    case staleDecision = "--ui-test-agent-result-decision-stale"
+
+    var needsDecision: Bool { self == .needsDecision || self == .staleDecision }
+
+    static func matching(_ arguments: [String]) -> Self? {
+        allCases.first { arguments.contains($0.rawValue) }
+    }
+}
+
 /// Test-host-only result window. Callbacks record UI intent in view state;
 /// this fixture contains no executor, acceptance mutation, Git, or persistence.
 @MainActor
@@ -9,8 +28,8 @@ private final class AgentTaskResultUITestWindow {
     static let shared = AgentTaskResultUITestWindow()
     private var window: NSWindow?
 
-    func show(needsDecision: Bool) {
-        let root = AgentTaskResultUITestRoot(needsDecision: needsDecision)
+    func show(fixture: AgentTaskResultUITestFixture) {
+        let root = AgentTaskResultUITestRoot(fixture: fixture)
         let window = NSWindow(contentViewController: NSHostingController(rootView: root))
         window.identifier = NSUserInterfaceItemIdentifier("agentTaskResultUITest")
         window.title = "Task Result"
@@ -26,8 +45,8 @@ private final class AgentTaskResultUITestWindow {
 
 @MainActor
 enum AgentTaskResultUITestLauncher {
-    static func present(needsDecision: Bool) {
-        AgentTaskResultUITestWindow.shared.show(needsDecision: needsDecision)
+    static func present(_ fixture: AgentTaskResultUITestFixture) {
+        AgentTaskResultUITestWindow.shared.show(fixture: fixture)
     }
 }
 
@@ -35,16 +54,16 @@ enum AgentTaskResultUITestLauncher {
 private struct AgentTaskResultUITestRoot: View {
     @State private var launchRequests = 0
     @State private var reply: String?
-    private let needsDecision: Bool
+    private let fixture: AgentTaskResultUITestFixture
 
-    init(needsDecision: Bool) {
-        self.needsDecision = needsDecision
+    init(fixture: AgentTaskResultUITestFixture) {
+        self.fixture = fixture
     }
 
     var body: some View {
         VStack(spacing: 0) {
             AgentTaskResultView(
-                model: Self.model(needsDecision: needsDecision),
+                model: Self.model(fixture),
                 onLaunch: { launchRequests += 1 },
                 onReply: { reply = $0 }
             )
@@ -59,14 +78,17 @@ private struct AgentTaskResultUITestRoot: View {
         }
     }
 
-    private static func model(needsDecision: Bool) -> AgentTaskResultPresentation {
+    private static func model(_ fixture: AgentTaskResultUITestFixture) -> AgentTaskResultPresentation {
         let now = Date(timeIntervalSince1970: 1_000)
-        let code = AgentTaskCodeStateIdentity(
-            headCommit: String(repeating: "b", count: 40),
-            trackedFingerprint: String(repeating: "a", count: 64),
-            untrackedFingerprint: String(repeating: "b", count: 64),
-            ignoredRelevantFingerprint: String(repeating: "c", count: 64)
-        )
+        func identity(_ tracked: Character) -> AgentTaskCodeStateIdentity {
+            AgentTaskCodeStateIdentity(
+                headCommit: String(repeating: "b", count: 40),
+                trackedFingerprint: String(repeating: tracked, count: 64),
+                untrackedFingerprint: String(repeating: "b", count: 64),
+                ignoredRelevantFingerprint: String(repeating: "c", count: 64)
+            )
+        }
+        let code = identity("a")
         let environment = AgentTaskEnvironmentIdentity(
             osBuild: "26A5388g", toolchain: "Xcode 27.0",
             configurationFingerprint: String(repeating: "d", count: 64)
@@ -114,7 +136,41 @@ private struct AgentTaskResultUITestRoot: View {
             ),
         ]
         AgentTaskLifecycleReducer.settleLatestRun(of: &task, runIndex: 0)
-
+        task.checkExecution = AgentTaskCheckExecution(
+            id: UUID(), runID: runID, processGeneration: 1, passID: UUID(), attempt: 1,
+            grantID: UUID(), planFingerprint: String(repeating: "e", count: 64),
+            requiredCommands: [String(repeating: "f", count: 64)],
+            code: code, environment: environment,
+            operations: [.init(
+                id: UUID(), commandFingerprint: String(repeating: "f", count: 64),
+                required: true, startedAt: now, finishedAt: now,
+                status: .succeeded, exitCode: 0, identitiesMatched: true
+            )]
+        )
+        let changes = AgentRevisionChangeSummary(
+            agentSummary: "Added a runnable example.",
+            items: [AgentRevisionChangeItem(
+                relativePath: "Sources/Example/main.swift", kind: .modified,
+                attribution: .verified
+            )]
+        )
+        if fixture.needsDecision {
+            var cycle = AgentTaskCorrectionCycle(
+                taskID: task.id, runID: runID, codeState: code, environment: environment,
+                requestedOutcomeReference: "outcome", criteriaVersion: "criteria",
+                checkPlanIdentity: String(repeating: "e", count: 64),
+                reviewerControl: .writeDisabledAtAdapter
+            )
+            cycle.recordRejectedReference(String(repeating: "9", count: 64))
+            cycle.stop(.checksFailed)
+            task.reviewCycle = cycle
+            task.verificationState = .stale
+        }
+        if fixture == .readyFirstOpen {
+            return AgentTaskResultPresentation(
+                task: task, codeState: code, environment: environment, changes: changes
+            )
+        }
         let recipe = AgentProjectRecipe.propose(
             recognizedFiles: ["Package.swift", "Sources/Example/main.swift"],
             for: task.project
@@ -142,36 +198,15 @@ private struct AgentTaskResultUITestRoot: View {
             }
             return prep
         }
-        let check = AgentTaskResultCheckEntry(
-            result: AgentTaskCheckObservation.CommandResult(
-                operationID: UUID(),
-                fingerprint: String(repeating: "e", count: 64),
-                required: true, status: .succeeded
-            ),
-            codeState: code, environment: environment, exitCode: 0
-        )
-        let changes = AgentRevisionChangeSummary(
-            agentSummary: "Added a runnable example.",
-            items: [AgentRevisionChangeItem(
-                relativePath: "Sources/Example/main.swift", kind: .modified,
-                attribution: .verified
-            )]
-        )
-        if needsDecision {
-            var cycle = AgentTaskCorrectionCycle(
-                taskID: task.id, runID: runID, codeState: code, environment: environment,
-                requestedOutcomeReference: "outcome", criteriaVersion: "criteria",
-                checkPlanIdentity: String(repeating: "f", count: 64),
-                reviewerControl: .writeDisabledAtAdapter
-            )
-            cycle.stop(.checksFailed)
-            task.reviewCycle = cycle
-            task.verificationState = .stale
-        }
         return AgentTaskResultPresentation(
-            task: task, codeState: code, environment: environment, changes: changes,
-            action: action, preparation: preparation, checkJournal: [check],
-            limitations: ["The fixture records one required build check."]
+            task: task,
+            // The stale fixture proves another identity than the one the
+            // decision request was raised against.
+            codeState: fixture == .staleDecision ? identity("5") : code,
+            environment: environment, changes: changes,
+            action: action, preparation: preparation,
+            findingText: fixture.needsDecision
+                ? "The example exits with code 1 when it is run without arguments." : nil
         )
     }
 }

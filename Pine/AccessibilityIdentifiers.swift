@@ -328,4 +328,7 @@ nonisolated enum AccessibilityID {
     static let agentTaskResultLaunchEvidence = "agentTaskResultLaunchEvidence"
     static let agentTaskResultReplyEvidence = "agentTaskResultReplyEvidence"
     static let agentTaskResultUnsupported = "agentTaskResultUnsupported"
+    static let agentTaskResultBrief = "agentTaskResultBrief"
+    static let agentTaskResultFinding = "agentTaskResultFinding"
+    static let agentTaskResultReplyScope = "agentTaskResultReplyScope"
 }

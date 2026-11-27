@@ -697,6 +697,238 @@
         }
       }
     },
+    "agentResult.briefAttemptStarted" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Letzter Versuch gestartet: %@"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Latest attempt started: %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Último intento iniciado: %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dernière tentative commencée : %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最新の試行の開始: %@"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "최근 시도 시작: %@"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Última tentativa iniciada: %@"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Последняя попытка начата: %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最近一次尝试开始于：%@"
+          }
+        }
+      }
+    },
+    "agentResult.briefDecisionCount" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aufgezeichnete Entscheidungen: %@"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recorded decisions: %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Decisiones registradas: %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Décisions enregistrées : %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "記録された決定: %@"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "기록된 결정: %@"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Decisões registradas: %@"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Записанные решения: %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已记录的决策：%@"
+          }
+        }
+      }
+    },
+    "agentResult.briefFeedbackCount" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aufgezeichnetes Feedback: %@"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recorded feedback: %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Comentarios registrados: %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Retours enregistrés : %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "記録されたフィードバック: %@"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "기록된 피드백: %@"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Feedback registrado: %@"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Записанные отзывы: %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已记录的反馈：%@"
+          }
+        }
+      }
+    },
+    "agentResult.briefGoalVersion" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zielversion: %@"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Goal version: %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Versión del objetivo: %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Version de l’objectif : %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "目標のバージョン: %@"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "목표 버전: %@"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Versão do objetivo: %@"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Версия цели: %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "目标版本：%@"
+          }
+        }
+      }
+    },
     "agentResult.cancel" : {
       "localizations" : {
         "de" : {
@@ -1331,64 +1563,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ 之前 · %@ 之后"
-          }
-        }
-      }
-    },
-    "agentResult.contextPlaceholder" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Kontextuelle Befehlsergebnisse und der Vergleich von Ergebnisüberarbeitungen sind noch nicht verfügbar."
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Contextual command outcomes and result-revision comparison are not available yet."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Los resultados de comandos contextuales y la comparación de revisiones del resultado aún no están disponibles."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Les résultats contextuels des commandes et la comparaison des révisions du résultat ne sont pas encore disponibles."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "コンテキストコマンドの成果と結果改訂の比較はいまだ利用できません。"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "컨텍스트 명령 결과와 결과 개수 비교는 아직 사용할 수 없습니다."
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Os resultados contextuais de comandos e a comparação de revisões do resultado ainda não estão disponíveis."
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Итоги команд в контексте и сравнение редакций результата пока недоступны."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "上下文命令结果与结果修订比较尚不可用。"
           }
         }
       }
@@ -2143,6 +2317,64 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "未记录"
+          }
+        }
+      }
+    },
+    "agentResult.findingTextUnavailable" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Diese Feststellung wird nur als Verweis aufbewahrt; ihr Text wird nicht mit der Aufgabe gespeichert."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This finding is kept only as a reference; its text is not stored with the task."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este hallazgo se conserva solo como referencia; su texto no se guarda con la tarea."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ce constat n’est conservé que comme référence ; son texte n’est pas enregistré avec la tâche."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この指摘は参照としてのみ保持されており、そのテキストはタスクと一緒に保存されません。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "이 발견 사항은 참조로만 보관되며, 텍스트는 작업과 함께 저장되지 않습니다."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este achado é mantido apenas como referência; o texto não é armazenado com a tarefa."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Это замечание хранится только как ссылка; его текст не сохраняется вместе с задачей."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此发现仅作为引用保留；其文本不会随任务一起存储。"
           }
         }
       }
@@ -3133,6 +3365,122 @@
         }
       }
     },
+    "agentResult.identityUnproven" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pine konnte den aktuellen Code und die aktuelle Umgebung für dieses Ergebnis nicht erneut belegen, daher wird es nicht als bereit angezeigt."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pine could not re-prove the current code and environment for this result, so it is not shown as Ready."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pine no pudo volver a comprobar el código y el entorno actuales de este resultado, por lo que no se muestra como Listo."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pine n’a pas pu prouver à nouveau le code et l’environnement actuels de ce résultat ; il n’est donc pas affiché comme Prêt."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pine はこの結果の現在のコードと環境を再証明できなかったため、準備完了としては表示されません。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pine이 이 결과의 현재 코드와 환경을 다시 증명할 수 없어 준비됨으로 표시되지 않습니다."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O Pine não conseguiu comprovar novamente o código e o ambiente atuais deste resultado, por isso ele não é exibido como Pronto."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pine не удалось заново подтвердить текущие код и окружение этого результата, поэтому он не отображается как «Готово»."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pine 无法重新验证此结果当前的代码和环境，因此不会将其显示为已就绪。"
+          }
+        }
+      }
+    },
+    "agentResult.identityUnsavedChanges" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ungespeicherte Änderungen im Editor verhindern, dass Pine das aktuelle Ergebnis belegt. Speichere sie und öffne das Ergebnis erneut."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unsaved editor changes prevent Pine from proving the current result. Save them, then reopen the result."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Los cambios sin guardar del editor impiden que Pine demuestre el resultado actual. Guárdalos y vuelve a abrir el resultado."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les modifications non enregistrées de l’éditeur empêchent Pine de prouver le résultat actuel. Enregistrez-les, puis rouvrez le résultat."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "エディタの未保存の変更により、Pine は現在の結果を証明できません。保存してから結果を開き直してください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "편집기의 저장되지 않은 변경 사항 때문에 Pine이 현재 결과를 증명할 수 없습니다. 변경 사항을 저장한 후 결과를 다시 여세요."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "As alterações não salvas do editor impedem que o Pine comprove o resultado atual. Salve-as e abra o resultado novamente."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Несохранённые изменения в редакторе не позволяют Pine подтвердить текущий результат. Сохраните их и откройте результат заново."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "编辑器中未保存的更改使 Pine 无法验证当前结果。请先保存，然后重新打开该结果。"
+          }
+        }
+      }
+    },
     "agentResult.launchNotReady" : {
       "localizations" : {
         "de" : {
@@ -3187,6 +3535,122 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "只能运行当前已就绪的结果。"
+          }
+        }
+      }
+    },
+    "agentResult.limitationCheckOutput" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Prüfungen werden als Status und Exit-Codes aufbewahrt; Befehlsausgabe und Argumente werden nicht aufgezeichnet."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Checks are kept as status and exit codes; command output and arguments are not recorded."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Las verificaciones se conservan como estado y códigos de salida; la salida de los comandos y sus argumentos no se registran."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les contrôles sont conservés comme état et codes de sortie ; la sortie et les arguments des commandes ne sont pas enregistrés."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "チェックは状態と終了コードとして保持されます。コマンドの出力と引数は記録されません。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "검사는 상태와 종료 코드로만 보관되며, 명령 출력과 인수는 기록되지 않습니다."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "As verificações são mantidas como status e códigos de saída; a saída e os argumentos dos comandos não são registrados."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Проверки хранятся как состояние и коды завершения; вывод и аргументы команд не записываются."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "检查仅保留状态和退出码；不记录命令输出和参数。"
+          }
+        }
+      }
+    },
+    "agentResult.limitationReviewFinding" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Das Prüfergebnis wird aufbewahrt; der Text der Feststellung des Prüfers wird nicht mit der Aufgabe gespeichert."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The review verdict is kept; the reviewer’s finding text is not stored with the task."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El veredicto de la revisión se conserva; el texto del hallazgo del revisor no se guarda con la tarea."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le verdict de la révision est conservé ; le texte du constat du réviseur n’est pas enregistré avec la tâche."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "レビューの判定は保持されますが、レビュアーの指摘のテキストはタスクと一緒に保存されません。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "검토 결론은 보관되지만, 검토자가 발견한 사항의 텍스트는 작업과 함께 저장되지 않습니다."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O veredito da revisão é mantido; o texto do achado do revisor não é armazenado com a tarefa."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Вердикт ревью сохраняется; текст замечания ревьюера не сохраняется вместе с задачей."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "审查结论会保留；审查者的发现文本不会随任务一起存储。"
           }
         }
       }
@@ -4869,6 +5333,64 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "回复如何继续"
+          }
+        }
+      }
+    },
+    "agentResult.replyTextOnly" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die Verbindung dieses Agenten unterstützt Screenshots und andere visuelle Verweise noch nicht. Es wird nur der Antworttext gesendet."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This agent’s connection does not support screenshots or other visual references yet. Only the reply text is sent."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La conexión de este agente aún no admite capturas de pantalla ni otras referencias visuales. Solo se envía el texto de la respuesta."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La connexion de cet agent ne prend pas encore en charge les captures d’écran ni les autres références visuelles. Seul le texte de la réponse est envoyé."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このエージェントの接続は、スクリーンショットやその他の視覚的な参照にまだ対応していません。送信されるのは返信テキストのみです。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "이 에이전트의 연결은 아직 스크린샷이나 기타 시각적 참조를 지원하지 않습니다. 답장 텍스트만 전송됩니다."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A conexão deste agente ainda não é compatível com capturas de tela ou outras referências visuais. Somente o texto da resposta é enviado."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Подключение этого агента пока не поддерживает снимки экрана и другие визуальные ссылки. Отправляется только текст ответа."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此智能体的连接尚不支持截图或其他视觉引用。仅发送回复文本。"
           }
         }
       }

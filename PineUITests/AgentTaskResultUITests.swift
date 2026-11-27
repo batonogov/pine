@@ -55,7 +55,7 @@ final class AgentTaskResultUITests: PineUITestCase {
     }
 
     func testNeedsDecisionProvidesFreeFormReplyAndNoReadyAction() {
-        launchResult(needsDecision: true)
+        launchResult("--ui-test-agent-result-decision")
         XCTAssertTrue(app.staticTexts["Needs decision"].exists)
         XCTAssertTrue(app.staticTexts["A required check failed."].exists)
         XCTAssertTrue(app.staticTexts[
@@ -80,10 +80,46 @@ final class AgentTaskResultUITests: PineUITestCase {
         XCTAssertTrue(app.buttons["Запустить пример"].exists)
     }
 
-    private func launchResult(needsDecision: Bool = false) {
-        app.launchArguments.append(
-            needsDecision ? "--ui-test-agent-result-decision" : "--ui-test-agent-result"
-        )
+    func testNeedsDecisionShowsTheFindingTextAndTheReplyScope() {
+        launchResult("--ui-test-agent-result-decision")
+        // The reviewer's finding is shown as text, never as its reference hash.
+        XCTAssertTrue(app.staticTexts[
+            "Unresolved finding: The example exits with code 1 when it is run without arguments."
+        ].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts.matching(
+            NSPredicate(format: "label CONTAINS %@", String(repeating: "9", count: 64))
+        ).firstMatch.exists)
+        // No adapter transmits visual references yet: the reply field says so.
+        XCTAssertTrue(app.staticTexts.matching(
+            NSPredicate(format: "label CONTAINS %@", "Only the reply text is sent.")
+        ).firstMatch.exists)
+    }
+
+    func testStaleDecisionCannotBeAnswered() {
+        launchResult("--ui-test-agent-result-decision-stale")
+        XCTAssertTrue(app.staticTexts["Previous decision request"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts[
+            "This request belongs to an earlier result and can no longer be answered."
+        ].exists)
+        let reply = element("agentTaskResultReply")
+        XCTAssertTrue(reply.waitForExistence(timeout: 2))
+        XCTAssertFalse(reply.isEnabled)
+        XCTAssertFalse(element("agentTaskResultSendReply").isEnabled)
+        XCTAssertFalse(element("agentTaskResultReplyEvidence").exists)
+    }
+
+    func testReadyIsPresentedOnFirstOpenWithoutChoosingAResultAction() {
+        launchResult("--ui-test-agent-result-first-open")
+        XCTAssertTrue(app.staticTexts["Ready"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Not accepted"].exists)
+        XCTAssertTrue(app.staticTexts["No project result action is selected."].exists)
+        // Ready does not depend on a recipe: nothing is selected or launched by opening.
+        XCTAssertFalse(element("agentTaskResultPrimaryAction").exists)
+        XCTAssertFalse(element("agentTaskResultLaunchEvidence").exists)
+    }
+
+    private func launchResult(_ argument: String = "--ui-test-agent-result") {
+        app.launchArguments.append(argument)
         launchClean()
         XCTAssertTrue(element("agentTaskResult").waitForExistence(timeout: 10))
     }

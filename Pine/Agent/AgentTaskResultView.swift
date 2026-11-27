@@ -65,6 +65,25 @@ nonisolated struct AgentTaskResultCheckEntry: Equatable, Sendable {
     }
 }
 
+/// What an escalated decision can say about its unresolved finding. Pine
+/// keeps only an opaque reference with the task; the text exists only while
+/// the surface that received the reviewer's verdict still holds it.
+nonisolated enum AgentTaskResultFinding: Equatable, Sendable {
+    case none
+    case text(String)
+    case textUnavailable
+}
+
+/// Why an opened result has no proven current identity. Ready is never
+/// shown without one.
+nonisolated enum AgentTaskResultIdentityGap: Equatable, Sendable {
+    /// Unsaved editor buffers block the identity capture.
+    case unsavedEditorChanges
+    /// No live validated environment, a check plan Pine cannot reproduce,
+    /// or a failed, cancelled, or changing capture.
+    case unproven
+}
+
 nonisolated struct AgentTaskResultPresentation: Equatable, Sendable {
     static let sectionOrder = AgentTaskResultSection.allCases
 
@@ -77,15 +96,21 @@ nonisolated struct AgentTaskResultPresentation: Equatable, Sendable {
     let preparation: AgentProjectPreparation?
     let preparationIsRunning: Bool
     let lastOutcome: UserTaskOutcome?
+    /// Display-safe rows of the latest attempt's recorded check journal.
     let checkJournal: [AgentTaskResultCheckEntry]
     let reviewerOutcome: AgentTaskEvidenceFact?
     let reviewerOutcomeIsCurrent: Bool
     let codeState: AgentTaskCodeStateIdentity?
     let environment: AgentTaskEnvironmentIdentity?
-    let limitations: [String]
+    /// What the kept evidence does not include.
+    let limitations: [Strings.AgentResultCopy]
     let snapshotChanges: [AgentTaskSnapshotChange]
     let decision: AgentTaskReviewDecision?
     let hasDecisionRequest: Bool
+    let unresolvedFinding: AgentTaskResultFinding
+    let identityGap: AgentTaskResultIdentityGap?
+    /// The task's own factual completion brief (#1827).
+    let brief: AgentTaskBrief
     let revisionComparison: AgentRevisionComparison?
     let replyInFlight: Bool
     let replyDeliveryFailed: Bool
@@ -94,6 +119,7 @@ nonisolated struct AgentTaskResultPresentation: Equatable, Sendable {
         task: AgentTask,
         codeState: AgentTaskCodeStateIdentity?,
         environment: AgentTaskEnvironmentIdentity?,
+        identityGap: AgentTaskResultIdentityGap? = nil,
         changes: AgentRevisionChangeSummary = AgentRevisionChangeSummary(
             agentSummary: nil, items: []
         ),
@@ -101,9 +127,8 @@ nonisolated struct AgentTaskResultPresentation: Equatable, Sendable {
         preparation: AgentProjectPreparation? = nil,
         preparationIsRunning: Bool = false,
         lastOutcome: UserTaskOutcome? = nil,
-        checkJournal: [AgentTaskResultCheckEntry] = [],
-        limitations: [String] = [],
         revisionComparison: AgentRevisionComparison? = nil,
+        findingText: String? = nil,
         replyInFlight: Bool = false,
         replyDeliveryFailed: Bool = false
     ) {
@@ -127,14 +152,16 @@ nonisolated struct AgentTaskResultPresentation: Equatable, Sendable {
         }
         self.preparation = preparation
         self.preparationIsRunning = preparationIsRunning
-        self.checkJournal = checkJournal
+        checkJournal = Self.checkJournal(for: task)
+        limitations = Self.limitations(for: task, checkJournal: checkJournal)
         self.codeState = codeState
         self.environment = environment
-        self.limitations = limitations
         self.revisionComparison = revisionComparison?.taskID == task.id
             ? revisionComparison : nil
         self.replyInFlight = replyInFlight
         self.replyDeliveryFailed = replyDeliveryFailed
+        // A reason is only truthful while no identity was established.
+        self.identityGap = codeState == nil ? identityGap : nil
         if let run = task.runs.last {
             let reviews = task.evidence.filter {
                 $0.runID == run.id && $0.kind == .reviewerOutcome
@@ -172,6 +199,13 @@ nonisolated struct AgentTaskResultPresentation: Equatable, Sendable {
         } else {
             decision = nil
         }
+        if decision?.unresolvedFindingReference == nil {
+            unresolvedFinding = .none
+        } else {
+            let text = findingText?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            unresolvedFinding = text.isEmpty ? .textUnavailable : .text(text)
+        }
+        brief = AgentTaskBrief(task: task)
         snapshotChanges = [
             Self.change(
                 kind: .reviewed, snapshot: task.reviewedSnapshot,
@@ -182,6 +216,41 @@ nonisolated struct AgentTaskResultPresentation: Equatable, Sendable {
                 codeState: codeState, environment: environment
             ),
         ]
+    }
+
+    /// Rows of the content-free check journal (#1724) recorded for the
+    /// latest attempt. Literal argv and output are never journal evidence.
+    private static func checkJournal(for task: AgentTask) -> [AgentTaskResultCheckEntry] {
+        guard let execution = task.checkExecution, let run = task.runs.last,
+              execution.runID == run.id,
+              execution.processGeneration == run.process.processGeneration else { return [] }
+        return execution.operations.compactMap { operation in
+            guard let status = AgentTaskCheckObservation.Status(rawValue: operation.status.rawValue)
+            else { return nil }
+            return AgentTaskResultCheckEntry(
+                result: .init(
+                    operationID: operation.id, fingerprint: operation.commandFingerprint,
+                    required: operation.required, status: status
+                ),
+                codeState: execution.code, environment: execution.environment,
+                exitCode: operation.exitCode
+            )
+        }
+    }
+
+    /// Derived from the record so a limitation is never a claim the kept
+    /// evidence contradicts.
+    private static func limitations(
+        for task: AgentTask, checkJournal: [AgentTaskResultCheckEntry]
+    ) -> [Strings.AgentResultCopy] {
+        var limitations: [Strings.AgentResultCopy] = []
+        if !checkJournal.isEmpty { limitations.append(.limitationCheckOutput) }
+        if let run = task.runs.last,
+           AgentTaskLifecycleReducer.facts(forRun: run.id, in: task)
+            .contains(where: { $0.kind == .reviewerOutcome }) {
+            limitations.append(.limitationReviewFinding)
+        }
+        return limitations
     }
 
     var needsDecision: Bool { decision != nil }
@@ -252,6 +321,7 @@ struct AgentTaskResultView: View {
     let onCancelPreparation: (() -> Void)?
 
     @State private var reply = ""
+    @State private var briefIsExpanded = false
     @FocusState private var replyIsFocused: Bool
 
     init(
@@ -369,6 +439,12 @@ struct AgentTaskResultView: View {
                 VStack(alignment: .leading, spacing: 7) {
                     ForEach(Array(model.readiness.gaps.enumerated()), id: \.offset) { _, gap in
                         gapView(gap)
+                    }
+                    if let identityGap = model.identityGap {
+                        Text(verbatim: copy(identityGap == .unsavedEditorChanges
+                            ? .identityUnsavedChanges : .identityUnproven))
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                 }
                 .padding(.top, 4)
@@ -536,6 +612,9 @@ struct AgentTaskResultView: View {
                         }
                     }
                     .accessibilityElement(children: .combine)
+                    // Combining drops selectable text children from the
+                    // spoken label, so the row states its content itself.
+                    .accessibilityLabel(Text(verbatim: checkEntrySpokenLabel(entry)))
                 }
             }
             reviewerView
@@ -553,7 +632,7 @@ struct AgentTaskResultView: View {
                 Text(verbatim: copy(.limitations))
                     .font(.caption.weight(.semibold))
                 ForEach(Array(model.limitations.enumerated()), id: \.offset) { _, limitation in
-                    Text(verbatim: limitation)
+                    Text(verbatim: copy(limitation))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -592,21 +671,14 @@ struct AgentTaskResultView: View {
     }
 
     private func codeStateText(_ code: AgentTaskCodeStateIdentity) -> some View {
-        Text(verbatim: copy(.codeIdentity, [
-            code.headCommit ?? copy(.unknown), code.trackedFingerprint,
-            code.untrackedFingerprint, code.ignoredRelevantFingerprint,
-        ]))
+        Text(verbatim: codeIdentityText(code))
             .font(.system(.caption2, design: .monospaced))
             .foregroundStyle(.secondary)
             .textSelection(.enabled)
     }
 
     private func environmentText(_ environment: AgentTaskEnvironmentIdentity) -> some View {
-        Text(verbatim: [
-            environment.osBuild ?? copy(.unknown),
-            environment.toolchain ?? copy(.unknown),
-            environment.configurationFingerprint ?? copy(.unknown),
-        ].joined(separator: " · "))
+        Text(verbatim: environmentIdentityText(environment))
             .font(.system(.caption2, design: .monospaced))
             .foregroundStyle(.secondary)
             .textSelection(.enabled)
@@ -626,6 +698,8 @@ struct AgentTaskResultView: View {
                     }
                 }
                 .accessibilityElement(children: .combine)
+                // Same combine behavior as the journal rows above.
+                .accessibilityLabel(Text(verbatim: snapshotRowSpokenLabel(change)))
             }
         }
     }
@@ -635,12 +709,33 @@ struct AgentTaskResultView: View {
             if let comparison = model.revisionComparison {
                 Text(verbatim: comparisonText(comparison))
                     .fixedSize(horizontal: false, vertical: true)
-            } else {
-                Text(verbatim: copy(.contextPlaceholder))
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
             }
+            // The task's factual completion brief (#1827), disclosed on
+            // demand: context for this result, not another permanent panel.
+            DisclosureGroup(isExpanded: $briefIsExpanded) {
+                briefRows
+                    .padding(.top, 4)
+            } label: {
+                Text(Strings.agentCompletionShowButton)
+            }
+            .accessibilityIdentifier(AccessibilityID.agentTaskResultBrief)
         }
+    }
+
+    private var briefRows: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(verbatim: copy(.briefGoalVersion, [String(model.brief.objectiveRevision)]))
+            if let attempt = model.brief.latestAttempt {
+                Text(verbatim: copy(.briefAttemptStarted, [
+                    attempt.startedAt.formatted(date: .abbreviated, time: .shortened),
+                ]))
+            }
+            Text(verbatim: copy(.briefFeedbackCount, [String(model.brief.feedback.count)]))
+            Text(verbatim: copy(.briefDecisionCount, [String(model.brief.annotations.count)]))
+        }
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .fixedSize(horizontal: false, vertical: true)
     }
 
     private var decisionContent: some View {
@@ -653,11 +748,23 @@ struct AgentTaskResultView: View {
                     .foregroundStyle(.secondary)
                 Text(verbatim: decisionAction(decision.blocker))
                     .fixedSize(horizontal: false, vertical: true)
-                if let finding = decision.unresolvedFindingReference {
+                switch model.unresolvedFinding {
+                case .text(let finding):
                     Text(verbatim: copy(.unresolvedFinding, [finding]))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier(AccessibilityID.agentTaskResultFinding)
+                case .textUnavailable:
+                    // The stored reference is an opaque hash; showing it
+                    // would state nothing the user can act on.
+                    Text(verbatim: copy(.findingTextUnavailable))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                case .none:
+                    EmptyView()
                 }
             } else {
                 Text(verbatim: copy(.staleDecisionDetail))
@@ -679,6 +786,13 @@ struct AgentTaskResultView: View {
                 .focused($replyIsFocused)
                 .disabled(!model.canReplyToDecision)
                 .accessibilityIdentifier(AccessibilityID.agentTaskResultReply)
+            // No adapter transmits visual references yet (#1725): say so
+            // instead of implying an attachment path that does not exist.
+            Text(verbatim: copy(.replyTextOnly))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier(AccessibilityID.agentTaskResultReplyScope)
             Button(copy(.sendReply)) {
                 let text = reply.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard model.canReplyToDecision, !text.isEmpty else { return }
@@ -780,6 +894,42 @@ struct AgentTaskResultView: View {
         let status = checkStatus(entry.status)
         let exit = entry.exitCode.map(String.init) ?? copy(.exitUnavailable)
         return copy(.checkMetadata, [requirement, status, exit])
+    }
+
+    /// What VoiceOver reads for one recorded check row.
+    private func checkEntrySpokenLabel(_ entry: AgentTaskResultCheckEntry) -> String {
+        var parts = [entry.commandFingerprint, checkMetadata(entry)]
+        if let codeState = entry.codeState {
+            parts.append(codeIdentityText(codeState))
+        }
+        if let environment = entry.environment {
+            parts.append(environmentIdentityText(environment))
+        }
+        return parts.joined(separator: ", ")
+    }
+
+    /// What VoiceOver reads for one snapshot row.
+    private func snapshotRowSpokenLabel(_ change: AgentTaskSnapshotChange) -> String {
+        var parts = [snapshotChangeText(change)]
+        if let snapshot = change.snapshot {
+            parts.append(snapshotIdentity(snapshot))
+        }
+        return parts.joined(separator: ", ")
+    }
+
+    private func codeIdentityText(_ code: AgentTaskCodeStateIdentity) -> String {
+        copy(.codeIdentity, [
+            code.headCommit ?? copy(.unknown), code.trackedFingerprint,
+            code.untrackedFingerprint, code.ignoredRelevantFingerprint,
+        ])
+    }
+
+    private func environmentIdentityText(_ environment: AgentTaskEnvironmentIdentity) -> String {
+        [
+            environment.osBuild ?? copy(.unknown),
+            environment.toolchain ?? copy(.unknown),
+            environment.configurationFingerprint ?? copy(.unknown),
+        ].joined(separator: " · ")
     }
 
     private func checkStatus(_ status: AgentTaskCheckObservation.Status) -> String {

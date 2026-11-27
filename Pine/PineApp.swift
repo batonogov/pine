@@ -1642,12 +1642,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate,
         }
         #endif
         #if PINE_TEST_HOST
-        let arguments = CommandLine.arguments
-        if arguments.contains("--ui-test-agent-result")
-                || arguments.contains("--ui-test-agent-result-decision") {
-            AgentTaskResultUITestLauncher.present(
-                needsDecision: arguments.contains("--ui-test-agent-result-decision")
-            )
+        if let fixture = AgentTaskResultUITestFixture.matching(CommandLine.arguments) {
+            AgentTaskResultUITestLauncher.present(fixture)
             return
         }
         #endif

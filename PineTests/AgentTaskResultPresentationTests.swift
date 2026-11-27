@@ -441,6 +441,224 @@ struct AgentTaskResultPresentationTests {
         #expect(entry.environment == environment)
     }
 
+    // MARK: - Production-path gaps (#1725)
+
+    private func decisionTask(findingReference: String? = nil) throws -> AgentTask {
+        var task = try ADEContractFixtures.verifiedSuccessTask(
+            seed: 1740, codeState: code, environment: environment
+        )
+        let run = try #require(task.runs.last)
+        var cycle = AgentTaskCorrectionCycle(
+            taskID: task.id, runID: run.id, codeState: code, environment: environment,
+            requestedOutcomeReference: "outcome", criteriaVersion: "criteria",
+            checkPlanIdentity: ADEContractFixtures.hex("f"),
+            reviewerControl: .writeDisabledAtAdapter
+        )
+        if let findingReference { cycle.recordRejectedReference(findingReference) }
+        cycle.stop(.checksFailed)
+        task.reviewCycle = cycle
+        return task
+    }
+
+    /// What VoiceOver reads in an off-screen result view.
+    private func spokenLabels(_ model: AgentTaskResultPresentation) -> String {
+        let hosted = AccessibilityTreeProbe.host(
+            AgentTaskResultView(model: model), size: NSSize(width: 760, height: 2_400)
+        )
+        defer { hosted.tearDown() }
+        return AccessibilityTreeProbe.labels(under: hosted.root).joined(separator: "\n")
+    }
+
+    /// Whether the control carrying `identifier` exists in the result view,
+    /// and whether it is enabled.
+    private func control(
+        _ identifier: String, in model: AgentTaskResultPresentation
+    ) -> (present: Bool, enabled: Bool) {
+        let hosted = AccessibilityTreeProbe.host(
+            AgentTaskResultView(model: model), size: NSSize(width: 760, height: 2_400)
+        )
+        defer { hosted.tearDown() }
+        let element = AccessibilityTreeProbe.element(under: hosted.root, identifier: identifier)
+        let enabled = element.flatMap {
+            AccessibilityTreeProbe.attribute("isAccessibilityEnabled", of: $0) as? Bool
+        } ?? false
+        return (element != nil, enabled)
+    }
+
+    @Test func recordedCheckJournalAndLimitationsComeFromTheTaskRecord() throws {
+        var task = try ADEContractFixtures.verifiedSuccessTask(
+            seed: 1741, codeState: code, environment: environment
+        )
+        let run = try #require(task.runs.last)
+        let build = ADEContractFixtures.hex("b")
+        let test = ADEContractFixtures.hex("d")
+        let now = Date(timeIntervalSince1970: 1_000)
+        func journal(runID: UUID) -> AgentTaskCheckExecution {
+            AgentTaskCheckExecution(
+                id: UUID(), runID: runID, processGeneration: run.process.processGeneration,
+                passID: UUID(), attempt: 1, grantID: UUID(),
+                planFingerprint: ADEContractFixtures.hex("c"), requiredCommands: [build],
+                code: code, environment: environment,
+                operations: [
+                    .init(
+                        id: UUID(), commandFingerprint: build, required: true,
+                        startedAt: now, finishedAt: now, status: .succeeded,
+                        exitCode: 0, identitiesMatched: true
+                    ),
+                    .init(
+                        id: UUID(), commandFingerprint: test, required: false,
+                        startedAt: now, finishedAt: now, status: .failed,
+                        exitCode: 3, identitiesMatched: true
+                    ),
+                ]
+            )
+        }
+        task.checkExecution = journal(runID: run.id)
+        let model = AgentTaskResultPresentation(task: task, codeState: code, environment: environment)
+        #expect(model.checkJournal.map(\.commandFingerprint) == [build, test])
+        #expect(model.checkJournal.map(\.required) == [true, false])
+        #expect(model.checkJournal.map(\.status) == [.succeeded, .failed])
+        #expect(model.checkJournal.map(\.exitCode) == [0, 3])
+        #expect(model.limitations == [.limitationCheckOutput, .limitationReviewFinding])
+        let labels = spokenLabels(model)
+        #expect(labels.contains(build))
+        #expect(labels.contains("exit: 0"))
+        #expect(labels.contains("Checks are kept as status and exit codes"))
+
+        // A journal of another attempt is history, not this result's checks.
+        task.checkExecution = journal(runID: UUID())
+        let otherAttempt = AgentTaskResultPresentation(
+            task: task, codeState: code, environment: environment
+        )
+        #expect(otherAttempt.checkJournal.isEmpty)
+        #expect(otherAttempt.limitations == [.limitationReviewFinding])
+    }
+
+    @Test func staleAndResolvedDecisionRequestsCannotBeAnswered() throws {
+        let stale = AgentTaskResultPresentation(
+            task: try decisionTask(), codeState: ADEContractFixtures.codeState("b"),
+            environment: environment
+        )
+        #expect(stale.hasStaleDecision)
+        #expect(!stale.canReplyToDecision)
+        #expect(spokenLabels(stale).contains(
+            "This request belongs to an earlier result and can no longer be answered."
+        ))
+        let reply = control(AccessibilityID.agentTaskResultReply, in: stale)
+        #expect(reply.present)
+        #expect(!reply.enabled)
+        #expect(!control(AccessibilityID.agentTaskResultSendReply, in: stale).enabled)
+
+        // Positive control: against its own candidate the request is answerable.
+        let current = AgentTaskResultPresentation(
+            task: try decisionTask(), codeState: code, environment: environment
+        )
+        #expect(current.canReplyToDecision)
+        #expect(control(AccessibilityID.agentTaskResultReply, in: current).enabled)
+
+        // Resolved: the cycle left needs-decision, so no request remains.
+        var resolvedTask = try decisionTask()
+        resolvedTask.reviewCycle?.requestCancellation()
+        let resolved = AgentTaskResultPresentation(
+            task: resolvedTask, codeState: code, environment: environment
+        )
+        #expect(!resolved.hasDecisionRequest)
+        #expect(!resolved.canReplyToDecision)
+        #expect(!control(AccessibilityID.agentTaskResultReply, in: resolved).present)
+    }
+
+    @Test func findingIsShownAsTextNeverAsTheOpaqueReference() throws {
+        let reference = ADEContractFixtures.hex("f")
+        let finding = "The example exits with code 1 when it is run without arguments."
+        let task = try decisionTask(findingReference: reference)
+        let unavailable = "This finding is kept only as a reference; its text is not stored with the task."
+
+        let withText = AgentTaskResultPresentation(
+            task: task, codeState: code, environment: environment, findingText: finding
+        )
+        #expect(withText.unresolvedFinding == .text(finding))
+        let labels = spokenLabels(withText)
+        #expect(labels.contains("Unresolved finding: \(finding)"))
+        #expect(!labels.contains(reference))
+
+        // Only the surface that received the verdict can hold its text.
+        for blank in [nil, "  \n"] as [String?] {
+            let model = AgentTaskResultPresentation(
+                task: task, codeState: code, environment: environment, findingText: blank
+            )
+            #expect(model.unresolvedFinding == .textUnavailable, "findingText: \(String(describing: blank))")
+            let blankLabels = spokenLabels(model)
+            #expect(blankLabels.contains(unavailable))
+            #expect(!blankLabels.contains(reference))
+        }
+
+        // A decision that names no finding says nothing about one.
+        let none = AgentTaskResultPresentation(
+            task: try decisionTask(), codeState: code, environment: environment
+        )
+        #expect(none.unresolvedFinding == .none)
+        #expect(!spokenLabels(none).contains(unavailable))
+    }
+
+    @Test func replyFieldDisclosesThatOnlyTextIsSent() throws {
+        let model = AgentTaskResultPresentation(
+            task: try decisionTask(), codeState: code, environment: environment
+        )
+        #expect(control(AccessibilityID.agentTaskResultReplyScope, in: model).present)
+        let labels = spokenLabels(model)
+        #expect(labels.contains("does not support screenshots or other visual references yet"))
+        #expect(labels.contains("Only the reply text is sent."))
+    }
+
+    @Test func unprovenIdentityIsReportedWithItsReasonAndNeverAsReady() throws {
+        let task = try ADEContractFixtures.verifiedSuccessTask(
+            seed: 1742, codeState: code, environment: environment
+        )
+        let unsaved = AgentTaskResultPresentation(
+            task: task, codeState: nil, environment: nil, identityGap: .unsavedEditorChanges
+        )
+        #expect(unsaved.identityGap == .unsavedEditorChanges)
+        #expect(!unsaved.readiness.isReady)
+        #expect(unsaved.readiness.gaps.contains(.codeStateUnknown))
+        #expect(spokenLabels(unsaved).contains(
+            "Unsaved editor changes prevent Pine from proving the current result."
+        ))
+
+        let unproven = AgentTaskResultPresentation(
+            task: task, codeState: nil, environment: nil, identityGap: .unproven
+        )
+        #expect(spokenLabels(unproven).contains(
+            "Pine could not re-prove the current code and environment for this result"
+        ))
+
+        // A reason is truthful only while no identity was established.
+        let proven = AgentTaskResultPresentation(
+            task: task, codeState: code, environment: environment, identityGap: .unproven
+        )
+        #expect(proven.identityGap == nil)
+        #expect(proven.readiness.isReady)
+    }
+
+    @Test func readyResultNeedsNoSelectedActionAndDisclosesItsBriefOnDemand() throws {
+        var task = try ADEContractFixtures.verifiedSuccessTask(
+            seed: 1743, codeState: code, environment: environment
+        )
+        task.objectiveRevision = 2
+        // First open of a Ready task: the identity is proven, no recipe chosen.
+        let model = AgentTaskResultPresentation(task: task, codeState: code, environment: environment)
+        #expect(model.readiness.isReady)
+        #expect(model.action == nil)
+        #expect(!model.canLaunchAction)
+        #expect(model.brief == AgentTaskBrief(task: task))
+        #expect(model.brief.objectiveRevision == 2)
+
+        #expect(!control(AccessibilityID.agentTaskResultPrimaryAction, in: model).present)
+        #expect(control(AccessibilityID.agentTaskResultBrief, in: model).present)
+        let labels = spokenLabels(model)
+        #expect(labels.contains("No project result action is selected."))
+        #expect(!labels.contains("not available yet"))
+    }
+
     @Test func resultCopyHasAnEntryForEveryLocale() throws {
         let root = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent().deletingLastPathComponent()
@@ -453,5 +671,7 @@ struct AgentTaskResultPresentationTests {
             let translations = try #require(entry["localizations"] as? [String: Any])
             #expect(Set(translations.keys) == locales)
         }
+        // The "not available yet" placeholder was retired with its surface.
+        #expect(strings["agentResult.contextPlaceholder"] == nil)
     }
 }
