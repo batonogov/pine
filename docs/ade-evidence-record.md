@@ -2,8 +2,9 @@
 
 Retention structure for the #1761 acceptance gate. One record per candidate
 revision; records are updated, not replaced, when a row's implementation or
-candidate assumption changes. This file holds the structure and the record
-for the base slice executed 2026-11-16.
+candidate assumption changes. This file holds the structure, the record for
+the base slice executed 2026-11-16, and a single-observation record for the
+#1846 ACP v2 real-binary probe (2026-11-26).
 
 ## Record structure
 
@@ -176,6 +177,132 @@ contract in-file; new artifacts must do the same.
   full-PineTests local run failed under machine load and its failing tests
   are untriaged (machine pause); the gate is not locally green until the
   parent schedules the isolated reruns.
+
+## Record: ACP v2 real-binary probe (2026-11-26)
+
+A single-observation record for the #1846 opt-in probe
+(`PineTests/ACPv2ProbeTests.swift`), not a candidate gate run: no full
+suite, scenario fixture, or UI test was executed. It reuses the base
+record's environment shape and changes nothing in the base record.
+
+- **Candidate:** `95c9803b1dc47f5b128bbcb39bcfff3d07a97a60` plus the
+  uncommitted #1870 edit to `PineTests/ACPv2ProbeTests.swift` (the run
+  log's header records `M` on that file) on the #1870 lane branch
+  `test/1846-acp-v2-kimi-repin`, 2026-11-26. #1870 merged as
+  `44eb1840fa1c17d7e22446cbb17c840a57b39ccf`; refs #1846.
+- **Environment** (captured 2026-11-27 with the same selected toolchain as
+  the run; the result bundle's device record confirms the macOS line):
+
+  | Field | Value |
+  | --- | --- |
+  | macOS | 27.2.1, build 26B131 |
+  | Xcode | 27.2, build 27B52 |
+  | macOS SDK | 27.2, build 26B118 |
+  | SwiftLint | not run for this record (documentation-only change); the CI pin is 0.65.1 |
+  | Toolchain | `/Applications/Xcode.app/Contents/Developer`, set as `DEVELOPER_DIR` by the queue wrapper for both test runs |
+
+- **Provider versions (read-only probes):**
+
+  | Provider | Version | Probe line (exact output) |
+  | --- | --- | --- |
+  | `claude-agent-acp` (standalone adapter) | 0.109.1 | `0.109.1` (install-day `--version`, exit 0; not re-run for this record) |
+  | `claude` CLI bundled in the same archive | not probed | never executed |
+  | opencode, codex-cli, claude, kimi | not probed in this record | no claim |
+
+  Discovery: no `PINE_ACP_V2_BINARY` override is recorded; the first entry
+  of the probe's search list, `/opt/homebrew/bin/claude-agent-acp`, exists,
+  so that is the binary it found. Handshake: one v2 `initialize` answered
+  (below). End-to-end: none.
+
+- **Commands and counts (2026-11-26, UTC):**
+
+  | Command | Result |
+  | --- | --- |
+  | direct stdio probes, one `initialize` each (15:53:40Z): v2 request; the same with `CLAUDE_AGENT_ACP_PROTOCOL=v1`; v1-shaped request | exit 0; all three answered without an error object; 0.26 s / 0.1 s / 0.1 s process wall time |
+  | `xcodebuild ... test ... -only-testing:PineTests/ACPv2ProbeTests` with `PINE_RUN_ACP_V2_SMOKE=1` in the `xcodebuild` environment (15:54:22Z–15:56:12Z) | exit 0 — `ACPv2ProbeTests`: 4 tests, 3 passed / 1 skipped / 0 failed |
+  | same command with `TEST_RUNNER_PINE_RUN_ACP_V2_SMOKE=1` (15:57:50Z–15:58:00Z) | exit 0 — `ACPv2ProbeTests`: **4 tests, 4 passed / 0 skipped / 0 failed / 0 expected failures** |
+  | `git diff --check` | clean (this documentation change) |
+
+  The test command is the repository's focused-test form with
+  `-destination 'platform=macOS'`. In the 4/4 run
+  `realV2PeerInitializeHandshake()` passed in 0.211 s wall time (suite
+  0.212 s); CPU time was not captured. Negotiated version, quoted from
+  that run's log:
+  `ACP v2 probe: negotiated protocolVersion 2 with @agentclientprotocol/claude-agent-acp 0.109.1; session capability present. Handshake only — no session created, no prompt sent.`
+- **Scenario results:** `ade-negative-scenarios-v1.json` rows and the #1762
+  boundary cards were not executed. C1–C11: no gate result is claimed or
+  changed. A pinned provider binary was observed, but only through one
+  `initialize` sent by the probe's own launch path, not by the Claude
+  adapter; Claude's gates stay as the
+  [acceptance matrix](ade-acceptance-matrix.md) records them.
+- **Artifacts:**
+  - Result bundle of the 4/4 run:
+    `$TMPDIR/opencode/ade-swarm/results/1846-08-acpv2-probe-test-runner-env.xcresult`
+    (present as of 2026-11-27; temporary, not copied to the 14-day
+    diagnostics directory).
+  - Run log of that run, 192,274 bytes, SHA-256
+    `d05413f8156c3025b691bde683004ef5c3ce4571427c7fb75ede967f310a288c`:
+    `$TMPDIR/opencode/ade-swarm/logs/1846/08-acpv2-probe-test-runner-env.log`.
+  - Direct-probe record (version, identity, capability keys; no session),
+    6,187 bytes, SHA-256
+    `27c3b4de9a4f4dd04e5ceefa9909ed903876ca0c54868b0cbc7150aa06f877dc`:
+    `$TMPDIR/opencode/ade-swarm/tmp/1846/claude-acp-raw/claude-agent-acp-initialize.jsonl`.
+  - Install: `claude-agent-acp-darwin-arm64.zip`, 202,506,243 bytes,
+    SHA-256 `becbcbb93bf4b0d0a47254324816d6fe60c4b22ab2a765adbceda4192e030d52`,
+    the official asset of tag `v0.109.1` (commit
+    `4af4581ad510a85d5cdfa3b9100412479e1cfef4`, published 2026-11-21,
+    Apache-2.0). It holds `claude-agent-acp` (92,594,562 bytes, SHA-256
+    `4d091dbeac3271cd5fe0151d8f6e9aecfbac6ee4d8ac364fbe5e06ef7e3e8294`,
+    ad-hoc code signature, no team) and the bundled `claude`
+    (363,855,808 bytes, SHA-256
+    `f7c5093b9dd6560d08af28bc27b123fb55091deae3180ac39df199522da86815`),
+    installed under `/opt/homebrew/opt/claude-agent-acp/` with
+    `/opt/homebrew/bin/claude-agent-acp` as a relative symlink; not managed
+    by Homebrew. The archive hash equals GitHub's asset digest for the same
+    release (same origin as the download: transfer integrity only; the
+    release's 8 assets are all archives and there is no checksum file).
+    Every hash above was recomputed from the installed files and the
+    retained archive on 2026-11-27.
+  - No transcript, prompt, or answer content exists for this record: no
+    session was created and no prompt was sent. stderr was drained and
+    discarded (0 bytes in each direct probe; not counted in the test run).
+- **Unresolved limitations:**
+  - **v2 message-level flows are not exercised** (owner: #1846). Prompt
+    acceptance (`messageId`), foreground/background `state_update`,
+    `replay_complete`, and `idempotencyKey` retry were never exchanged with
+    the live peer; they are covered by the deterministic envelope tests in
+    `ACPv2ProbeTests` only. The #1846 criterion that requires them against
+    a maintained v2 adapter is unmet; the issue stays open.
+  - **The merged probe revision has no real-binary run** (owner: #1846
+    follow-up). The compiled `ACPv2ProbeTests.o` used by both test runs
+    contains the #1870 `protocolVersion` guard but still the earlier
+    `#expect` identity check, so it predates the review polish in
+    `44eb1840f`; the version guard, the request, and the print are the
+    same. Per the reuse rule below, the pass is not carried to the merged
+    revision: rerun `PineTests/ACPv2ProbeTests` on a current `main` with
+    `PINE_RUN_ACP_V2_SMOKE=1 TEST_RUNNER_PINE_RUN_ACP_V2_SMOKE=1`.
+  - **The v1 Claude adapter smoke was not run against this install**
+    (owner: #1727). `ClaudeCodeACPNativeSmokeTests`
+    (`PINE_RUN_CLAUDECODE_ACP_SMOKE=1`), the adapter's executable-identity
+    capture, and its own `initialize` gate are unobserved on this binary;
+    the direct v1-shaped answer is not the adapter smoke.
+  - **Opt-in environment record.** The retained log header names only
+    `TEST_RUNNER_PINE_RUN_ACP_V2_SMOKE=1`; whether the plain form was also
+    exported is not recorded. The outcome does not depend on it — the test
+    ran, which proves the hosted process saw the opt-in.
+  - **Provider state.** Both probes gave the child an isolated `HOME` and
+    XDG tree and a fresh working directory. The real provider configuration
+    directory was fingerprinted (metadata only) as identical before and
+    after the direct probes, and was not re-fingerprinted after the test
+    runs.
+  - **One host, one run:** macOS 27.2.1 only, macOS 26 not exercised, no
+    repeat run.
+  - **Stale outside this file:** the #1870 body and the 2026-11-25 status
+    comment on #1846 still say the real-binary v2 handshake is unexecuted
+    on this host. This record supersedes both; neither was edited.
+  - **Still not claimed:** provider authentication, an authenticated
+    real-model journey, a live permission exchange, and `codex-acp` v2.9.0
+    (needs an npm runtime).
 
 ## Reuse rule
 

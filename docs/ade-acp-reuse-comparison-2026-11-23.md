@@ -294,7 +294,9 @@ fetched 2026-11-24 ([S17]).
   run either (requires an authorized npm runtime). The in-test opt-in run is
   additionally blocked by the test-host control-session timeout above.
   Unsupported peer behavior (v1-only or -32022 answers) is recorded by the
-  probe as an explicit failure, never a silent skip.
+  probe as an explicit failure, never a silent skip. Superseded for this
+  host on 2026-11-26: the pinned artifact is installed and the handshake
+  ran — section 7.4.
 - **No new dependencies.** The probe uses only Pine's own shared wire;
   Aptove v0.2.3 remains the recorded probe candidate, not an adopted
   dependency (section 4).
@@ -320,6 +322,39 @@ observation, and none of the observed versions is re-pinned here.
   Re-pinning is blocked on a maintainer decision about that cap plus a
   fresh dated observation at the then-pinned version; until both land, the
   Kimi ACP record keeps its 2.6.2 pin and **Detected** status.
+
+### 7.4 Real-binary v2 handshake (2026-11-26)
+
+First live v2 peer run, on the same host as section 7, after a
+maintainer-approved system-wide install of the official standalone
+`claude-agent-acp` v0.109.1 artifact (the exact pin; no pin, tier, or
+protocol floor changed). Provenance, hashes, counts, and the full limitation
+list are in the
+[evidence record](ade-evidence-record.md#record-acp-v2-real-binary-probe-2026-11-26).
+
+- **Direct stdio probes (no session, no prompt).** The installed adapter
+  answered a v2 `initialize` with `protocolVersion` 2 and the pinned
+  identity (`@agentclientprotocol/claude-agent-acp`, `0.109.1`) with no
+  `CLAUDE_AGENT_ACP_PROTOCOL` in the environment; the same v2 request under
+  `CLAUDE_AGENT_ACP_PROTOCOL=v1`, and a v1-shaped request, were both
+  answered with `protocolVersion` 1 and the v1 result shape. That is the
+  section 2.3 row observed on the real binary instead of the README.
+- **Opt-in probe: passed.** `PineTests/ACPv2ProbeTests` with the hosted-test
+  opt-in form `TEST_RUNNER_PINE_RUN_ACP_V2_SMOKE=1`: 4 tests, 4 passed,
+  0 skipped, 0 failed. Log line:
+  `ACP v2 probe: negotiated protocolVersion 2 with @agentclientprotocol/claude-agent-acp 0.109.1; session capability present. Handshake only — no session created, no prompt sent.`
+  An earlier run that exported only the plain
+  `PINE_RUN_ACP_V2_SMOKE=1` to `xcodebuild` passed 3 and skipped 1: that
+  form never reaches the hosted test process, so it is not a run.
+- **Not shown.** `initialize` only. No `session/new`, `session/prompt`,
+  `state_update`/`background`, `session/resume` replay, or `idempotencyKey`
+  retry was exchanged with the live peer; those surfaces stay covered by
+  the deterministic envelope tests alone. The v1 Claude adapter smoke
+  (`ClaudeCodeACPNativeSmokeTests`) was not run against this install, and
+  the run used the #1870 candidate's pre-review revision — the merged
+  revision has no retained real-binary run. #1846 stays open: its criterion
+  to exercise the v2 prompt-lifecycle surfaces against a maintained v2
+  adapter is not met.
 
 ## Source appendix
 

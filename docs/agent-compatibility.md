@@ -39,7 +39,7 @@ The active catalog and all nine Help pages reflect this retirement.
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | [Pi](https://github.com/badlogic/pi-mono) | `pi` | 0.83.0 | Detected | Process snapshot; observed process generation | Manual terminal / new session only | Process termination only | No structured transport enabled; upstream candidates and limitations are recorded in the dated audit. |
 | [Codex](https://github.com/openai/codex) | `codex` | 0.146.0 | Detected | Process snapshot; observed process generation | Manual terminal / new session only | Process termination only | No structured transport enabled; upstream candidates and limitations are recorded in the dated audit. |
-| [Claude Code](https://github.com/anthropics/claude-code) | `claude` (terminal detection), `claude-agent-acp` (owned adapter) | 2.1.220 | Structured via official ACP adapter | ACP v1 over Pine-owned child stdio; observed process generation | Owned official adapter; exact `session/load` only by explicit user action as a new attempt; no auto-resume | Main-turn end is unverified, never Ready by itself | Adapter pin 0.109.1; synthetic fixtures and composition only. Real adapter handshake, provider authentication, and an authenticated real-model journey are not claimed. Provider auth/configuration remains adapter-owned. |
+| [Claude Code](https://github.com/anthropics/claude-code) | `claude` (terminal detection), `claude-agent-acp` (owned adapter) | 2.1.220 | Structured via official ACP adapter | ACP v1 over Pine-owned child stdio; observed process generation | Owned official adapter; exact `session/load` only by explicit user action as a new attempt; no auto-resume | Main-turn end is unverified, never Ready by itself | Adapter pin 0.109.1; synthetic fixtures and composition, plus one real-binary observation (2026-11-26): the installed adapter answered a v2 `initialize` from the opt-in test probe with `protocolVersion` 2 and the pinned identity — handshake only. The v1 adapter smoke has not been run against the installed binary; provider authentication and an authenticated real-model journey are not claimed; no session or prompt was sent. Provider auth/configuration remains adapter-owned. |
 | [OpenCode](https://github.com/anomalyco/opencode) | `opencode` (terminal detection), `opencode acp` (owned V2 adapter) | 1.18.10 (V1 detection); 2.4.0 (V2 ACP) | Structured via OpenCode V2 `acp` adapter | ACP v1 over Pine-owned child stdio; observed process generation | Owned V2 adapter task dispatch from the Pine UI (in development; not in the latest release) plus manual terminal / new session; exact-ID `session/load` only by explicit user action as a new attempt; no auto-resume | Process termination only | Pinned `opencode v2.4.0`; deterministic fixtures and composition only, with an opt-in real-binary smoke that uses no model prompt and no auth mutation. Provider authentication and an authenticated real-model journey are not claimed. Main-turn end is unverified, never Ready by itself. |
 | [GitHub Copilot CLI](https://github.com/github/copilot-cli) | `github-copilot-cli`, `copilot` | 1.0.77 | Detected | Process snapshot; observed process generation | Manual terminal / new session only | Process termination only | No structured transport enabled; upstream candidates and limitations are recorded in the dated audit. |
 | [Aider](https://github.com/Aider-AI/aider) | `aider` | 0.86.0 | Detected | Process snapshot; observed process generation | Manual terminal / new session only | Process termination only | No structured transport enabled; upstream candidates and limitations are recorded in the dated audit. |
@@ -77,13 +77,13 @@ one; this does not relax the adapter identity/version pin.
 | --- | --- |
 | Transport | Literal-argv `claude-agent-acp` with no subcommand; ACP v1 JSON-RPC 2.0 over the shared bounded Pine-owned stdio channel/framer (JSONL frames ≤ 1 MiB); process-group stop/reap and bounded secret-free stderr drain |
 | Pinned adapter | 0.109.1 exactly; `--version` has a 5-second cap and initialize requires protocol 1 plus `agentInfo.name == "@agentclientprotocol/claude-agent-acp"` and the same exact version |
-| Protocol floor | ACP v1 only in this slice. ACP v2 Preview is not negotiated or enabled |
+| Protocol floor | ACP v1 only in this slice. ACP v2 Preview is not negotiated or enabled by the adapter; the v2 `initialize` recorded below is a test-probe observation |
 | Sessions | `session/new`; exact-ID `session/load` is a separate explicit action in a new Pine attempt/source namespace. No process reattachment, auto-resume, reconnect, or automatic prompt resend |
 | User input | One-shot `session/request_permission` (`allow_once`/`reject_once`) and the strict form-only `elicitation/create` subset. Identical redelivery of an answered request replays its exact response; unsupported schemas and unowned reverse RPC fail closed |
 | Cancellation | `session/cancel`; remains requested until the provider confirms cancellation. Late completion is a race outcome and queued input is never automatically resent |
 | Main-turn end | `session/prompt` `end_turn` (including the other bounded terminal reasons) is unverified main-turn completion only. It never proves background-work settlement, checks, review, or Ready |
 | Provider configuration | `mcpServers: []` from Pine and inherited native adapter configuration. Provider authentication is not inferred from process ownership or a successful ACP handshake |
-| Verification boundary | Executable identity, framing, session/control behavior, ownership composition, stopped-provider replacement, and teardown have deterministic local coverage. This slice records no real adapter handshake result; no authenticated real-model turn or live permission exchange is claimed |
+| Verification boundary | Executable identity, framing, session/control behavior, ownership composition, stopped-provider replacement, and teardown have deterministic local coverage. The only real-binary evidence is the 2026-11-26 v2 `initialize` handshake made by the `ACPv2ProbeTests` probe (below); this slice records no real v1 adapter handshake result — the `ClaudeCodeACPNativeSmokeTests` smoke has not been run against the installed binary. No authenticated real-model turn or live permission exchange is claimed |
 
 The opt-in `PINE_RUN_CLAUDECODE_ACP_SMOKE=1` (or
 `$TMPDIR/pine-claude-acp-smoke`) check uses
@@ -93,6 +93,22 @@ bound native session, and tears down the owned process. It remains the final
 local smoke gate for the real adapter handshake; provider authentication and a
 real-model journey are separate acceptance evidence, not implications of this
 integration slice.
+
+Observed 2026-11-26 on the local machine, after a system-wide install of the
+official standalone `claude-agent-acp` v0.109.1 archive (the exact pin; no
+tier, pin, or protocol-floor change): the installed adapter answered a v2
+`initialize` with `protocolVersion` 2 and the identity
+`@agentclientprotocol/claude-agent-acp` `0.109.1` (the same v2 request under
+`CLAUDE_AGENT_ACP_PROTOCOL=v1`, and a v1-shaped request, were answered with
+`protocolVersion` 1 and the v1 result shape), and the opt-in
+`PineTests/ACPv2ProbeTests` real-binary handshake passed 4 of 4 tests with
+none skipped. Handshake only, made by the test probe's own launch path: no
+`session/new`, no prompt, no authentication, and nothing sent through the v1
+adapter above. The `PINE_RUN_CLAUDECODE_ACP_SMOKE=1` smoke has **not** been
+run against this install, and the v2 prompt-lifecycle surfaces are covered by
+deterministic envelope tests only; see the
+[decision record, section 7.4](ade-acp-reuse-comparison-2026-11-23.md#74-real-binary-v2-handshake-2026-11-26)
+and the [evidence record](ade-evidence-record.md#record-acp-v2-real-binary-probe-2026-11-26).
 
 ## OpenCode V2 ACP adapter (#1843)
 
@@ -238,7 +254,7 @@ floor or unknown, never to a manufactured capability.
 | --- | --- | --- | --- | --- |
 | Codex `0.169.0` (app-server) | researched floor; probed only when `model/list` is observed **with a non-empty catalog** at session start (native catalog options enumerated) | researched floor; probed only when the observed catalog carries `supportedReasoningEfforts` | researched floor (documented per-thread `approvalPolicy`/`sandbox`); probed only when `config/read` carries `approval_policy` or `sandbox_mode` | `config/read` confirms effective `model`, `model_reasoning_effort`, `approval_policy`(+`sandbox_mode`) as native labels; an empty catalog or config keeps the floor |
 | Kimi `2.6.2` (ACP) | researched floor (re-probed 2026-11-17: `session/new` auth-gated); observed `configOptions` entry `model` (select) → probed | researched floor; observed `thinking` (select) → probed | researched floor; observed `mode` (select — the session permission mode: ask / never-ask / plan, per the CLI reference) → probed | ACP `currentValue` of an observed option is readback evidence for that setting only |
-| Claude adapter `0.109.1` (ACP) | researched floor (v0.109.1 source-reviewed 2026-11-23; no real handshake claimed); observed `model` option (category `model`; present only when the gateway lists models) → probed | researched floor; observed `effort` option (category `thought_level`; present only when the model supports effort) → probed | researched floor; observed `mode` option (category `mode`, "Session permission mode"; always present) → probed | ACP `currentValue` of an observed option is readback evidence for that setting only |
+| Claude adapter `0.109.1` (ACP) | researched floor (v0.109.1 source-reviewed 2026-11-23; no real adapter handshake or session claimed); observed `model` option (category `model`; present only when the gateway lists models) → probed | researched floor; observed `effort` option (category `thought_level`; present only when the model supports effort) → probed | researched floor; observed `mode` option (category `mode`, "Session permission mode"; always present) → probed | ACP `currentValue` of an observed option is readback evidence for that setting only |
 | OpenCode `2.3.x` (ACP, #1850; not re-observed after #1866 re-pin to 2.4.0) | observed ACP `configOptions` → probed | observed → probed | unknown (OpenCode's `mode` is a primary agent, never mapped) | deferred in #1850; `currentValue` is validated but not yet recovered |
 
 Evidence notes:
