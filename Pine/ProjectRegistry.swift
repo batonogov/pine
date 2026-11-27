@@ -4114,7 +4114,12 @@ final class ProjectRegistry {
         }
         var seen: Set<String> = []
         recentProjects = paths.compactMap { path in
-            let url = URL(fileURLWithPath: path).standardizedFileURL
+            // Load with the same lexical URL identity canonicalProjectURL
+            // produces (trailing-slash directory flag): URL equality, not
+            // .path equality, is what removeFromRecent/addToRecent dedupe and
+            // the agent-task record lookups rely on. Still zero disk access.
+            let url = URL(fileURLWithPath: path, isDirectory: true)
+                .standardizedFileURL
             guard seen.insert(url.path).inserted else { return nil }
             return url
         }

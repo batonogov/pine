@@ -77,6 +77,39 @@ struct ProjectRecentProjectsLaunchTests {
         #expect(registry.recentProjects.map(\.path) == [existing.path])
     }
 
+    @Test func launchLoadedRowsCarryTheCanonicalURLIdentity() {
+        let (defaults, suite) = makeDefaults()
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let existing = makeExistingDirectory()
+        defer { try? FileManager.default.removeItem(at: existing) }
+        defaults.set([existing.path], forKey: storeKey)
+
+        let registry = makeRegistry(defaults: defaults)
+
+        // URL identity, not just path text: canonicalProjectURL loads with a
+        // trailing-slash directory flag, and removeFromRecent/addToRecent
+        // dedupe plus the agent-task record lookups compare whole URLs.
+        #expect(registry.recentProjects.first
+            == ProjectRegistry.canonicalProjectURL(
+                URL(fileURLWithPath: existing.path, isDirectory: true)
+            ))
+    }
+
+    @Test func removeFromRecentWorksOnALaunchLoadedRow() {
+        let (defaults, suite) = makeDefaults()
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let existing = makeExistingDirectory()
+        defer { try? FileManager.default.removeItem(at: existing) }
+        defaults.set([existing.path], forKey: storeKey)
+        let registry = makeRegistry(defaults: defaults)
+        #expect(registry.recentProjects.count == 1)
+
+        registry.removeFromRecent(existing)
+
+        #expect(registry.recentProjects.isEmpty)
+        #expect(defaults.stringArray(forKey: storeKey) == [])
+    }
+
     @Test func launchCapsTheListAtTenEntries() {
         let (defaults, suite) = makeDefaults()
         defer { defaults.removePersistentDomain(forName: suite) }
