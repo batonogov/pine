@@ -2,8 +2,7 @@
 name: Nightly Lifecycle Resource Soak
 
 on:
-  schedule:
-    - cron: '30 4 * * *'
+  # Scheduled nightly runs were removed when the project was archived; run manually via workflow_dispatch.
   workflow_dispatch:
     inputs:
       cycles:

@@ -4,9 +4,7 @@
 name: Nightly Performance Tests
 
 on:
-  schedule:
-    # Run daily at 3:00 AM UTC
-    - cron: '0 3 * * *'
+  # Scheduled nightly runs were removed when the project was archived; run manually via workflow_dispatch.
   workflow_dispatch:
 
 permissions:

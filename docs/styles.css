@@ -1285,6 +1285,19 @@ footer a {
     }
 }
 
+.archive-banner {
+    max-width: var(--max-width);
+    margin: 20px auto 0;
+    padding: 14px 22px;
+    border: 1px solid rgba(245, 185, 105, 0.35);
+    border-radius: var(--radius-md);
+    background: rgba(245, 185, 105, 0.08);
+    color: #f2d9ac;
+    font-size: 0.95rem;
+    line-height: 1.55;
+    font-weight: 500;
+}
+
 @media (prefers-reduced-transparency: reduce) {
     .site-header,
     .workflow-counter,

@@ -120,5 +120,6 @@
   "meta.twitterDescription": "CLI 에이전트 워크플로를 위한 네이티브 macOS 편집기 — 에이전트는 터미널에, 코드는 시야에. Pine 3.0은 지속되는 작업, 검증된 결과, 현재 프로젝트의 작업 목록에 모이는 주의 사항을 갖춘 결과 중심 ADE로 나아가고 있습니다.",
   "install.copy": "복사",
   "install.copied": "복사됨",
-  "nav.language": "언어"
+  "nav.language": "언어",
+  "archive.notice": "Pine은 더 이상 유지 관리되지 않습니다(2026년 11월에 개발이 중단되었습니다). 이 페이지는 아카이브로 남아 있으며, 마지막 릴리스는 v2.13.0입니다."
 }
