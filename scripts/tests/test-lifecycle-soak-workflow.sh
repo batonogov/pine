@@ -25,7 +25,7 @@ for file in "$WORKFLOW" "$SOAK_TEST" "$SUMMARY" "$FIXTURE"; do
     [ -f "$file" ] || fail "missing ${file#$REPO_ROOT/}"
 done
 
-require_text "  schedule:" "$WORKFLOW"
+# Nightly cron triggers were removed when the project was archived; the workflow remains dispatch-only.
 require_text "  workflow_dispatch:" "$WORKFLOW"
 require_text "default: '100'" "$WORKFLOW"
 require_text "PINE_SOAK_SEED: '1443'" "$WORKFLOW"

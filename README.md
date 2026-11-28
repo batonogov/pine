@@ -10,6 +10,9 @@
 [![License: MIT](https://img.shields.io/github/license/batonogov/pine)](https://github.com/batonogov/pine/blob/main/LICENSE)
 [![macOS](https://img.shields.io/badge/macOS-26%2B-blue)](https://github.com/batonogov/pine)
 
+> [!WARNING]
+> **Pine is no longer actively maintained.** Development stopped on 2026-11-28, and this repository is kept as a read-only archive for reference. No further releases, fixes, or reviews are planned; the last release is [v2.13.0](https://github.com/batonogov/pine/releases/tag/v2.13.0). Thank you to everyone who tried Pine.
+
 > A native macOS code editor for CLI-agent workflows — heading toward an outcome-first Agentic Development Environment (ADE) in Pine 3.0.
 
 <p align="center">

@@ -4,9 +4,7 @@
 name: Nightly Fuzz Tests
 
 on:
-  schedule:
-    # Run daily at 4:00 AM UTC (one hour after nightly-perf to avoid resource contention)
-    - cron: '0 4 * * *'
+  # Scheduled nightly runs were removed when the project was archived; run manually via workflow_dispatch.
   workflow_dispatch:
 
 permissions:

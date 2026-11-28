@@ -4,9 +4,7 @@
 name: Nightly Sanitizers
 
 on:
-  schedule:
-    # Run after nightly performance and fuzz jobs to reduce runner contention.
-    - cron: '0 5 * * *'
+  # Scheduled nightly runs were removed when the project was archived; run manually via workflow_dispatch.
   workflow_dispatch:
 
 permissions:

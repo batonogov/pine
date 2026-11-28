@@ -120,5 +120,6 @@
   "meta.twitterDescription": "面向 CLI 智能体工作流的 macOS 原生编辑器——智能体留在终端，代码始终在眼前。Pine 3.0 正走向以结果为先的 ADE：持久任务、经过验证的结果，以及当前项目任务列表中的待关注事项。",
   "install.copy": "复制",
   "install.copied": "已复制",
-  "nav.language": "语言"
+  "nav.language": "语言",
+  "archive.notice": "Pine 已停止维护——开发于 2026 年 11 月停止。本页面作为存档保留；最后一个版本是 v2.13.0。"
 }

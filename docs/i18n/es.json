@@ -120,5 +120,6 @@
   "meta.twitterDescription": "Un editor nativo de macOS para flujos con agentes CLI — el agente en la terminal, el código a la vista. Pine 3.0 avanza hacia una ADE orientada a resultados con tareas duraderas, resultados verificados y atención en la lista de tareas del proyecto actual.",
   "install.copy": "Copiar",
   "install.copied": "Copiado",
-  "nav.language": "Idioma"
+  "nav.language": "Idioma",
+  "archive.notice": "Pine ya no se mantiene — el desarrollo se detuvo en noviembre de 2026. Esta página permanece como archivo; la última versión es la v2.13.0."
 }
