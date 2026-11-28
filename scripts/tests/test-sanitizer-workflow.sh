@@ -1,5 +1,5 @@
 #!/bin/bash
-# Guard the scheduled sanitizer manifest and its fail-closed workflow contract.
+# Guard the sanitizer manifest and its fail-closed workflow contract.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -30,7 +30,7 @@ require_count() {
 
 require_count 1 "  address-sanitizer:" "$WORKFLOW"
 require_count 1 "  thread-sanitizer:" "$WORKFLOW"
-require_count 1 "  schedule:" "$WORKFLOW"
+# Nightly cron triggers were removed when the project was archived; the workflow remains dispatch-only.
 require_count 1 "  workflow_dispatch:" "$WORKFLOW"
 require_count 1 "-enableAddressSanitizer YES" "$WORKFLOW"
 require_count 1 "-enableThreadSanitizer YES" "$WORKFLOW"
