@@ -1,5 +1,53 @@
 # Changelog
 
+## [3.0.0](https://github.com/batonogov/pine/compare/v2.13.0...v3.0.0) (2026-11-28)
+
+
+### ⚠ BREAKING CHANGES
+
+* **agent:** retire process-only agent notifications ([#1826](https://github.com/batonogov/pine/issues/1826))
+
+### Features
+
+* **agent:** add truthful CLI configuration capabilities for OpenCode ([#1850](https://github.com/batonogov/pine/issues/1850)) ([6e555a0](https://github.com/batonogov/pine/commit/6e555a03aa5b0505b2b36fb37a4e6752307133ef))
+* **agent:** Claude stream-json control adapter with reporting-only hooks ([#1821](https://github.com/batonogov/pine/issues/1821)) ([e374fb1](https://github.com/batonogov/pine/commit/e374fb10b1f8865c98083f32c37fb6236147e018)), closes [#1727](https://github.com/batonogov/pine/issues/1727)
+* **agent:** deliver Ready results and try-the-result flows ([#1853](https://github.com/batonogov/pine/issues/1853)) ([95c9803](https://github.com/batonogov/pine/commit/95c9803b1dc47f5b128bbcb39bcfff3d07a97a60))
+* **agent:** dispatch OpenCode ACP tasks from Pine UI ([#1848](https://github.com/batonogov/pine/issues/1848)) ([a2a5a73](https://github.com/batonogov/pine/commit/a2a5a7355ecb6c308d09e90d160c1968907aa7ba))
+* **agent:** execute required ADE checks with bound plans and command grants ([#1842](https://github.com/batonogov/pine/issues/1842)) ([e7bda4e](https://github.com/batonogov/pine/commit/e7bda4ec1645ae451fd8e9fc18caa08fb4eb142d))
+* **agent:** extend truthful configuration capabilities to Codex, Kimi and Claude ([#1864](https://github.com/batonogov/pine/issues/1864)) ([b0f58d3](https://github.com/batonogov/pine/commit/b0f58d30ffdb82e218b08d7557bc59f123fe96ac))
+* **agent:** integrate Claude Code via the official claude-agent-acp adapter ([#1852](https://github.com/batonogov/pine/issues/1852)) ([54497d6](https://github.com/batonogov/pine/commit/54497d64dbfe453513642948cea33a4468e5dce3))
+* **agent:** integrate OpenCode V2 as the first structured ADE adapter ([#1843](https://github.com/batonogov/pine/issues/1843)) ([74f66a7](https://github.com/batonogov/pine/commit/74f66a74e8f2ad3572c82093b95ccb6498e0ce7b))
+* **agent:** Kimi Code CLI ACP adapter with pinned-version contract gate ([#1833](https://github.com/batonogov/pine/issues/1833)) ([7f4a0a5](https://github.com/batonogov/pine/commit/7f4a0a56324d8f3785bd977fcf319b816c0c6acc))
+* **agent:** native session ownership, per-turn dispatch, and durable launch intent ([#1837](https://github.com/batonogov/pine/issues/1837)) ([5bdbd76](https://github.com/batonogov/pine/commit/5bdbd7651c29e151e10cc8c0e2bcd3db6adcf5fa))
+* **agent:** OpenCode new-owner exact-session restore + real-model journey evidence ([#1866](https://github.com/batonogov/pine/issues/1866)) ([ac8fb6d](https://github.com/batonogov/pine/commit/ac8fb6d62d6d20c6b353c6edea9e59568efd1c9b))
+* **agent:** revision continuation with explicit re-arm claims ([#1825](https://github.com/batonogov/pine/issues/1825)) ([77254ee](https://github.com/batonogov/pine/commit/77254ee17ae19b00257dcf9fe086c54b6495d99a))
+* **agent:** verification coordinator with independent review and bounded corrections ([#1830](https://github.com/batonogov/pine/issues/1830)) ([efb5937](https://github.com/batonogov/pine/commit/efb5937d5dce5a697f149f062fdf8677813970dd))
+* **agent:** wire explicit Verify with independent adapter-backed review ([#1851](https://github.com/batonogov/pine/issues/1851)) ([6c0466f](https://github.com/batonogov/pine/commit/6c0466f9cf930781f9e588d6d23ca72788b9263e))
+* **ux:** remove editor chrome — minimap, blame, folding, branch switcher, tab switcher, splits (Pine 3.0 R5) ([#1855](https://github.com/batonogov/pine/issues/1855)) ([cc915f4](https://github.com/batonogov/pine/commit/cc915f4b408e2fda4bfc2004b74ea2cd2779e112))
+* **ux:** remove LSP and the Problems panel (Pine 3.0 simplification R3) ([#1847](https://github.com/batonogov/pine/issues/1847)) ([321b780](https://github.com/batonogov/pine/commit/321b780455977f1cef403a26b0ad3e4f10aa62a7))
+* **ux:** remove the search family, Quick Open, and Go to Line (Pine 3.0 R4) ([#1854](https://github.com/batonogov/pine/issues/1854)) ([65a67df](https://github.com/batonogov/pine/commit/65a67dffbed3e2a4aaf4253d5d310d23eed572e2))
+
+
+### Bug Fixes
+
+* **agent:** arm deferred process-group cleanup on group.isAlive ([#1868](https://github.com/batonogov/pine/issues/1868)) ([c6984ba](https://github.com/batonogov/pine/commit/c6984bab8dbf731563e414b05d1ab540ce4759e7))
+* **extensibility:** durable user-task results that survive relaunch without wedging Quit ([#1829](https://github.com/batonogov/pine/issues/1829)) ([0438dde](https://github.com/batonogov/pine/commit/0438ddeaca8eb0494cc4132d6b1489206e90b102))
+* **process:** keep the termination fence held for detached process-tree cleanup ([#1832](https://github.com/batonogov/pine/issues/1832)) ([cd7c6ea](https://github.com/batonogov/pine/commit/cd7c6ea26c199efe68ee22658ec777697988c41e))
+* **test:** pass capability evidence for the explicit permissions override ([#1859](https://github.com/batonogov/pine/issues/1859)) ([da61175](https://github.com/batonogov/pine/commit/da6117515640c068133698c83c9ab7dd23f8ef77))
+
+
+### Code Refactoring
+
+* **agent:** retire process-only agent notifications ([#1826](https://github.com/batonogov/pine/issues/1826)) ([cfc62f3](https://github.com/batonogov/pine/commit/cfc62f3fc8513044bb906097b81de547daf5fff5))
+
+
+### Documentation
+
+* **agent:** ACP reuse comparison and dual-stack v1/v2 decision record ([#1849](https://github.com/batonogov/pine/issues/1849)) ([702430f](https://github.com/batonogov/pine/commit/702430f7270172e7c76224d3fc5e77039eacd007))
+* **agent:** sync OpenCode ACP pin to 2.4.0 after the [#1866](https://github.com/batonogov/pine/issues/1866) re-pin ([#1867](https://github.com/batonogov/pine/issues/1867)) ([f81c576](https://github.com/batonogov/pine/commit/f81c576b3d793db1cc4e61dc588cb541535d08d7))
+* **agent:** sync public ADE surfaces with in-flight 3.0.0 on main ([#1861](https://github.com/batonogov/pine/issues/1861)) ([04ce11e](https://github.com/batonogov/pine/commit/04ce11e0363f9b888568f619ed38aa7da112e39a))
+* **validation:** add the [#1762](https://github.com/batonogov/pine/issues/1762) cohort trial runbook ([#1860](https://github.com/batonogov/pine/issues/1860)) ([44ea8b1](https://github.com/batonogov/pine/commit/44ea8b18ab956a738d9266e7390ea395088bfc2a))
+
 ## [2.13.0](https://github.com/batonogov/pine/compare/v2.12.4...v2.13.0) (2026-11-19)
 
 
